@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/sagernet/sing-box/common/conf"
 	"github.com/sagernet/sing-box/common/json"
 	"github.com/sagernet/sing-box/log"
 	"github.com/sagernet/sing-box/option"
@@ -33,45 +34,16 @@ func init() {
 }
 
 func format() error {
-	optionsList, err := readConfig()
+	files, err := conf.ResolveFiles(configPaths, configRecursive)
 	if err != nil {
-		return err
+		return E.Cause(err, "resolve config files")
 	}
-	for _, optionsEntry := range optionsList {
-		buffer := new(bytes.Buffer)
-		encoder := json.NewEncoder(buffer)
-		encoder.SetIndent("", "  ")
-		err = encoder.Encode(optionsEntry.options)
-		if err != nil {
-			return E.Cause(err, "encode config")
-		}
-		outputPath, _ := filepath.Abs(optionsEntry.path)
-		if !commandFormatFlagWrite {
-			if len(optionsList) > 1 {
-				os.Stdout.WriteString(outputPath + "\n")
-			}
-			os.Stdout.WriteString(buffer.String() + "\n")
-			continue
-		}
-		if bytes.Equal(optionsEntry.content, buffer.Bytes()) {
-			continue
-		}
-		output, err := os.Create(optionsEntry.path)
-		if err != nil {
-			return E.Cause(err, "open output")
-		}
-		_, err = output.Write(buffer.Bytes())
-		output.Close()
-		if err != nil {
-			return E.Cause(err, "write output")
-		}
-		os.Stderr.WriteString(outputPath + "\n")
+	if len(files) == 0 {
+		return E.New("no config file found")
 	}
-	return nil
-}
-
-func formatOne(configPath string) error {
-	configContent, err := os.ReadFile(configPath)
+	// use conf.Merge even if there's only one config file, make
+	// it has the same behavior between one and multiple files.
+	configContent, err := conf.Merge(files)
 	if err != nil {
 		return E.Cause(err, "read config")
 	}
@@ -87,13 +59,22 @@ func formatOne(configPath string) error {
 	if err != nil {
 		return E.Cause(err, "encode config")
 	}
+	flagIgnored := false
+	if commandFormatFlagWrite && len(files) > 1 {
+		commandFormatFlagWrite = false
+		flagIgnored = true
+	}
 	if !commandFormatFlagWrite {
 		os.Stdout.WriteString(buffer.String() + "\n")
+		if flagIgnored {
+			log.Warn("--write flag is ignored due to more than one configuration file specified")
+		}
 		return nil
 	}
 	if bytes.Equal(configContent, buffer.Bytes()) {
 		return nil
 	}
+	configPath := files[0]
 	output, err := os.Create(configPath)
 	if err != nil {
 		return E.Cause(err, "open output")

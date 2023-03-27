@@ -2,18 +2,14 @@ package main
 
 import (
 	"context"
-	"io"
 	"os"
 	"os/signal"
-	"path/filepath"
 	runtimeDebug "runtime/debug"
-	"sort"
-	"strings"
 	"syscall"
 	"time"
 
-	"github.com/sagernet/sing-box"
-	"github.com/sagernet/sing-box/common/badjsonmerge"
+	box "github.com/sagernet/sing-box"
+	"github.com/sagernet/sing-box/common/conf"
 	"github.com/sagernet/sing-box/log"
 	"github.com/sagernet/sing-box/option"
 	E "github.com/sagernet/sing/common/exceptions"
@@ -36,88 +32,41 @@ func init() {
 	mainCommand.AddCommand(commandRun)
 }
 
-type OptionsEntry struct {
-	content []byte
-	path    string
-	options option.Options
-}
-
-func readConfigAt(path string) (*OptionsEntry, error) {
+func readConfig() (option.Options, error) {
 	var (
 		configContent []byte
 		err           error
 	)
-	if path == "stdin" {
-		configContent, err = io.ReadAll(os.Stdin)
+	// always use conf.Merge to make it has the same behavior
+	// between one and multiple files.
+	if len(configPaths) == 1 && configPaths[0] == "stdin" {
+		configContent, err = conf.Merge(os.Stdin)
+		if err != nil {
+			return option.Options{}, E.Cause(err, "read stdin")
+		}
 	} else {
-		configContent, err = os.ReadFile(path)
-	}
-	if err != nil {
-		return nil, E.Cause(err, "read config at ", path)
+		files, err := conf.ResolveFiles(configPaths, configRecursive)
+		if err != nil {
+			return option.Options{}, E.Cause(err, "resolve config files")
+		}
+		if len(files) == 0 {
+			return option.Options{}, E.New("no config file found")
+		}
+		configContent, err = conf.Merge(files)
+		if err != nil {
+			return option.Options{}, E.Cause(err, "read config")
+		}
 	}
 	var options option.Options
 	err = options.UnmarshalJSON(configContent)
 	if err != nil {
-		return nil, E.Cause(err, "decode config at ", path)
+		return option.Options{}, E.Cause(err, "decode config")
 	}
-	return &OptionsEntry{
-		content: configContent,
-		path:    path,
-		options: options,
-	}, nil
-}
-
-func readConfig() ([]*OptionsEntry, error) {
-	var optionsList []*OptionsEntry
-	for _, path := range configPaths {
-		optionsEntry, err := readConfigAt(path)
-		if err != nil {
-			return nil, err
-		}
-		optionsList = append(optionsList, optionsEntry)
-	}
-	for _, directory := range configDirectories {
-		entries, err := os.ReadDir(directory)
-		if err != nil {
-			return nil, E.Cause(err, "read config directory at ", directory)
-		}
-		for _, entry := range entries {
-			if !strings.HasSuffix(entry.Name(), ".json") || entry.IsDir() {
-				continue
-			}
-			optionsEntry, err := readConfigAt(filepath.Join(directory, entry.Name()))
-			if err != nil {
-				return nil, err
-			}
-			optionsList = append(optionsList, optionsEntry)
-		}
-	}
-	sort.Slice(optionsList, func(i, j int) bool {
-		return optionsList[i].path < optionsList[j].path
-	})
-	return optionsList, nil
-}
-
-func readConfigAndMerge() (option.Options, error) {
-	optionsList, err := readConfig()
-	if err != nil {
-		return option.Options{}, err
-	}
-	if len(optionsList) == 1 {
-		return optionsList[0].options, nil
-	}
-	var mergedOptions option.Options
-	for _, options := range optionsList {
-		mergedOptions, err = badjsonmerge.MergeOptions(options.options, mergedOptions)
-		if err != nil {
-			return option.Options{}, E.Cause(err, "merge config at ", options.path)
-		}
-	}
-	return mergedOptions, nil
+	return options, nil
 }
 
 func create() (*box.Box, context.CancelFunc, error) {
-	options, err := readConfigAndMerge()
+	options, err := readConfig()
 	if err != nil {
 		return nil, nil, err
 	}

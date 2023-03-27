@@ -26,7 +26,7 @@ func init() {
 }
 
 func check() error {
-	options, err := readConfigAndMerge()
+	options, err := readConfig()
 	if err != nil {
 		return err
 	}

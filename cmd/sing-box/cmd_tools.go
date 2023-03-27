@@ -1,7 +1,7 @@
 package main
 
 import (
-	"github.com/sagernet/sing-box"
+	box "github.com/sagernet/sing-box"
 	E "github.com/sagernet/sing/common/exceptions"
 	N "github.com/sagernet/sing/common/network"
 
@@ -21,7 +21,7 @@ func init() {
 }
 
 func createPreStartedClient() (*box.Box, error) {
-	options, err := readConfigAndMerge()
+	options, err := readConfig()
 	if err != nil {
 		return nil, err
 	}

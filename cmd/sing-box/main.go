@@ -11,10 +11,10 @@ import (
 )
 
 var (
-	configPaths       []string
-	configDirectories []string
-	workingDir        string
-	disableColor      bool
+	configPaths     []string
+	configRecursive bool
+	workingDir      string
+	disableColor    bool
 )
 
 var mainCommand = &cobra.Command{
@@ -23,8 +23,8 @@ var mainCommand = &cobra.Command{
 }
 
 func init() {
-	mainCommand.PersistentFlags().StringArrayVarP(&configPaths, "config", "c", nil, "set configuration file path")
-	mainCommand.PersistentFlags().StringArrayVarP(&configDirectories, "config-directory", "C", nil, "set configuration directory path")
+	mainCommand.PersistentFlags().StringArrayVarP(&configPaths, "config", "c", []string{"config.json"}, "set configuration files / directories")
+	mainCommand.PersistentFlags().BoolVarP(&configRecursive, "config-recursive", "r", false, "load configuration directories recursively")
 	mainCommand.PersistentFlags().StringVarP(&workingDir, "directory", "D", "", "set working directory")
 	mainCommand.PersistentFlags().BoolVarP(&disableColor, "disable-color", "", false, "disable color output")
 }
@@ -47,8 +47,5 @@ func preRun(cmd *cobra.Command, args []string) {
 		if err := os.Chdir(workingDir); err != nil {
 			log.Fatal(err)
 		}
-	}
-	if len(configPaths) == 0 && len(configDirectories) == 0 {
-		configPaths = append(configPaths, "config.json")
 	}
 }
