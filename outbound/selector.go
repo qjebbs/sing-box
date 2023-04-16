@@ -19,29 +19,26 @@ var (
 )
 
 type Selector struct {
-	myOutboundAdapter
-	tags       []string
+	myOutboundGroupAdapter
 	defaultTag string
-	outbounds  map[string]adapter.Outbound
-	selected   adapter.Outbound
+
+	selected adapter.Outbound
 }
 
 func NewSelector(router adapter.Router, logger log.ContextLogger, tag string, options option.SelectorOutboundOptions) (*Selector, error) {
-	outbound := &Selector{
-		myOutboundAdapter: myOutboundAdapter{
-			protocol: C.TypeSelector,
-			router:   router,
-			logger:   logger,
-			tag:      tag,
+	selector := &Selector{
+		myOutboundGroupAdapter: myOutboundGroupAdapter{
+			myOutboundAdapter: myOutboundAdapter{
+				protocol: C.TypeSelector,
+				router:   router,
+				logger:   logger,
+				tag:      tag,
+			},
+			options: options.GroupCommonOption,
 		},
-		tags:       options.Outbounds,
 		defaultTag: options.Default,
-		outbounds:  make(map[string]adapter.Outbound),
 	}
-	if len(outbound.tags) == 0 {
-		return nil, E.New("missing tags")
-	}
-	return outbound, nil
+	return selector, nil
 }
 
 func (s *Selector) Network() []string {
@@ -52,19 +49,14 @@ func (s *Selector) Network() []string {
 }
 
 func (s *Selector) Start() error {
-	for i, tag := range s.tags {
-		detour, loaded := s.router.Outbound(tag)
-		if !loaded {
-			return E.New("outbound ", i, " not found: ", tag)
-		}
-		s.outbounds[tag] = detour
+	if err := s.initProviders(); err != nil {
+		return err
 	}
-
 	if s.tag != "" {
 		if clashServer := s.router.ClashServer(); clashServer != nil && clashServer.StoreSelected() {
 			selected := clashServer.CacheFile().LoadSelected(s.tag)
 			if selected != "" {
-				detour, loaded := s.outbounds[selected]
+				detour, loaded := s.Outbound(selected)
 				if loaded {
 					s.selected = detour
 					return nil
@@ -74,7 +66,7 @@ func (s *Selector) Start() error {
 	}
 
 	if s.defaultTag != "" {
-		detour, loaded := s.outbounds[s.defaultTag]
+		detour, loaded := s.Outbound(s.defaultTag)
 		if !loaded {
 			return E.New("default outbound not found: ", s.defaultTag)
 		}
@@ -82,7 +74,7 @@ func (s *Selector) Start() error {
 		return nil
 	}
 
-	s.selected = s.outbounds[s.tags[0]]
+	s.selected = s.Outbounds()[0]
 	return nil
 }
 
@@ -90,12 +82,8 @@ func (s *Selector) Now() string {
 	return s.selected.Tag()
 }
 
-func (s *Selector) All() []string {
-	return s.tags
-}
-
 func (s *Selector) SelectOutbound(tag string) bool {
-	detour, loaded := s.outbounds[tag]
+	detour, loaded := s.Outbound(tag)
 	if !loaded {
 		return false
 	}
@@ -125,11 +113,4 @@ func (s *Selector) NewConnection(ctx context.Context, conn net.Conn, metadata ad
 
 func (s *Selector) NewPacketConnection(ctx context.Context, conn N.PacketConn, metadata adapter.InboundContext) error {
 	return s.selected.NewPacketConnection(ctx, conn, metadata)
-}
-
-func RealTag(detour adapter.Outbound) string {
-	if group, isGroup := detour.(adapter.OutboundGroup); isGroup {
-		return group.Now()
-	}
-	return detour.Tag()
 }

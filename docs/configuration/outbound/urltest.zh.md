@@ -10,6 +10,10 @@
     "proxy-b",
     "proxy-c"
   ],
+  "providers": [
+    "provider-a",
+    "provider-b",
+  ],
   "url": "http://www.gstatic.com/generate_204",
   "interval": "1m",
   "tolerance": 50
@@ -20,9 +24,11 @@
 
 #### outbounds
 
-==必填==
-
 用于测试的出站标签列表。
+
+#### providers
+
+用于测试的[订阅](/zh/configuration/provider)标签列表。
 
 #### url
 

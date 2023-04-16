@@ -25,6 +25,7 @@ type _Outbound struct {
 	VLESSOptions        VLESSOutboundOptions        `json:"-"`
 	SelectorOptions     SelectorOutboundOptions     `json:"-"`
 	URLTestOptions      URLTestOutboundOptions      `json:"-"`
+	LoadBalanceOptions  LoadBalanceOutboundOptions  `json:"-"`
 }
 
 type Outbound _Outbound
@@ -64,6 +65,8 @@ func (h Outbound) MarshalJSON() ([]byte, error) {
 		v = h.SelectorOptions
 	case C.TypeURLTest:
 		v = h.URLTestOptions
+	case C.TypeLoadBalance:
+		v = h.LoadBalanceOptions
 	default:
 		return nil, E.New("unknown outbound type: ", h.Type)
 	}
@@ -109,6 +112,8 @@ func (h *Outbound) UnmarshalJSON(bytes []byte) error {
 		v = &h.SelectorOptions
 	case C.TypeURLTest:
 		v = &h.URLTestOptions
+	case C.TypeLoadBalance:
+		v = &h.LoadBalanceOptions
 	default:
 		return E.New("unknown outbound type: ", h.Type)
 	}
@@ -121,6 +126,7 @@ func (h *Outbound) UnmarshalJSON(bytes []byte) error {
 
 type DialerOptions struct {
 	Detour             string         `json:"detour,omitempty"`
+	DetourRedirectable bool           `json:"detour_redir,omitempty"`
 	BindInterface      string         `json:"bind_interface,omitempty"`
 	Inet4BindAddress   *ListenAddress `json:"inet4_bind_address,omitempty"`
 	Inet6BindAddress   *ListenAddress `json:"inet6_bind_address,omitempty"`

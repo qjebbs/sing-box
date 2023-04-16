@@ -10,6 +10,10 @@
     "proxy-b",
     "proxy-c"
   ],
+  "providers": [
+    "provider-a",
+    "provider-b",
+  ],
   "url": "http://www.gstatic.com/generate_204",
   "interval": "1m",
   "tolerance": 50
@@ -20,9 +24,11 @@
 
 #### outbounds
 
-==Required==
-
 List of outbound tags to test.
+
+#### outbounds
+
+List of [Provider](/configuration/provider) tags to test.
 
 #### url
 

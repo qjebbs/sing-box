@@ -26,6 +26,12 @@
 
 The tag of the upstream outbound.
 
+#### detour_redir
+
+The upstream outbound redirection is allowed.
+It is mainly used in conjunction with health checks, 
+see the `detour_of` field of the health check.
+
 #### bind_interface
 
 The network interface to bind to.

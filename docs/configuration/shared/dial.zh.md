@@ -3,6 +3,7 @@
 ```json
 {
   "detour": "upstream-out",
+  "detour_redir": false,
   "bind_interface": "en0",
   "inet4_bind_address": "0.0.0.0",
   "inet6_bind_address": "::",
@@ -28,6 +29,10 @@
 上游出站的标签。
 
 启用时，其他拨号字段将被忽略。
+
+#### detour_redir
+
+上游出站允许被重定向。主要用于配合健康检查使用，参见健康检查的 `detour_of` 字段。
 
 #### bind_interface
 

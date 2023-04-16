@@ -7,8 +7,13 @@ import (
 	C "github.com/sagernet/sing-box/constant"
 	"github.com/sagernet/sing-box/log"
 	"github.com/sagernet/sing-box/option"
+	"github.com/sagernet/sing-box/outbound/outbound"
 	E "github.com/sagernet/sing/common/exceptions"
 )
+
+func init() {
+	outbound.Builder = New
+}
 
 func New(ctx context.Context, router adapter.Router, logger log.ContextLogger, tag string, options option.Outbound) (adapter.Outbound, error) {
 	var metadata *adapter.InboundContext
@@ -55,6 +60,8 @@ func New(ctx context.Context, router adapter.Router, logger log.ContextLogger, t
 		return NewSelector(router, logger, tag, options.SelectorOptions)
 	case C.TypeURLTest:
 		return NewURLTest(router, logger, tag, options.URLTestOptions)
+	case C.TypeLoadBalance:
+		return NewLoadBalance(router, logger, options.Tag, options.LoadBalanceOptions)
 	default:
 		return nil, E.New("unknown outbound type: ", options.Type)
 	}
