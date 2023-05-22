@@ -19,7 +19,9 @@ require (
 	github.com/miekg/dns v1.1.55
 	github.com/ooni/go-libtor v1.1.8
 	github.com/oschwald/maxminddb-golang v1.12.0
+	github.com/pelletier/go-toml v1.9.5
 	github.com/pires/go-proxyproto v0.7.0
+	github.com/qjebbs/go-jsons v0.0.0-20221222033332-a534c5fc1c4c
 	github.com/sagernet/cloudflare-tls v0.0.0-20221031050923-d70792f4c3a0
 	github.com/sagernet/gomobile v0.0.0-20230728014906-3de089147f59
 	github.com/sagernet/gvisor v0.0.0-20230627031050-1ab0276e0dd2
@@ -50,6 +52,7 @@ require (
 	golang.zx2c4.com/wireguard/wgctrl v0.0.0-20230429144221-925a1e7659e6
 	google.golang.org/grpc v1.57.0
 	google.golang.org/protobuf v1.31.0
+	gopkg.in/yaml.v3 v3.0.1
 	howett.net/plist v1.0.0
 )
 
@@ -93,6 +96,5 @@ require (
 	golang.org/x/tools v0.12.1-0.20230815132531-74c255bcf846 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20230525234030-28d5490b6b19 // indirect
 	gopkg.in/check.v1 v1.0.0-20200227125254-8fa46927fb4f // indirect
-	gopkg.in/yaml.v3 v3.0.1 // indirect
 	lukechampine.com/blake3 v1.2.1 // indirect
 )
