@@ -37,7 +37,7 @@ type ShadowsocksR struct {
 }
 
 func NewShadowsocksR(ctx context.Context, router adapter.Router, logger log.ContextLogger, tag string, options option.ShadowsocksROutboundOptions) (*ShadowsocksR, error) {
-	outboundDialer, err := dialer.New(router, options.DialerOptions)
+	outboundDialer, err := dialer.NewRedirectable(router, options.DialerOptions)
 	if err != nil {
 		return nil, err
 	}

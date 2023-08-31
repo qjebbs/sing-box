@@ -193,7 +193,11 @@ func writeGroups(writer io.Writer, boxService *BoxService) error {
 			var item OutboundGroupItem
 			item.Tag = itemTag
 			item.Type = itemOutbound.Type()
-			if history := historyStorage.LoadURLTestHistory(adapter.OutboundTag(itemOutbound)); history != nil {
+			real, err := adapter.RealOutbound(boxService.instance.Router(), itemOutbound)
+			if err != nil {
+				return err
+			}
+			if history := historyStorage.LoadURLTestHistory(real.Tag()); history != nil {
 				item.URLTestTime = history.Time.Unix()
 				item.URLTestDelay = int32(history.Delay)
 			}

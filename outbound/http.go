@@ -26,7 +26,7 @@ type HTTP struct {
 }
 
 func NewHTTP(router adapter.Router, logger log.ContextLogger, tag string, options option.HTTPOutboundOptions) (*HTTP, error) {
-	outboundDialer, err := dialer.New(router, options.DialerOptions)
+	outboundDialer, err := dialer.NewRedirectable(router, tag, options.DialerOptions)
 	if err != nil {
 		return nil, err
 	}

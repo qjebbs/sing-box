@@ -11,7 +11,6 @@ import (
 	"github.com/sagernet/sing-box/adapter"
 	"github.com/sagernet/sing-box/common/badjson"
 	"github.com/sagernet/sing-box/common/urltest"
-	"github.com/sagernet/sing-box/outbound"
 	"github.com/sagernet/sing/common"
 	"github.com/sagernet/sing/common/batch"
 
@@ -82,8 +81,10 @@ func getGroupDelay(server *Server) func(w http.ResponseWriter, r *http.Request) 
 		defer cancel()
 
 		var result map[string]uint16
-		if urlTestGroup, isURLTestGroup := group.(adapter.URLTestGroup); isURLTestGroup {
-			result, err = urlTestGroup.URLTest(ctx, url)
+		if urlTestGroup, isURLTestGroup := group.(adapter.OutboundCheckGroup); isURLTestGroup {
+			// url parameter is applied as a default value for non-OutboundCheckGroup,
+			// it's ignored here
+			result, err = urlTestGroup.CheckAll(ctx)
 		} else {
 			outbounds := common.FilterNotNil(common.Map(group.All(), func(it string) adapter.Outbound {
 				itOutbound, _ := server.router.Outbound(it)
@@ -95,7 +96,13 @@ func getGroupDelay(server *Server) func(w http.ResponseWriter, r *http.Request) 
 			var resultAccess sync.Mutex
 			for _, detour := range outbounds {
 				tag := detour.Tag()
-				realTag := outbound.RealTag(detour)
+				realOutbound, err := adapter.RealOutbound(server.router, detour)
+				if err != nil {
+					render.Status(r, http.StatusInternalServerError)
+					render.JSON(w, r, ErrServerError)
+					return
+				}
+				realTag := realOutbound.Tag()
 				if checked[realTag] {
 					continue
 				}

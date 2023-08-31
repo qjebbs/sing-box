@@ -10,6 +10,10 @@
     "proxy-b",
     "proxy-c"
   ],
+  "providers": [
+    "provider-a",
+    "provider-b",
+  ],
   "default": "proxy-c"
 }
 ```
@@ -22,9 +26,11 @@
 
 #### outbounds
 
-==必填==
-
 用于选择的出站标签列表。
+
+#### providers
+
+用于选择的[订阅](/zh/configuration/provider)标签列表。
 
 #### default
 

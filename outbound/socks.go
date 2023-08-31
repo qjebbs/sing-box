@@ -37,7 +37,7 @@ func NewSocks(router adapter.Router, logger log.ContextLogger, tag string, optio
 	if err != nil {
 		return nil, err
 	}
-	outboundDialer, err := dialer.New(router, options.DialerOptions)
+	outboundDialer, err := dialer.NewRedirectable(router,tag, options.DialerOptions)
 	if err != nil {
 		return nil, err
 	}

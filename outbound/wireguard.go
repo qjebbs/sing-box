@@ -16,7 +16,7 @@ import (
 	"github.com/sagernet/sing-box/log"
 	"github.com/sagernet/sing-box/option"
 	"github.com/sagernet/sing-box/transport/wireguard"
-	"github.com/sagernet/sing-tun"
+	tun "github.com/sagernet/sing-tun"
 	"github.com/sagernet/sing/common"
 	"github.com/sagernet/sing/common/debug"
 	E "github.com/sagernet/sing/common/exceptions"
@@ -65,7 +65,7 @@ func NewWireGuard(ctx context.Context, router adapter.Router, logger log.Context
 			connectAddr = options.ServerOptions.Build()
 		}
 	}
-	outboundDialer, err := dialer.New(router, options.DialerOptions)
+	outboundDialer, err := dialer.NewRedirectable(router, tag, options.DialerOptions)
 	if err != nil {
 		return nil, err
 	}

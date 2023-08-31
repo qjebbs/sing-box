@@ -10,6 +10,10 @@
     "proxy-b",
     "proxy-c"
   ],
+  "providers": [
+    "provider-a",
+    "provider-b",
+  ],
   "default": "proxy-c"
 }
 ```
@@ -22,9 +26,11 @@
 
 #### outbounds
 
-==Required==
-
 List of outbound tags to select.
+
+#### outbounds
+
+List of [Provider](/configuration/provider) tags to select.
 
 #### default
 
