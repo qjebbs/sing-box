@@ -8,6 +8,14 @@ The universal proxy platform.
 
 https://sing-box.sagernet.org
 
+Documentation for extended features
+
+- Providers: [中文](./docs/configuration/provider/index.zh.md), [English](./docs/configuration/provider/index.md)
+- Load Balance: [中文](./docs/configuration/outbound/loadbalance.zh.md), [English](./docs/configuration/outbound/loadbalance.md)
+- Muiltifile Configuration Extended: [中文](./docs/configuration/index.zh.md), [English](./docs/configuration/index.md)
+    
+    > Config flags have been changed since the last update, which adopt the upstream style & logic. To use the extended features, please add the extra flag `-E`. See the link above for more details.
+
 ## Support
 
 https://community.sagernet.org/c/sing-box/
