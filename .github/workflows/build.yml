@@ -1,18 +1,7 @@
 name: Debug build
 
 on:
-  push:
-    branches:
-      - main-next
-      - dev-next
-    paths-ignore:
-      - '**.md'
-      - '.github/**'
-      - '!.github/workflows/debug.yml'
-  pull_request:
-    branches:
-      - main-next
-      - dev-next
+  workflow_dispatch:
 
 jobs:
   build:
