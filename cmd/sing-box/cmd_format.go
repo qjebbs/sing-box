@@ -33,6 +33,9 @@ func init() {
 }
 
 func format() error {
+	if configMergeExtended {
+		return E.New("format does not support extended config")
+	}
 	optionsList, err := readConfig()
 	if err != nil {
 		return err
