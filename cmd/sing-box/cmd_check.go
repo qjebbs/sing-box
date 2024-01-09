@@ -2,12 +2,17 @@ package main
 
 import (
 	"context"
+	"fmt"
+	"os"
 
-	"github.com/sagernet/sing-box"
+	box "github.com/sagernet/sing-box"
 	"github.com/sagernet/sing-box/log"
+	"github.com/sagernet/sing/common/json"
 
 	"github.com/spf13/cobra"
 )
+
+var checkVerbose bool
 
 var commandCheck = &cobra.Command{
 	Use:   "check",
@@ -22,6 +27,7 @@ var commandCheck = &cobra.Command{
 }
 
 func init() {
+	commandCheck.Flags().BoolVarP(&checkVerbose, "verbose", "v", false, "verbose output")
 	mainCommand.AddCommand(commandCheck)
 }
 
@@ -29,6 +35,12 @@ func check() error {
 	options, err := readConfigAndMerge()
 	if err != nil {
 		return err
+	}
+	if checkVerbose {
+		fmt.Fprintln(os.Stderr, "configuration:")
+		encoder := json.NewEncoder(os.Stdout)
+		encoder.SetIndent("", "  ")
+		encoder.Encode(options)
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	instance, err := box.New(box.Options{

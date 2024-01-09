@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"os"
 	"os/signal"
@@ -12,7 +13,8 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/sagernet/sing-box"
+	box "github.com/sagernet/sing-box"
+	"github.com/sagernet/sing-box/common/jsonsmerge"
 	C "github.com/sagernet/sing-box/constant"
 	"github.com/sagernet/sing-box/log"
 	"github.com/sagernet/sing-box/option"
@@ -71,6 +73,9 @@ func readConfigAt(path string) (*OptionsEntry, error) {
 func readConfig() ([]*OptionsEntry, error) {
 	var optionsList []*OptionsEntry
 	for _, path := range configPaths {
+		if !strings.HasSuffix(path, ".json") {
+			return nil, E.New("unsupported file extension: ", path)
+		}
 		optionsEntry, err := readConfigAt(path)
 		if err != nil {
 			return nil, err
@@ -100,6 +105,13 @@ func readConfig() ([]*OptionsEntry, error) {
 }
 
 func readConfigAndMerge() (option.Options, error) {
+	if configMergeExtended {
+		return jsonsMerge()
+	}
+	return badjsonMerge()
+}
+
+func badjsonMerge() (option.Options, error) {
 	optionsList, err := readConfig()
 	if err != nil {
 		return option.Options{}, err
@@ -120,6 +132,19 @@ func readConfigAndMerge() (option.Options, error) {
 		return option.Options{}, E.Cause(err, "unmarshal merged config")
 	}
 	return mergedOptions, nil
+}
+
+func jsonsMerge() (option.Options, error) {
+	c, err := jsonsmerge.Files(configPaths, configDirectories)
+	if err != nil {
+		return option.Options{}, err
+	}
+	var options option.Options
+	err = options.UnmarshalJSON(c)
+	if err != nil {
+		return option.Options{}, fmt.Errorf("decode config: %w\n%s", err, string(c))
+	}
+	return options, nil
 }
 
 func create() (*box.Box, context.CancelFunc, error) {
