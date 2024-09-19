@@ -11,7 +11,8 @@ import (
 	C "github.com/sagernet/sing-box/constant"
 	"github.com/sagernet/sing-box/log"
 	"github.com/sagernet/sing-box/option"
-	"github.com/sagernet/sing-dns"
+	"github.com/sagernet/sing-box/provider"
+	dns "github.com/sagernet/sing-dns"
 	"github.com/sagernet/sing/common"
 	"github.com/sagernet/sing/common/buf"
 	"github.com/sagernet/sing/common/bufio"
@@ -232,6 +233,87 @@ func CopyEarlyConn(ctx context.Context, conn net.Conn, serverConn net.Conn) erro
 		}
 	}
 	return bufio.CopyConn(ctx, conn, serverConn)
+}
+
+type myOutboundGroupAdapter struct {
+	myOutboundAdapter
+
+	options        option.ProviderGroupCommonOption
+	providers      []adapter.Provider
+	providersByTag map[string]adapter.Provider
+}
+
+func (a *myOutboundGroupAdapter) All() []string {
+	tags := make([]string, 0)
+	for _, p := range a.providers {
+		for _, outbound := range p.Outbounds() {
+			tags = append(tags, outbound.Tag())
+		}
+	}
+	return tags
+}
+
+func (a *myOutboundGroupAdapter) initProviders() error {
+	if len(a.options.Outbounds)+len(a.options.Providers) == 0 {
+		return E.New("missing outbound and provider tags")
+	}
+	outbounds := make([]adapter.Outbound, 0, len(a.options.Outbounds))
+	for _, tag := range a.options.Outbounds {
+		detour, ok := a.router.Outbound(tag)
+		if !ok {
+			return E.New("outbound not found: ", tag)
+		}
+		outbounds = append(outbounds, detour)
+	}
+	providersByTag := make(map[string]adapter.Provider)
+	providers := make([]adapter.Provider, 0, len(a.options.Providers)+1)
+	if len(outbounds) > 0 {
+		providers = append(providers, provider.NewMemory(outbounds))
+	}
+	var err error
+	for _, tag := range a.options.Providers {
+		p, ok := a.router.Provider(tag)
+		if !ok {
+			return E.New("provider not found: ", tag)
+		}
+		if a.options.Exclude != "" || a.options.Include != "" {
+			p, err = provider.NewFiltered(p, a.options.Exclude, a.options.Include)
+			if err != nil {
+				return E.New("failed to create filtered provider: ", err)
+			}
+		}
+		providers = append(providers, p)
+		providersByTag[tag] = p
+	}
+	a.providers = providers
+	a.providersByTag = providersByTag
+	return nil
+}
+
+func (a *myOutboundGroupAdapter) Outbound(tag string) (adapter.Outbound, bool) {
+	for _, p := range a.providers {
+		if outbound, ok := p.Outbound(tag); ok {
+			return outbound, true
+		}
+	}
+	return nil, false
+}
+
+func (a *myOutboundGroupAdapter) Outbounds() []adapter.Outbound {
+	var outbounds []adapter.Outbound
+	for _, p := range a.providers {
+		outbounds = append(outbounds, p.Outbounds()...)
+	}
+	return outbounds
+}
+
+func (a *myOutboundGroupAdapter) Provider(tag string) (adapter.Provider, bool) {
+	provider, ok := a.providersByTag[tag]
+	return provider, ok
+}
+
+func (a *myOutboundGroupAdapter) Providers() []adapter.Provider {
+	return a.providers
 }
 
 func NewError(logger log.ContextLogger, ctx context.Context, err error) {

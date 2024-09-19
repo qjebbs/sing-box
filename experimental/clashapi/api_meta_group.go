@@ -10,7 +10,6 @@ import (
 
 	"github.com/sagernet/sing-box/adapter"
 	"github.com/sagernet/sing-box/common/urltest"
-	"github.com/sagernet/sing-box/outbound"
 	"github.com/sagernet/sing/common"
 	"github.com/sagernet/sing/common/batch"
 	"github.com/sagernet/sing/common/json/badjson"
@@ -78,34 +77,33 @@ func getGroupDelay(server *Server) func(w http.ResponseWriter, r *http.Request) 
 			return
 		}
 
-		ctx, cancel := context.WithTimeout(r.Context(), time.Millisecond*time.Duration(timeout))
-		defer cancel()
-
 		var result map[string]uint16
-		if urlTestGroup, isURLTestGroup := group.(adapter.URLTestGroup); isURLTestGroup {
-			result, err = urlTestGroup.URLTest(ctx)
+		if urlTestGroup, isURLTestGroup := group.(adapter.OutboundCheckGroup); isURLTestGroup {
+			// url parameter is applied as a default value for non-OutboundCheckGroup,
+			// it's ignored here
+			result, err = urlTestGroup.CheckAll(r.Context())
 		} else {
-			outbounds := common.FilterNotNil(common.Map(group.All(), func(it string) adapter.Outbound {
-				itOutbound, _ := server.router.Outbound(it)
-				return itOutbound
-			}))
-			b, _ := batch.New(ctx, batch.WithConcurrencyNum[any](10))
+			b, _ := batch.New(r.Context(), batch.WithConcurrencyNum[any](10))
 			checked := make(map[string]bool)
 			result = make(map[string]uint16)
 			var resultAccess sync.Mutex
-			for _, detour := range outbounds {
+			for _, detour := range group.Outbounds() {
 				tag := detour.Tag()
-				realTag := outbound.RealTag(detour)
+				realOutbound, err := adapter.RealOutbound(detour)
+				if err != nil {
+					render.Status(r, http.StatusInternalServerError)
+					render.JSON(w, r, ErrServerError)
+					return
+				}
+				realTag := realOutbound.Tag()
 				if checked[realTag] {
 					continue
 				}
 				checked[realTag] = true
-				p, loaded := server.router.Outbound(realTag)
-				if !loaded {
-					continue
-				}
 				b.Go(realTag, func() (any, error) {
-					t, err := urltest.URLTest(ctx, url, p)
+					ctx, cancel := context.WithTimeout(r.Context(), time.Millisecond*time.Duration(timeout))
+					defer cancel()
+					t, err := urltest.URLTest(ctx, url, detour)
 					if err != nil {
 						server.logger.Debug("outbound ", tag, " unavailable: ", err)
 						server.urlTestHistory.DeleteURLTestHistory(realTag)

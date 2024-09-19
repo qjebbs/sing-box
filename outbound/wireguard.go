@@ -17,8 +17,8 @@ import (
 	"github.com/sagernet/sing-box/log"
 	"github.com/sagernet/sing-box/option"
 	"github.com/sagernet/sing-box/transport/wireguard"
-	"github.com/sagernet/sing-dns"
-	"github.com/sagernet/sing-tun"
+	dns "github.com/sagernet/sing-dns"
+	tun "github.com/sagernet/sing-tun"
 	"github.com/sagernet/sing/common"
 	E "github.com/sagernet/sing/common/exceptions"
 	M "github.com/sagernet/sing/common/metadata"
@@ -80,7 +80,7 @@ func NewWireGuard(ctx context.Context, router adapter.Router, logger log.Context
 		options.IsWireGuardListener = true
 		outbound.useStdNetBind = true
 	}
-	listener, err := dialer.New(router, options.DialerOptions)
+	listener, err := dialer.NewChainRedirectable(router, tag, options.DialerOptions)
 	if err != nil {
 		return nil, err
 	}

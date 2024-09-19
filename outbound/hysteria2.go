@@ -53,7 +53,7 @@ func NewHysteria2(ctx context.Context, router adapter.Router, logger log.Context
 			return nil, E.New("unknown obfs type: ", options.Obfs.Type)
 		}
 	}
-	outboundDialer, err := dialer.New(router, options.DialerOptions)
+	outboundDialer, err := dialer.NewChainRedirectable(router, tag, options.DialerOptions)
 	if err != nil {
 		return nil, err
 	}

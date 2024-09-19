@@ -1,3 +1,7 @@
+// !!! DO NOT USE THIS FILE !!!
+// This file is kept for avoiding code conflicts with the upstream project.
+// It is not used in this project.
+
 package outbound
 
 import (
@@ -23,8 +27,8 @@ import (
 )
 
 var (
-	_ adapter.Outbound                = (*URLTest)(nil)
-	_ adapter.OutboundGroup           = (*URLTest)(nil)
+	_ adapter.Outbound = (*URLTest)(nil)
+	// _ adapter.OutboundGroup           = (*URLTest)(nil)
 	_ adapter.InterfaceUpdateListener = (*URLTest)(nil)
 )
 
