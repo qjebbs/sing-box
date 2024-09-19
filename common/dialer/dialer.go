@@ -5,13 +5,23 @@ import (
 
 	"github.com/sagernet/sing-box/adapter"
 	"github.com/sagernet/sing-box/option"
-	"github.com/sagernet/sing-dns"
+	dns "github.com/sagernet/sing-dns"
+	E "github.com/sagernet/sing/common/exceptions"
 	N "github.com/sagernet/sing/common/network"
 )
 
 func New(router adapter.Router, options option.DialerOptions) (N.Dialer, error) {
+	return new(router, options, "")
+}
+
+func NewChainRedirectable(router adapter.Router, tag string, options option.DialerOptions) (N.Dialer, error) {
+	return new(router, options, tag)
+}
+
+func new(router adapter.Router, options option.DialerOptions, redirectableTag string) (N.Dialer, error) {
+	detourable := true
 	if options.IsWireGuardListener {
-		return NewDefault(router, options)
+		detourable = false
 	}
 	if router == nil {
 		return NewDefault(nil, options)
@@ -25,8 +35,20 @@ func New(router adapter.Router, options option.DialerOptions) (N.Dialer, error) 
 		if err != nil {
 			return nil, err
 		}
+		if redirectableTag != "" {
+			dialer = NewChainRedirectDialer(redirectableTag, detourable, dialer, dialer)
+		}
+	} else if !detourable {
+		return nil, E.New("[", redirectableTag, "] ", "detour is not supported")
 	} else {
 		dialer = NewDetour(router, options.Detour)
+		if redirectableTag != "" {
+			defDialer, err := NewDefault(router, options)
+			if err != nil {
+				return nil, err
+			}
+			dialer = NewChainRedirectDialer(redirectableTag, true, dialer, defDialer)
+		}
 	}
 	if options.Detour == "" {
 		dialer = NewResolveDialer(

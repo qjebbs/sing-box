@@ -47,7 +47,7 @@ func (s *CommandServer) handleSelectOutbound(conn net.Conn) error {
 	if !isLoaded {
 		return writeError(conn, E.New("selector not found: ", groupTag))
 	}
-	selector, isSelector := outboundGroup.(*outbound.Selector)
+	selector, isSelector := outboundGroup.(*outbound.SelectorProvider)
 	if !isSelector {
 		return writeError(conn, E.New("outbound is not a selector: ", groupTag))
 	}

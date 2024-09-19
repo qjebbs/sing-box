@@ -1,13 +1,13 @@
 package libbox
 
 import (
+	"context"
 	"encoding/binary"
 	"net"
 	"time"
 
 	"github.com/sagernet/sing-box/adapter"
 	"github.com/sagernet/sing-box/common/urltest"
-	"github.com/sagernet/sing-box/outbound"
 	"github.com/sagernet/sing/common"
 	"github.com/sagernet/sing/common/batch"
 	E "github.com/sagernet/sing/common/exceptions"
@@ -49,9 +49,9 @@ func (s *CommandServer) handleURLTest(conn net.Conn) error {
 	if !isOutboundGroup {
 		return writeError(conn, E.New("outbound is not a group: ", groupTag))
 	}
-	urlTest, isURLTest := abstractOutboundGroup.(*outbound.URLTest)
+	urlTest, isURLTest := abstractOutboundGroup.(adapter.OutboundCheckGroup)
 	if isURLTest {
-		go urlTest.CheckOutbounds()
+		go urlTest.CheckAll(context.Background())
 	} else {
 		historyStorage := service.PtrFromContext[urltest.HistoryStorage](serviceNow.ctx)
 		outbounds := common.Filter(common.Map(outboundGroup.All(), func(it string) adapter.Outbound {

@@ -58,7 +58,7 @@ func NewTUIC(ctx context.Context, router adapter.Router, logger log.ContextLogge
 	case "quic":
 		tuicUDPStream = true
 	}
-	outboundDialer, err := dialer.New(router, options.DialerOptions)
+	outboundDialer, err := dialer.NewChainRedirectable(router, tag, options.DialerOptions)
 	if err != nil {
 		return nil, err
 	}

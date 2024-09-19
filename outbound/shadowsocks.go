@@ -11,7 +11,7 @@ import (
 	"github.com/sagernet/sing-box/log"
 	"github.com/sagernet/sing-box/option"
 	"github.com/sagernet/sing-box/transport/sip003"
-	"github.com/sagernet/sing-shadowsocks2"
+	shadowsocks "github.com/sagernet/sing-shadowsocks2"
 	"github.com/sagernet/sing/common"
 	"github.com/sagernet/sing/common/bufio"
 	E "github.com/sagernet/sing/common/exceptions"
@@ -39,7 +39,7 @@ func NewShadowsocks(ctx context.Context, router adapter.Router, logger log.Conte
 	if err != nil {
 		return nil, err
 	}
-	outboundDialer, err := dialer.New(router, options.DialerOptions)
+	outboundDialer, err := dialer.NewChainRedirectable(router, tag, options.DialerOptions)
 	if err != nil {
 		return nil, err
 	}

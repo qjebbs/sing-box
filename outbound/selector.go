@@ -1,3 +1,7 @@
+// !!! DO NOT USE THIS FILE !!!
+// This file is kept for avoiding code conflicts with the upstream project.
+// It is not used in this project.
+
 package outbound
 
 import (
@@ -16,8 +20,8 @@ import (
 )
 
 var (
-	_ adapter.Outbound      = (*Selector)(nil)
-	_ adapter.OutboundGroup = (*Selector)(nil)
+	_ adapter.Outbound = (*Selector)(nil)
+	// _ adapter.OutboundGroup = (*Selector)(nil)
 )
 
 type Selector struct {
@@ -152,9 +156,10 @@ func (s *Selector) NewPacketConnection(ctx context.Context, conn N.PacketConn, m
 	return s.selected.NewPacketConnection(ctx, conn, metadata)
 }
 
-func RealTag(detour adapter.Outbound) string {
-	if group, isGroup := detour.(adapter.OutboundGroup); isGroup {
-		return group.Now()
+func RealTag(outbound adapter.Outbound) string {
+	r, err := adapter.RealOutbound(outbound)
+	if err != nil {
+		return outbound.Tag()
 	}
-	return detour.Tag()
+	return r.Tag()
 }

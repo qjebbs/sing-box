@@ -121,7 +121,7 @@ func writeGroups(writer io.Writer, boxService *BoxService) error {
 		var group OutboundGroup
 		group.Tag = iGroup.Tag()
 		group.Type = iGroup.Type()
-		_, group.Selectable = iGroup.(*outbound.Selector)
+		_, group.Selectable = iGroup.(*outbound.SelectorProvider)
 		group.Selected = iGroup.Now()
 		if cacheFile != nil {
 			if isExpand, loaded := cacheFile.LoadGroupExpand(group.Tag); loaded {
@@ -138,7 +138,11 @@ func writeGroups(writer io.Writer, boxService *BoxService) error {
 			var item OutboundGroupItem
 			item.Tag = itemTag
 			item.Type = itemOutbound.Type()
-			if history := historyStorage.LoadURLTestHistory(adapter.OutboundTag(itemOutbound)); history != nil {
+			real, err := adapter.RealOutbound(itemOutbound)
+			if err != nil {
+				return err
+			}
+			if history := historyStorage.LoadURLTestHistory(real.Tag()); history != nil {
 				item.URLTestTime = history.Time.Unix()
 				item.URLTestDelay = int32(history.Delay)
 			}
