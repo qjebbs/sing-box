@@ -1,5 +1,4 @@
 name: Build SFA
-
 on:
   push:
   workflow_dispatch:
