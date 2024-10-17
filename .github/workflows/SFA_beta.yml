@@ -1,0 +1,119 @@
+name: Build SFA beta test
+
+on:
+  push:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    env:
+      TAGS: "with_quic,with_dhcp,with_wireguard,with_shadowsocksr,with_ech,with_utls,with_reality_server,with_clash_api,with_v2ray_api,with_gvisor"
+
+    steps:
+      - uses: actions/checkout@v4.1.1
+        with:
+          fetch-depth: 0
+
+      - name: Get latest go version
+        id: go_version
+        run: |
+          echo go_version=$(curl -s https://raw.githubusercontent.com/actions/go-versions/update-versions-manifest-file/versions-manifest.json | grep -oE '"version": "[0-9]{1}.[0-9]{1,}(.[0-9]{1,})?"' | head -1 | cut -d':' -f2 | sed 's/ //g; s/"//g') >> $GITHUB_OUTPUT
+      - name: Get latest build tools version
+        id: sdk
+        run: echo version=$(ls $ANDROID_HOME/build-tools | tail -n 1) >> $GITHUB_OUTPUT
+
+      - name: Setup Go
+        uses: actions/setup-go@v4.1.0
+        with:
+          go-version: ${{ steps.go_version.outputs.go_version }}
+
+      - name: Checkout SFA Repository
+        uses: actions/checkout@v4.1.1
+        with:
+          repository: SagerNet/sing-box-for-android
+          path: SFA
+          submodules: recursive
+
+      - name: Setup Java
+        uses: actions/setup-java@v3
+        with:
+          distribution: 'oracle'
+          java-version: 20
+
+      - name: Setup NDK
+        uses: nttld/setup-ndk@v1
+        id: setup-ndk
+        with:
+          ndk-version: r26b
+          add-to-path: false
+          local-cache: false
+
+      - name: Build SFA
+        env:
+          ANDROID_NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
+        run: |
+          git remote add sekai https://github.com/SagerNet/sing-box
+          git fetch sekai
+          mkdir -p SFA/app/libs/
+          make lib_install
+          version=$(CGO_ENABLED=0 go run ./cmd/internal/read_tag)
+          CC=${ANDROID_NDK_HOME}/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android34-clang
+          CGO_ENABLED=0 gomobile bind -v -a -trimpath -androidapi 21 -javapkg=io.nekohasekai -libname=box -tags ${TAGS} -ldflags "-X github.com/sagernet/sing-box/constant.Version=${version} -s -w -buildid=" ./experimental/libbox
+          cp ./libbox.aar SFA/app/libs/
+          cd SFA
+          echo "" >> gradle.properties
+          echo "org.gradle.jvmargs=-Xmx4096m -Dfile.encoding=UTF-8 -XX:+UseParallelGC" >> gradle.properties
+          echo "org.gradle.caching=true" >> gradle.properties
+          echo "org.gradle.parallel=true" >> gradle.properties
+          echo "VERSION_NAME=${version}" > local.properties
+          echo "VERSION_CODE=$(date +%Y%m%d%H)" >> local.properties
+          sed -i '/signingConfigs\.release/d' app/build.gradle
+          chmod +x ./gradlew
+          ./gradlew assembleRelease --debug
+      
+      - name: Sign SFA
+        uses: PuerNya/sign-android-release@v2.0.4
+        env:
+          BUILD_TOOLS_VERSION: ${{steps.sdk.outputs.version}}
+        with:
+          releaseDirectory: SFA/app/build/outputs/apk/other/release
+          signingKeyBase64: ${{ secrets.SIGNING_KEY }}
+          alias: ${{ secrets.ALIAS }}
+          keyStorePassword: ${{ secrets.KEY_STORE_PASSWORD }}
+
+      - name: Upload arm64-v8a artifact
+        uses: actions/upload-artifact@v4.1.0
+        with:
+          name: SFA-arm64-v8a
+          path: SFA/app/build/outputs/apk/other/release/*-arm64-v8a-signed.apk
+          compression-level: 9
+
+      - name: Upload armeabi-v7a artifact
+        uses: actions/upload-artifact@v4.1.0
+        with:
+          name: SFA-armeabi-v7a
+          path: SFA/app/build/outputs/apk/other/release/*-armeabi-v7a-signed.apk
+          compression-level: 9
+
+      - name: Upload x86_64 artifact
+        uses: actions/upload-artifact@v4.1.0
+        with:
+          name: SFA-x86_64
+          path: SFA/app/build/outputs/apk/other/release/*-x86_64-signed.apk
+          compression-level: 9
+
+      - name: Upload x86 artifact
+        uses: actions/upload-artifact@v4.1.0
+        with:
+          name: SFA-x86
+          path: SFA/app/build/outputs/apk/other/release/*-x86-signed.apk
+          compression-level: 9
+
+      - name: Upload universal artifact
+        uses: actions/upload-artifact@v4.1.0
+        with:
+          name: SFA-universal
+          path: SFA/app/build/outputs/apk/other/release/*-universal-signed.apk
+          compression-level: 9
+Build 1.11.0-alpha.1(Push) · jasmoli/sing-box@4c2a2d8
