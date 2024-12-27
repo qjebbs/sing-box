@@ -337,10 +337,12 @@ func (s *Remote) downloadWithCache() (*fileContent, error) {
 	if s.cacheFile == "" {
 		return nil, err
 	}
-	if fc, errCache := loadCache(s.cacheFile); errCache == nil {
+	fc, err = loadCache(s.cacheFile)
+	if err == nil {
 		s.logger.Info("cache file loaded due to: ", err)
 		return fc, nil
 	}
+	s.logger.Error(E.Cause(err, "load cache file"))
 	return nil, err
 }
 
