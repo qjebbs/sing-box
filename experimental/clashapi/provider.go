@@ -7,7 +7,6 @@ import (
 
 	"github.com/sagernet/sing-box/adapter"
 	"github.com/sagernet/sing-box/common/urltest"
-	"github.com/sagernet/sing-box/provider"
 	"github.com/sagernet/sing/common/batch"
 	"github.com/sagernet/sing/common/json/badjson"
 
@@ -20,7 +19,7 @@ func proxyProviderRouter(server *Server) http.Handler {
 	r.Get("/", getProviders(server))
 
 	r.Route("/{name}", func(r chi.Router) {
-		r.Use(parseProviderName, findProviderByName(server.router))
+		r.Use(parseProviderName, findProviderByName(server))
 		r.Get("/", getProvider)
 		r.Put("/", updateProvider)
 		r.Get("/healthcheck", checkProvider(server))
@@ -31,7 +30,7 @@ func proxyProviderRouter(server *Server) http.Handler {
 func getProviders(server *Server) func(w http.ResponseWriter, r *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var responseMap, providersMap badjson.JSONObject
-		for _, provider := range server.router.Providers() {
+		for _, provider := range server.provider.Providers() {
 			providersMap.Put(provider.Tag(), providerInfo(server, provider))
 		}
 		responseMap.Put("providers", &providersMap)
@@ -62,7 +61,7 @@ func providerInfo(server *Server, p adapter.Provider) *badjson.JSONObject {
 	info.Put("name", p.Tag())
 	info.Put("proxies", proxies)
 	info.Put("updatedAt", p.UpdatedAt())
-	if p, ok := p.(provider.Infoer); ok {
+	if p, ok := p.(adapter.ProviderInfoer); ok {
 		info.Put("subscriptionInfo", p.Info())
 	}
 	return &info
@@ -83,7 +82,7 @@ func checkProvider(server *Server) func(w http.ResponseWriter, r *http.Request) 
 		b, _ := batch.New(context.Background(), batch.WithConcurrencyNum[map[string]uint16](10))
 		providerName := r.Context().Value(CtxKeyProviderName).(string)
 		providerChecked := false
-		for _, proxy := range server.router.Outbounds() {
+		for _, proxy := range server.outbound.Outbounds() {
 			c, ok := proxy.(adapter.OutboundCheckGroup)
 			if !ok {
 				continue
@@ -155,11 +154,11 @@ func parseProviderName(next http.Handler) http.Handler {
 	})
 }
 
-func findProviderByName(router adapter.Router) func(next http.Handler) http.Handler {
+func findProviderByName(server *Server) func(next http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			name := r.Context().Value(CtxKeyProviderName).(string)
-			provider, exist := router.Provider(name)
+			provider, exist := server.provider.Provider(name)
 			if !exist {
 				render.Status(r, http.StatusNotFound)
 				render.JSON(w, r, ErrNotFound)

@@ -12,6 +12,7 @@ import (
 	"github.com/sagernet/sing-box/option"
 	"github.com/sagernet/sing/common"
 	E "github.com/sagernet/sing/common/exceptions"
+	"github.com/sagernet/sing/common/json/badoption"
 	M "github.com/sagernet/sing/common/metadata"
 	N "github.com/sagernet/sing/common/network"
 )
@@ -22,7 +23,6 @@ var _ adapter.InterfaceUpdateListener = (*Balancer)(nil)
 type Balancer struct {
 	*healthcheck.HealthCheck
 
-	router    adapter.Router
 	providers []adapter.Provider
 	logger    log.ContextLogger
 	options   *option.LoadBalanceOutboundOptions
@@ -43,8 +43,8 @@ type Balancer struct {
 // sampling numbers, etc.
 func New(
 	ctx context.Context,
-	router adapter.Router,
-	providers []adapter.Provider, providersByTag map[string]adapter.Provider,
+	outbound adapter.OutboundManager,
+	providers []adapter.Provider,
 	options *option.LoadBalanceOutboundOptions, logger log.ContextLogger,
 ) (*Balancer, error) {
 	if options == nil {
@@ -98,14 +98,13 @@ func New(
 	}
 
 	if options.Check.Interval == 0 {
-		options.Check.Interval = option.Duration(5 * time.Minute)
+		options.Check.Interval = badoption.Duration(5 * time.Minute)
 	}
 	// healthcheck.New() may apply default values to options, e.g. the `sampling` which
 	// is used to calculate the maxFailRate.
-	hc := healthcheck.New(ctx, router, providers, providersByTag, &options.Check, logger)
+	hc := healthcheck.New(ctx, outbound, providers, &options.Check, logger)
 
 	return &Balancer{
-		router:      router,
 		options:     options,
 		logger:      logger,
 		providers:   providers,

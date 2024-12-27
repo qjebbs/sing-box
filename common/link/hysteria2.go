@@ -112,7 +112,7 @@ func (l *Hysteria2) Outbound() (*option.Outbound, error) {
 	return &option.Outbound{
 		Type: C.TypeHysteria2,
 		Tag:  l.Remarks,
-		Hysteria2Options: option.Hysteria2OutboundOptions{
+		Options: &option.Hysteria2OutboundOptions{
 			ServerOptions: option.ServerOptions{
 				Server:     l.Host,
 				ServerPort: l.Port,

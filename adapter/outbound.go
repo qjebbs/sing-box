@@ -2,8 +2,9 @@ package adapter
 
 import (
 	"context"
-	"net"
 
+	"github.com/sagernet/sing-box/log"
+	"github.com/sagernet/sing-box/option"
 	N "github.com/sagernet/sing/common/network"
 )
 
@@ -15,6 +16,18 @@ type Outbound interface {
 	Network() []string
 	Dependencies() []string
 	N.Dialer
-	NewConnection(ctx context.Context, conn net.Conn, metadata InboundContext) error
-	NewPacketConnection(ctx context.Context, conn N.PacketConn, metadata InboundContext) error
+}
+
+type OutboundRegistry interface {
+	option.OutboundOptionsRegistry
+	CreateOutbound(ctx context.Context, router Router, logger log.ContextLogger, tag string, outboundType string, options any) (Outbound, error)
+}
+
+type OutboundManager interface {
+	Lifecycle
+	Outbounds() []Outbound
+	Outbound(tag string) (Outbound, bool)
+	Default() Outbound
+	Remove(tag string) error
+	Create(ctx context.Context, router Router, logger log.ContextLogger, tag string, outboundType string, options any) error
 }

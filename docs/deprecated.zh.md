@@ -4,6 +4,42 @@ icon: material/delete-alert
 
 # 废弃功能列表
 
+## 1.11.0
+
+#### 旧的特殊出站
+
+旧的特殊出站（`block` / `dns`）已废弃且可以通过规则动作替代，
+参阅 [迁移指南](/migration/#migrate-legacy-special-outbounds-to-rule-actions)。
+
+旧字段将在 sing-box 1.13.0 中被移除。
+
+#### 旧的入站字段
+
+旧的入站字段（`inbound.<sniff/domain_strategy/...>`）已废弃且可以通过规则动作替代，
+参阅 [迁移指南](/migration/#migrate-legacy-inbound-fields-to-rule-actions)。
+
+旧字段将在 sing-box 1.13.0 中被移除。
+
+####  direct 出站中的目标地址覆盖字段
+
+direct 出站中的目标地址覆盖字段（`override_address` / `override_port`）已废弃且可以通过规则动作替代，
+参阅 [迁移指南](/migration/#migrate-destination-override-fields-to-route-options)。
+
+旧字段将在 sing-box 1.13.0 中被移除。
+
+#### WireGuard 出站
+
+WireGuard 出站已废弃且可以通过端点替代，
+参阅 [迁移指南](/migration/#migrate-wireguard-outbound-to-endpoint)。
+
+旧出站将在 sing-box 1.13.0 中被移除。
+
+#### TUN 的 GSO 字段
+
+GSO 对透明代理场景没有优势，已废弃且在 TUN 中不再起作用。
+
+旧字段将在 sing-box 1.13.0 中被移除。
+
 ## 1.10.0
 
 #### Match source 规则项已重命名
@@ -17,7 +53,7 @@ icon: material/delete-alert
 `inet4_route_address` 和 `inet6_route_address` 已合并为 `route_address`，
 `inet4_route_exclude_address` 和 `inet6_route_exclude_address` 已合并为 `route_exclude_address`。
 
-旧字段已废弃，且将在 sing-box 1.11.0 中被移除。
+旧字段将在 sing-box 1.11.0 中被移除。
 
 #### 移除对 go1.18 和 go1.19 的支持
 
@@ -32,7 +68,7 @@ Clash API 中的 `cache_file` 及相关功能已废弃且已迁移到独立的 `
 
 #### GeoIP
 
-GeoIP 已废弃且可能在不久的将来移除。
+GeoIP 已废弃且将在 sing-box 1.12.0 中被移除。
 
 maxmind GeoIP 国家数据库作为 IP 分类数据库，不完全适合流量绕过，
 且现有的实现均存在内存使用大与管理困难的问题。
@@ -42,7 +78,7 @@ sing-box 1.8.0 引入了[规则集](/configuration/rule-set/)，
 
 #### Geosite
 
-Geosite 已废弃且可能在不久的将来移除。
+Geosite 已废弃且将在 sing-box 1.12.0 中被移除。
 
 Geosite，即由 V2Ray 维护的 domain-list-community 项目，作为早期流量绕过解决方案，
 存在着包括缺少维护、规则不准确和管理困难内的大量问题。

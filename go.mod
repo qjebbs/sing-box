@@ -3,7 +3,6 @@ module github.com/sagernet/sing-box
 go 1.20
 
 require (
-	berty.tech/go-libtor v1.0.385
 	github.com/caddyserver/certmagic v0.20.0
 	github.com/cloudflare/circl v1.3.7
 	github.com/cretz/bine v0.2.0
@@ -18,7 +17,6 @@ require (
 	github.com/metacubex/tfo-go v0.0.0-20241006021335-daedaf0ca7aa
 	github.com/mholt/acmez v1.2.0
 	github.com/miekg/dns v1.1.62
-	github.com/ooni/go-libtor v1.1.8
 	github.com/oschwald/maxminddb-golang v1.12.0
 	github.com/pelletier/go-toml v1.9.5
 	github.com/qjebbs/go-jsons v0.0.0-20221222033332-a534c5fc1c4c
@@ -31,15 +29,15 @@ require (
 	github.com/sagernet/gvisor v0.0.0-20241123041152-536d05261cff
 	github.com/sagernet/quic-go v0.48.2-beta.1
 	github.com/sagernet/reality v0.0.0-20230406110435-ee17307e7691
-	github.com/sagernet/sing v0.5.1
-	github.com/sagernet/sing-dns v0.3.0
-	github.com/sagernet/sing-mux v0.2.1
-	github.com/sagernet/sing-quic v0.3.1
+	github.com/sagernet/sing v0.6.0-beta.8
+	github.com/sagernet/sing-dns v0.4.0-beta.1
+	github.com/sagernet/sing-mux v0.3.0-alpha.1
+	github.com/sagernet/sing-quic v0.4.0-alpha.4
 	github.com/sagernet/sing-shadowsocks v0.2.7
 	github.com/sagernet/sing-shadowsocks2 v0.2.0
-	github.com/sagernet/sing-shadowtls v0.1.5
-	github.com/sagernet/sing-tun v0.4.5
-	github.com/sagernet/sing-vmess v0.1.12
+	github.com/sagernet/sing-shadowtls v0.2.0-alpha.2
+	github.com/sagernet/sing-tun v0.6.0-beta.7
+	github.com/sagernet/sing-vmess v0.2.0-beta.1
 	github.com/sagernet/smux v0.0.0-20231208180855-7041f6ea79e7
 	github.com/sagernet/utls v1.6.7
 	github.com/sagernet/wireguard-go v0.0.1-beta.5

@@ -1,6 +1,12 @@
 ---
-icon: material/new-box
+icon: material/alert-decagram
 ---
+
+!!! quote "Changes in sing-box 1.11.0"
+
+    :material-delete-alert: [gso](#gso)  
+    :material-alert-decagram: [route_address_set](#stack)  
+    :material-alert-decagram: [route_exclude_address_set](#stack)
 
 !!! quote "Changes in sing-box 1.10.0"
 
@@ -46,16 +52,7 @@ icon: material/new-box
     "172.18.0.1/30",
     "fdfe:dcba:9876::1/126"
   ],
-  // deprecated
-  "inet4_address": [
-    "172.19.0.1/30"
-  ],
-  // deprecated
-  "inet6_address": [
-    "fdfe:dcba:9876::1/126"
-  ],
   "mtu": 9000,
-  "gso": false,
   "auto_route": true,
   "iproute2_table_index": 2022,
   "iproute2_rule_index": 9000,
@@ -69,26 +66,9 @@ icon: material/new-box
     "::/1",
     "8000::/1"
   ],
-  // deprecated
-  "inet4_route_address": [
-    "0.0.0.0/1",
-    "128.0.0.0/1"
-  ],
-  // deprecated
-  "inet6_route_address": [
-    "::/1",
-    "8000::/1"
-  ],
+  
   "route_exclude_address": [
     "192.168.0.0/16",
-    "fc00::/7"
-  ],
-  // deprecated
-  "inet4_route_exclude_address": [
-    "192.168.0.0/16"
-  ],
-  // deprecated
-  "inet6_route_exclude_address": [
     "fc00::/7"
   ],
   "route_address_set": [
@@ -137,8 +117,31 @@ icon: material/new-box
       "match_domain": []
     }
   },
-  ...
-  // Listen Fields
+
+  // Deprecated
+  "gso": false,
+  "inet4_address": [
+    "172.19.0.1/30"
+  ],
+  "inet6_address": [
+    "fdfe:dcba:9876::1/126"
+  ],
+  "inet4_route_address": [
+    "0.0.0.0/1",
+    "128.0.0.0/1"
+  ],
+  "inet6_route_address": [
+    "::/1",
+    "8000::/1"
+  ],
+  "inet4_route_exclude_address": [
+    "192.168.0.0/16"
+  ],
+  "inet6_route_exclude_address": [
+    "fc00::/7"
+  ],
+  
+  ... // Listen Fields
 }
 ```
 
@@ -166,7 +169,7 @@ IPv4 and IPv6 prefix for the tun interface.
 
 !!! failure "Deprecated in sing-box 1.10.0"
 
-    `inet4_address` is merged to `address` and will be removed in sing-box 1.11.0.
+    `inet4_address` is merged to `address` and will be removed in sing-box 1.12.0.
 
 IPv4 prefix for the tun interface.
 
@@ -174,7 +177,7 @@ IPv4 prefix for the tun interface.
 
 !!! failure "Deprecated in sing-box 1.10.0"
 
-    `inet6_address` is merged to `address` and will be removed in sing-box 1.11.0.
+    `inet6_address` is merged to `address` and will be removed in sing-box 1.12.0.
 
 IPv6 prefix for the tun interface.
 
@@ -183,6 +186,10 @@ IPv6 prefix for the tun interface.
 The maximum transmission unit.
 
 #### gso
+
+!!! failure "Deprecated in sing-box 1.11.0"
+
+    GSO has no advantages for transparent proxy scenarios, is deprecated and no longer works, and will be removed in sing-box 1.12.0.
 
 !!! question "Since sing-box 1.8.0"
 
@@ -243,7 +250,7 @@ use [VPNHotspot](https://github.com/Mygod/VPNHotspot).
 
 !!! question "Since sing-box 1.10.0"
 
-Connection input mark used by `route_address_set` and `route_exclude_address_set`.
+Connection input mark used by `route[_exclude]_address_set` with `auto_redirect`.
 
 `0x2023` is used by default.
 
@@ -251,7 +258,7 @@ Connection input mark used by `route_address_set` and `route_exclude_address_set
 
 !!! question "Since sing-box 1.10.0"
 
-Connection output mark used by `route_address_set` and `route_exclude_address_set`.
+Connection input mark used by `route[_exclude]_address_set` with `auto_redirect`.
 
 `0x2024` is used by default.
 
@@ -284,7 +291,7 @@ Use custom routes instead of default when `auto_route` is enabled.
 
 !!! failure "Deprecated in sing-box 1.10.0"
 
-`inet4_route_address` is deprecated and will be removed in sing-box 1.11.0, please use [route_address](#route_address)
+`inet4_route_address` is deprecated and will be removed in sing-box 1.12.0, please use [route_address](#route_address)
 instead.
 
 Use custom routes instead of default when `auto_route` is enabled.
@@ -293,7 +300,7 @@ Use custom routes instead of default when `auto_route` is enabled.
 
 !!! failure "Deprecated in sing-box 1.10.0"
 
-`inet6_route_address` is deprecated and will be removed in sing-box 1.11.0, please use [route_address](#route_address)
+`inet6_route_address` is deprecated and will be removed in sing-box 1.12.0, please use [route_address](#route_address)
 instead.
 
 Use custom routes instead of default when `auto_route` is enabled.
@@ -308,7 +315,7 @@ Exclude custom routes when `auto_route` is enabled.
 
 !!! failure "Deprecated in sing-box 1.10.0"
 
-`inet4_route_exclude_address` is deprecated and will be removed in sing-box 1.11.0, please
+`inet4_route_exclude_address` is deprecated and will be removed in sing-box 1.12.0, please
 use [route_exclude_address](#route_exclude_address) instead.
 
 Exclude custom routes when `auto_route` is enabled.
@@ -317,36 +324,62 @@ Exclude custom routes when `auto_route` is enabled.
 
 !!! failure "Deprecated in sing-box 1.10.0"
 
-`inet6_route_exclude_address` is deprecated and will be removed in sing-box 1.11.0, please
+`inet6_route_exclude_address` is deprecated and will be removed in sing-box 1.12.0, please
 use [route_exclude_address](#route_exclude_address) instead.
 
 Exclude custom routes when `auto_route` is enabled.
 
 #### route_address_set
 
-!!! question "Since sing-box 1.10.0"
+=== "With `auto_redirect` enabled"
 
-!!! quote ""
+    !!! question "Since sing-box 1.10.0"
 
-    Only supported on Linux with nftables and requires `auto_route` and `auto_redirect` enabled.
+    !!! quote ""
+    
+        Only supported on Linux with nftables and requires `auto_route` and `auto_redirect` enabled.
+    
+    Add the destination IP CIDR rules in the specified rule-sets to the firewall.
+    Unmatched traffic will bypass the sing-box routes.
+    
+    Conflict with `route.default_mark` and `[dialOptions].routing_mark`.
 
-Add the destination IP CIDR rules in the specified rule-sets to the firewall.
-Unmatched traffic will bypass the sing-box routes.
+=== "Without `auto_redirect` enabled"
 
-Conflict with `route.default_mark` and `[dialOptions].routing_mark`.
+    !!! question "Since sing-box 1.11.0"
+    
+    Add the destination IP CIDR rules in the specified rule-sets to routes, equivalent to adding to `route_address`.
+    Unmatched traffic will bypass the sing-box routes.
+
+    Note that it **doesn't work on the Android graphical client** due to
+    the Android VpnService not being able to handle a large number of routes (DeadSystemException),
+    but otherwise it works fine on all command line clients and Apple platforms.
 
 #### route_exclude_address_set
 
-!!! question "Since sing-box 1.10.0"
+=== "With `auto_redirect` enabled"
 
-!!! quote ""
+    !!! question "Since sing-box 1.10.0"
+
+    !!! quote ""
 
     Only supported on Linux with nftables and requires `auto_route` and `auto_redirect` enabled.
 
-Add the destination IP CIDR rules in the specified rule-sets to the firewall.
-Matched traffic will bypass the sing-box routes.
+    Add the destination IP CIDR rules in the specified rule-sets to the firewall.
+    Matched traffic will bypass the sing-box routes.
+    
+    Conflict with `route.default_mark` and `[dialOptions].routing_mark`.
 
-Conflict with `route.default_mark` and `[dialOptions].routing_mark`.
+=== "Without `auto_redirect` enabled"
+
+    !!! question "Since sing-box 1.11.0"
+    
+    Add the destination IP CIDR rules in the specified rule-sets to routes, equivalent to adding to `route_exclude_address`.
+    Matched traffic will bypass the sing-box routes.
+
+    Note that it **doesn't work on the Android graphical client** due to
+    the Android VpnService not being able to handle a large number of routes (DeadSystemException),
+    but otherwise it works fine on all command line clients and Apple platforms.
 
 #### endpoint_independent_nat
 
@@ -360,7 +393,9 @@ Performance may degrade slightly, so it is not recommended to enable on when it 
 
 #### udp_timeout
 
-UDP NAT expiration time in seconds, default is 300 (5 minutes).
+UDP NAT expiration time.
+
+`5m` will be used by default.
 
 #### stack
 

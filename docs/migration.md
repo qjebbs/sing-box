@@ -2,6 +2,269 @@
 icon: material/arrange-bring-forward
 ---
 
+## 1.11.0
+
+### Migrate legacy special outbounds to rule actions
+
+Legacy special outbounds are deprecated and can be replaced by rule actions.
+
+!!! info "References"
+
+    [Rule Action](/configuration/route/rule_action/) / 
+    [Block](/configuration/outbound/block/) / 
+    [DNS](/configuration/outbound/dns)
+
+=== "Block"
+
+    === ":material-card-remove: Deprecated"
+    
+        ```json
+        {
+          "outbounds": [
+            {
+              "type": "block",
+              "tag": "block"
+            }
+          ],
+          "route": {
+            "rules": [
+              {
+                ...,
+                
+                "outbound": "block"
+              }
+            ]
+          }
+        }
+        ```
+
+    === ":material-card-multiple: New"
+    
+        ```json
+        {
+          "route": {
+            "rules": [
+              {
+                ...,
+                
+                "action": "reject"
+              }
+            ]
+          }
+        }
+        ```
+
+=== "DNS"
+
+    === ":material-card-remove: Deprecated"
+    
+        ```json
+        {
+          "inbound": [
+            {
+              ...,
+              
+              "sniff": true
+            }
+          ],
+          "outbounds": [
+            {
+              "tag": "dns",
+              "type": "dns"
+            }
+          ],
+          "route": {
+            "rules": [
+              {
+                "protocol": "dns",
+                "outbound": "dns"
+              }
+            ]
+          }
+        }
+        ```
+    
+    === ":material-card-multiple: New"
+    
+        ```json
+        {
+          "route": {
+            "rules": [
+              {
+                "action": "sniff"
+              },
+              {
+                "protocol": "dns",
+                "action": "hijack-dns"
+              }
+            ]
+          }
+        }
+        ```
+
+### Migrate legacy inbound fields to rule actions
+
+Inbound fields are deprecated and can be replaced by rule actions.
+
+!!! info "References"
+
+    [Listen Fields](/configuration/inbound/listen/) /
+    [Rule](/configuration/route/rule/) / 
+    [Rule Action](/configuration/route/rule_action/) / 
+    [DNS Rule](/configuration/dns/rule/) / 
+    [DNS Rule Action](/configuration/dns/rule_action/)
+
+=== ":material-card-remove: Deprecated"
+
+    ```json
+    {
+      "inbounds": [
+        {
+          "type": "mixed",
+          "sniff": true,
+          "sniff_timeout": "1s",
+          "domain_strategy": "prefer_ipv4"
+        }
+      ]
+    }
+    ```
+
+=== ":material-card-multiple: New"
+
+    ```json
+    {
+      "inbounds": [
+        {
+          "type": "mixed",
+          "tag": "in"
+        }
+      ],
+      "route": {
+        "rules": [
+          {
+            "inbound": "in",
+            "action": "resolve",
+            "strategy": "prefer_ipv4"
+          },
+          {
+            "inbound": "in",
+            "action": "sniff",
+            "timeout": "1s"
+          }
+        ]
+      }
+    }
+    ```
+
+### Migrate destination override fields to route options
+
+Destination override fields in direct outbound are deprecated and can be replaced by route options.
+
+!!! info "References"
+
+    [Rule Action](/configuration/route/rule_action/) /
+    [Direct](/configuration/outbound/direct/)
+
+=== ":material-card-remove: Deprecated"
+
+    ```json
+    {
+      "outbounds": [
+        {
+          "type": "direct",
+          "override_address": "1.1.1.1",
+          "override_port": 443
+        }
+      ]
+    }
+    ```
+
+=== ":material-card-multiple: New"
+
+    ```json
+    {
+      "route": {
+        "rules": [
+          {
+            "action": "route-options", // or route
+            "override_address": "1.1.1.1",
+            "override_port": 443
+          }
+        ]
+      }
+    ```
+
+### Migrate WireGuard outbound to endpoint
+
+WireGuard outbound is deprecated and can be replaced by endpoint.
+
+!!! info "References"
+
+    [Endpoint](/configuration/endpoint/) /
+    [WireGuard Endpoint](/configuration/endpoint/wireguard/) /
+    [WireGuard Outbound](/configuration/outbound/wireguard/)
+
+=== ":material-card-remove: Deprecated"
+
+    ```json
+    {
+      "outbounds": [
+        {
+          "type": "wireguard",
+          "tag": "wg-out",
+
+          "server": "127.0.0.1",
+          "server_port": 10001,
+          "system_interface": true,
+          "gso": true,
+          "interface_name": "wg0",
+          "local_address": [
+            "10.0.0.1/32"
+          ],
+          "private_key": "<private_key>",
+          "peer_public_key": "<peer_public_key>",
+          "pre_shared_key": "<pre_shared_key>",
+          "reserved": [0, 0, 0],
+          "mtu": 1408
+        }
+      ]
+    }
+    ```
+
+=== ":material-card-multiple: New"
+
+    ```json
+    {
+      "endpoints": [
+        {
+          "type": "wireguard",
+          "tag": "wg-ep",
+          "system": true,
+          "name": "wg0",
+          "mtu": 1408,
+          "address": [
+            "10.0.0.2/32"
+          ],
+          "private_key": "<private_key>",
+          "listen_port": 10000,
+          "peers": [
+            {
+              "address": "127.0.0.1",
+              "port": 10001,
+              "public_key": "<peer_public_key>",
+              "pre_shared_key": "<pre_shared_key>",
+              "allowed_ips": [
+                "0.0.0.0/0"
+              ],
+              "persistent_keepalive_interval": 30,
+              "reserved": [0, 0, 0]
+            }
+          ]
+        }
+      ]
+    }
+    ```
+
 ## 1.10.0
 
 ### TUN address fields are merged
@@ -9,8 +272,6 @@ icon: material/arrange-bring-forward
 `inet4_address` and `inet6_address` are merged into `address`,
 `inet4_route_address` and `inet6_route_address` are merged into `route_address`,
 `inet4_route_exclude_address` and `inet6_route_exclude_address` are merged into `route_exclude_address`.
-
-Old fields are deprecated and will be removed in sing-box 1.11.0.
 
 !!! info "References"
 

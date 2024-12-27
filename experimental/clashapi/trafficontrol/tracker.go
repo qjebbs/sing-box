@@ -60,7 +60,7 @@ func (t TrackerMetadata) MarshalJSON() ([]byte, error) {
 	}
 	var rule string
 	if t.Rule != nil {
-		rule = F.ToString(t.Rule, " => ", t.Rule.Outbound())
+		rule = F.ToString(t.Rule, " => ", t.Rule.Action())
 	} else {
 		rule = "final"
 	}
@@ -87,7 +87,6 @@ func (t TrackerMetadata) MarshalJSON() ([]byte, error) {
 }
 
 type Tracker interface {
-	adapter.Tracker
 	Metadata() TrackerMetadata
 	Close() error
 }
@@ -107,10 +106,6 @@ func (tt *TCPConn) Close() error {
 	return tt.ExtendedConn.Close()
 }
 
-func (tt *TCPConn) Leave() {
-	tt.manager.Leave(tt)
-}
-
 func (tt *TCPConn) Upstream() any {
 	return tt.ExtendedConn
 }
@@ -123,7 +118,7 @@ func (tt *TCPConn) WriterReplaceable() bool {
 	return true
 }
 
-func NewTCPTracker(conn net.Conn, manager *Manager, metadata adapter.InboundContext, router adapter.Router, rule adapter.Rule) *TCPConn {
+func NewTCPTracker(conn net.Conn, manager *Manager, metadata adapter.InboundContext, outboundManager adapter.OutboundManager, matchRule adapter.Rule, matchOutbound adapter.Outbound) *TCPConn {
 	id, _ := uuid.NewV4()
 	var (
 		chain        []string
@@ -131,19 +126,17 @@ func NewTCPTracker(conn net.Conn, manager *Manager, metadata adapter.InboundCont
 		outbound     string
 		outboundType string
 	)
-	if rule == nil {
-		if defaultOutbound, err := router.DefaultOutbound(N.NetworkTCP); err == nil {
-			next = defaultOutbound.Tag()
-		}
+	if matchOutbound != nil {
+		next = matchOutbound.Tag()
 	} else {
-		next = rule.Outbound()
+		next = outboundManager.Default().Tag()
 	}
 	for {
-		chain = append(chain, next)
-		detour, loaded := router.Outbound(next)
+		detour, loaded := outboundManager.Outbound(next)
 		if !loaded {
 			break
 		}
+		chain = append(chain, next)
 		outbound = detour.Tag()
 		outboundType = detour.Type()
 		group, isGroup := detour.(adapter.OutboundGroup)
@@ -169,7 +162,7 @@ func NewTCPTracker(conn net.Conn, manager *Manager, metadata adapter.InboundCont
 			Upload:       upload,
 			Download:     download,
 			Chain:        common.Reverse(chain),
-			Rule:         rule,
+			Rule:         matchRule,
 			Outbound:     outbound,
 			OutboundType: outboundType,
 		},
@@ -194,10 +187,6 @@ func (ut *UDPConn) Close() error {
 	return ut.PacketConn.Close()
 }
 
-func (ut *UDPConn) Leave() {
-	ut.manager.Leave(ut)
-}
-
 func (ut *UDPConn) Upstream() any {
 	return ut.PacketConn
 }
@@ -210,7 +199,7 @@ func (ut *UDPConn) WriterReplaceable() bool {
 	return true
 }
 
-func NewUDPTracker(conn N.PacketConn, manager *Manager, metadata adapter.InboundContext, router adapter.Router, rule adapter.Rule) *UDPConn {
+func NewUDPTracker(conn N.PacketConn, manager *Manager, metadata adapter.InboundContext, outboundManager adapter.OutboundManager, matchRule adapter.Rule, matchOutbound adapter.Outbound) *UDPConn {
 	id, _ := uuid.NewV4()
 	var (
 		chain        []string
@@ -218,19 +207,17 @@ func NewUDPTracker(conn N.PacketConn, manager *Manager, metadata adapter.Inbound
 		outbound     string
 		outboundType string
 	)
-	if rule == nil {
-		if defaultOutbound, err := router.DefaultOutbound(N.NetworkUDP); err == nil {
-			next = defaultOutbound.Tag()
-		}
+	if matchOutbound != nil {
+		next = matchOutbound.Tag()
 	} else {
-		next = rule.Outbound()
+		next = outboundManager.Default().Tag()
 	}
 	for {
-		chain = append(chain, next)
-		detour, loaded := router.Outbound(next)
+		detour, loaded := outboundManager.Outbound(next)
 		if !loaded {
 			break
 		}
+		chain = append(chain, next)
 		outbound = detour.Tag()
 		outboundType = detour.Type()
 		group, isGroup := detour.(adapter.OutboundGroup)
@@ -256,7 +243,7 @@ func NewUDPTracker(conn N.PacketConn, manager *Manager, metadata adapter.Inbound
 			Upload:       upload,
 			Download:     download,
 			Chain:        common.Reverse(chain),
-			Rule:         rule,
+			Rule:         matchRule,
 			Outbound:     outbound,
 			OutboundType: outboundType,
 		},

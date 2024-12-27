@@ -2,26 +2,43 @@ package adapter
 
 import (
 	"context"
-	"net"
 	"net/netip"
+	"time"
 
 	"github.com/sagernet/sing-box/common/process"
+	C "github.com/sagernet/sing-box/constant"
+	"github.com/sagernet/sing-box/log"
 	"github.com/sagernet/sing-box/option"
 	M "github.com/sagernet/sing/common/metadata"
-	N "github.com/sagernet/sing/common/network"
 )
 
 type Inbound interface {
-	Service
+	Lifecycle
 	Type() string
 	Tag() string
 }
 
-type InjectableInbound interface {
+type TCPInjectableInbound interface {
 	Inbound
-	Network() []string
-	NewConnection(ctx context.Context, conn net.Conn, metadata InboundContext) error
-	NewPacketConnection(ctx context.Context, conn N.PacketConn, metadata InboundContext) error
+	ConnectionHandlerEx
+}
+
+type UDPInjectableInbound interface {
+	Inbound
+	PacketConnectionHandlerEx
+}
+
+type InboundRegistry interface {
+	option.InboundOptionsRegistry
+	Create(ctx context.Context, router Router, logger log.ContextLogger, tag string, inboundType string, options any) (Inbound, error)
+}
+
+type InboundManager interface {
+	Lifecycle
+	Inbounds() []Inbound
+	Get(tag string) (Inbound, bool)
+	Remove(tag string) error
+	Create(ctx context.Context, router Router, logger log.ContextLogger, tag string, inboundType string, options any) error
 }
 
 type InboundContext struct {
@@ -43,10 +60,25 @@ type InboundContext struct {
 
 	// cache
 
-	InboundDetour        string
-	LastInbound          string
-	OriginDestination    M.Socksaddr
-	InboundOptions       option.InboundOptions
+	// Deprecated: implement in rule action
+	InboundDetour            string
+	LastInbound              string
+	OriginDestination        M.Socksaddr
+	RouteOriginalDestination M.Socksaddr
+	// Deprecated: to be removed
+	//nolint:staticcheck
+	InboundOptions            option.InboundOptions
+	UDPDisableDomainUnmapping bool
+	UDPConnect                bool
+	UDPTimeout                time.Duration
+
+	NetworkStrategy     *C.NetworkStrategy
+	NetworkType         []C.InterfaceType
+	FallbackNetworkType []C.InterfaceType
+	FallbackDelay       time.Duration
+
+	DNSServer string
+
 	DestinationAddresses []netip.Addr
 	SourceGeoIPCode      string
 	GeoIPCode            string

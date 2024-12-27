@@ -89,6 +89,6 @@ func newInstance(outbound *option.Outbound) (*box.Box, adapter.Outbound, error) 
 	if err != nil {
 		return nil, nil, err
 	}
-	detour := instance.Router().Outbounds()[0]
+	detour := instance.Outbound().Outbounds()[0]
 	return instance, detour, nil
 }

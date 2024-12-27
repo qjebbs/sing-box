@@ -44,10 +44,17 @@ func (n Note) Message() string {
 }
 
 func (n Note) MessageWithLink() string {
-	return F.ToString(
-		n.Description, " is deprecated in sing-box ", n.DeprecatedVersion,
-		" and will be removed in sing-box ", n.ScheduledVersion, ", checkout documentation for migration: ", n.MigrationLink,
-	)
+	if n.MigrationLink != "" {
+		return F.ToString(
+			n.Description, " is deprecated in sing-box ", n.DeprecatedVersion,
+			" and will be removed in sing-box ", n.ScheduledVersion, ", checkout documentation for migration: ", n.MigrationLink,
+		)
+	} else {
+		return F.ToString(
+			n.Description, " is deprecated in sing-box ", n.DeprecatedVersion,
+			" and will be removed in sing-box ", n.ScheduledVersion, ".",
+		)
+	}
 }
 
 var OptionBadMatchSource = Note{
@@ -86,9 +93,68 @@ var OptionTUNAddressX = Note{
 	MigrationLink:     "https://sing-box.sagernet.org/migration/#tun-address-fields-are-merged",
 }
 
+var OptionSpecialOutbounds = Note{
+	Name:              "special-outbounds",
+	Description:       "legacy special outbounds",
+	DeprecatedVersion: "1.11.0",
+	ScheduledVersion:  "1.13.0",
+	EnvName:           "SPECIAL_OUTBOUNDS",
+	MigrationLink:     "https://sing-box.sagernet.org/migration/#migrate-legacy-special-outbounds-to-rule-actions",
+}
+
+var OptionInboundOptions = Note{
+	Name:              "inbound-options",
+	Description:       "legacy inbound fields",
+	DeprecatedVersion: "1.11.0",
+	ScheduledVersion:  "1.13.0",
+	EnvName:           "INBOUND_OPTIONS",
+	MigrationLink:     "https://sing-box.sagernet.org/migration/#migrate-legacy-special-outbounds-to-rule-actions",
+}
+
+var OptionDestinationOverrideFields = Note{
+	Name:              "destination-override-fields",
+	Description:       "destination override fields in direct outbound",
+	DeprecatedVersion: "1.11.0",
+	ScheduledVersion:  "1.13.0",
+	EnvName:           "DESTINATION_OVERRIDE_FIELDS",
+	MigrationLink:     "https://sing-box.sagernet.org/migration/#migrate-destination-override-fields-to-route-options",
+}
+
+var OptionWireGuardOutbound = Note{
+	Name:              "wireguard-outbound",
+	Description:       "legacy wireguard outbound",
+	DeprecatedVersion: "1.11.0",
+	ScheduledVersion:  "1.13.0",
+	EnvName:           "WIREGUARD_OUTBOUND",
+	MigrationLink:     "https://sing-box.sagernet.org/migration/#migrate-wireguard-outbound-to-endpoint",
+}
+
+var OptionWireGuardGSO = Note{
+	Name:              "wireguard-gso",
+	Description:       "GSO option in wireguard outbound",
+	DeprecatedVersion: "1.11.0",
+	ScheduledVersion:  "1.13.0",
+	EnvName:           "WIREGUARD_GSO",
+	MigrationLink:     "https://sing-box.sagernet.org/migration/#migrate-wireguard-outbound-to-endpoint",
+}
+
+var OptionTUNGSO = Note{
+	Name:              "tun-gso",
+	Description:       "GSO option in tun",
+	DeprecatedVersion: "1.11.0",
+	ScheduledVersion:  "1.12.0",
+	EnvName:           "TUN_GSO",
+}
+
 var Options = []Note{
 	OptionBadMatchSource,
 	OptionGEOIP,
 	OptionGEOSITE,
 	OptionTUNAddressX,
+	OptionSpecialOutbounds,
+	OptionInboundOptions,
+	OptionDestinationOverrideFields,
+	OptionWireGuardOutbound,
+	OptionWireGuardGSO,
+	OptionTUNGSO,
 }

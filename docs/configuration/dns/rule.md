@@ -2,6 +2,17 @@
 icon: material/new-box
 ---
 
+!!! quote "Changes in sing-box 1.11.0"
+
+    :material-plus: [action](#action)  
+    :material-alert: [server](#server)  
+    :material-alert: [disable_cache](#disable_cache)  
+    :material-alert: [rewrite_ttl](#rewrite_ttl)  
+    :material-alert: [client_subnet](#client_subnet)  
+    :material-plus: [network_type](#network_type)  
+    :material-plus: [network_is_expensive](#network_is_expensive)  
+    :material-plus: [network_is_constrained](#network_is_constrained)
+
 !!! quote "Changes in sing-box 1.10.0"
 
     :material-delete-clock: [rule_set_ipcidr_match_source](#rule_set_ipcidr_match_source)  
@@ -14,7 +25,7 @@ icon: material/new-box
     :material-plus: [geoip](#geoip)  
     :material-plus: [ip_cidr](#ip_cidr)  
     :material-plus: [ip_is_private](#ip_is_private)  
-    :material-plus: [client_subnet](#client_subnet)
+    :material-plus: [client_subnet](#client_subnet)  
     :material-plus: [rule_set_ipcidr_match_source](#rule_set_ipcidr_match_source)
 
 !!! quote "Changes in sing-box 1.8.0"
@@ -117,6 +128,11 @@ icon: material/new-box
           1000
         ],
         "clash_mode": "direct",
+        "network_type": [
+          "wifi"
+        ],
+        "network_is_expensive": false,
+        "network_is_constrained": false,
         "wifi_ssid": [
           "My WIFI"
         ],
@@ -135,19 +151,15 @@ icon: material/new-box
         "outbound": [
           "direct"
         ],
-        "server": "local",
-        "disable_cache": false,
-        "rewrite_ttl": 100,
-        "client_subnet": "127.0.0.1/24"
+        "action": "route",
+        "server": "local"
       },
       {
         "type": "logical",
         "mode": "and",
         "rules": [],
-        "server": "local",
-        "disable_cache": false,
-        "rewrite_ttl": 100,
-        "client_subnet": "127.0.0.1/24"
+        "action": "route",
+        "server": "local"
       }
     ]
   }
@@ -218,7 +230,7 @@ Match domain using regular expression.
 
 !!! failure "Deprecated in sing-box 1.8.0"
 
-    Geosite is deprecated and may be removed in the future, check [Migration](/migration/#migrate-geosite-to-rule-sets).
+    Geosite is deprecated and will be removed in sing-box 1.12.0, check [Migration](/migration/#migrate-geosite-to-rule-sets).
 
 Match geosite.
 
@@ -226,7 +238,7 @@ Match geosite.
 
 !!! failure "Deprecated in sing-box 1.8.0"
 
-    GeoIP is deprecated and may be removed in the future, check [Migration](/migration/#migrate-geoip-to-rule-sets).
+    GeoIP is deprecated and will be removed in sing-box 1.12.0, check [Migration](/migration/#migrate-geoip-to-rule-sets).
 
 Match source geoip.
 
@@ -306,6 +318,39 @@ Match user id.
 
 Match Clash mode.
 
+#### network_type
+
+!!! question "Since sing-box 1.11.0"
+
+!!! quote ""
+
+    Only supported in graphical clients on Android and Apple platforms.
+
+Match network type.
+
+Available values: `wifi`, `cellular`, `ethernet` and `other`.
+
+#### network_is_expensive
+
+!!! question "Since sing-box 1.11.0"
+
+!!! quote ""
+
+    Only supported in graphical clients on Android and Apple platforms.
+
+Match if network is considered Metered (on Android) or considered expensive,
+such as Cellular or a Personal Hotspot (on Apple platforms).
+
+#### network_is_constrained
+
+!!! question "Since sing-box 1.11.0"
+
+!!! quote ""
+
+    Only supported in graphical clients on Apple platforms.
+
+Match if network is in Low Data Mode.
+
 #### wifi_ssid
 
 !!! quote ""
@@ -354,29 +399,35 @@ Match outbound.
 
 `any` can be used as a value to match any outbound.
 
-#### server
+#### action
 
 ==Required==
 
-Tag of the target dns server.
+See [DNS Rule Actions](../rule_action/) for details.
+
+#### server
+
+!!! failure "Deprecated in sing-box 1.11.0"
+
+    Moved to [DNS Rule Action](../rule_action#route).
 
 #### disable_cache
 
-Disable cache and save cache in this query.
+!!! failure "Deprecated in sing-box 1.11.0"
+
+    Moved to [DNS Rule Action](../rule_action#route).
 
 #### rewrite_ttl
 
-Rewrite TTL in DNS responses.
+!!! failure "Deprecated in sing-box 1.11.0"
+
+    Moved to [DNS Rule Action](../rule_action#route).
 
 #### client_subnet
 
-!!! question "Since sing-box 1.9.0"
+!!! failure "Deprecated in sing-box 1.11.0"
 
-Append a `edns0-subnet` OPT extra record with the specified IP prefix to every query by default.
-
-If value is an IP address instead of prefix, `/32` or `/128` will be appended automatically.
-
-Will overrides `dns.client_subnet` and `servers.[].client_subnet`.
+    Moved to [DNS Rule Action](../rule_action#route).
 
 ### Address Filter Fields
 

@@ -44,7 +44,7 @@ func (l *TrojanQt5) Outbound() (*option.Outbound, error) {
 	return &option.Outbound{
 		Type: C.TypeTrojan,
 		Tag:  l.Remarks,
-		TrojanOptions: option.TrojanOutboundOptions{
+		Options: &option.TrojanOutboundOptions{
 			ServerOptions: option.ServerOptions{
 				Server:     l.Host,
 				ServerPort: l.Port,

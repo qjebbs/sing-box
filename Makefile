@@ -30,7 +30,7 @@ ci_build:
 	go build $(MAIN_PARAMS) $(MAIN)
 
 generate_completions:
-	go run -v --tags generate,generate_completions $(MAIN)
+	go run -v --tags $(TAGS),generate,generate_completions $(MAIN)
 
 linux-amd64:
 	GOOS=linux GOARCH=amd64 go build $(MAIN_PARAMS) -o $(DIST)/$(NAME)-linux-amd64 $(MAIN)

@@ -4,29 +4,29 @@ import (
 	"bytes"
 	"context"
 	"encoding/binary"
-	"net"
 	"time"
 
 	"github.com/sagernet/sing-box/common/urltest"
 	dns "github.com/sagernet/sing-dns"
 	E "github.com/sagernet/sing/common/exceptions"
-	N "github.com/sagernet/sing/common/network"
 	"github.com/sagernet/sing/common/varbin"
 )
 
 type ClashServer interface {
-	Service
-	PreStarter
+	LifecycleService
+	ConnectionTracker
 	Mode() string
 	ModeList() []string
 	HistoryStorage() *urltest.HistoryStorage
-	RoutedConnection(ctx context.Context, conn net.Conn, metadata InboundContext, matchedRule Rule) (net.Conn, Tracker)
-	RoutedPacketConnection(ctx context.Context, conn N.PacketConn, metadata InboundContext, matchedRule Rule) (N.PacketConn, Tracker)
+}
+
+type V2RayServer interface {
+	LifecycleService
+	StatsService() ConnectionTracker
 }
 
 type CacheFile interface {
-	Service
-	PreStarter
+	LifecycleService
 
 	StoreFakeIP() bool
 	FakeIPStorage
@@ -95,20 +95,6 @@ func (s *SavedRuleSet) UnmarshalBinary(data []byte) error {
 	return nil
 }
 
-type Tracker interface {
-	Leave()
-}
-
-type Provider interface {
-	Service
-	Tag() string
-	Update() error
-	UpdatedAt() time.Time
-	Wait()
-	Outbounds() []Outbound
-	Outbound(tag string) (Outbound, bool)
-}
-
 type OutboundGroup interface {
 	Outbound
 	Now() string
@@ -124,16 +110,6 @@ type OutboundCheckGroup interface {
 	CheckAll(ctx context.Context) (map[string]uint16, error)
 	CheckProvider(ctx context.Context, tag string) (map[string]uint16, error)
 	CheckOutbound(ctx context.Context, tag string) (uint16, error)
-}
-
-type V2RayServer interface {
-	Service
-	StatsService() V2RayStatsService
-}
-
-type V2RayStatsService interface {
-	RoutedConnection(inbound string, outbound string, user string, conn net.Conn) net.Conn
-	RoutedPacketConnection(inbound string, outbound string, user string, conn N.PacketConn) N.PacketConn
 }
 
 func RealOutbound(outbound Outbound) (Outbound, error) {

@@ -1,6 +1,7 @@
 package balancer_test
 
 import (
+	"context"
 	"math/rand"
 	"strconv"
 	"testing"
@@ -10,7 +11,7 @@ import (
 	"github.com/sagernet/sing-box/common/balancer"
 	"github.com/sagernet/sing-box/common/healthcheck"
 	"github.com/sagernet/sing-box/option"
-	"github.com/sagernet/sing-box/outbound"
+	"github.com/sagernet/sing-box/protocol/block"
 )
 
 var (
@@ -137,5 +138,6 @@ func genNode(store *healthcheck.Storages, index int) adapter.Outbound {
 		sample := healthcheck.RTT(rand.NormFloat64()*100) + 200
 		store.Put(tag, sample)
 	}
-	return outbound.NewBlock(nil, strconv.Itoa(index))
+	b, _ := block.New(context.Background(), nil, nil, strconv.Itoa(index), option.StubOptions{})
+	return b
 }

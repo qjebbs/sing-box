@@ -4,10 +4,12 @@ import (
 	C "github.com/sagernet/sing-box/constant"
 	E "github.com/sagernet/sing/common/exceptions"
 	"github.com/sagernet/sing/common/json"
+	"github.com/sagernet/sing/common/json/badjson"
+	"github.com/sagernet/sing/common/json/badoption"
 )
 
 type InboundACMEOptions struct {
-	Domain                  Listable[string]            `json:"domain,omitempty"`
+	Domain                  badoption.Listable[string]  `json:"domain,omitempty"`
 	DataDirectory           string                      `json:"data_directory,omitempty"`
 	DefaultServerName       string                      `json:"default_server_name,omitempty"`
 	Email                   string                      `json:"email,omitempty"`
@@ -45,7 +47,7 @@ func (o ACMEDNS01ChallengeOptions) MarshalJSON() ([]byte, error) {
 	default:
 		return nil, E.New("unknown provider type: " + o.Provider)
 	}
-	return MarshallObjects((_ACMEDNS01ChallengeOptions)(o), v)
+	return badjson.MarshallObjects((_ACMEDNS01ChallengeOptions)(o), v)
 }
 
 func (o *ACMEDNS01ChallengeOptions) UnmarshalJSON(bytes []byte) error {
@@ -62,7 +64,7 @@ func (o *ACMEDNS01ChallengeOptions) UnmarshalJSON(bytes []byte) error {
 	default:
 		return E.New("unknown provider type: " + o.Provider)
 	}
-	err = UnmarshallExcluded(bytes, (*_ACMEDNS01ChallengeOptions)(o), v)
+	err = badjson.UnmarshallExcluded(bytes, (*_ACMEDNS01ChallengeOptions)(o), v)
 	if err != nil {
 		return err
 	}

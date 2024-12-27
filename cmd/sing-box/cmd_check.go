@@ -1,13 +1,16 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"os"
 
 	box "github.com/sagernet/sing-box"
 	"github.com/sagernet/sing-box/log"
+	E "github.com/sagernet/sing/common/exceptions"
 	"github.com/sagernet/sing/common/json"
+	"github.com/sagernet/sing/common/json/badjson"
 
 	"github.com/spf13/cobra"
 )
@@ -38,9 +41,18 @@ func check() error {
 	}
 	if checkVerbose {
 		fmt.Fprintln(os.Stderr, "configuration:")
-		encoder := json.NewEncoder(os.Stdout)
+		options, err = badjson.Omitempty(globalCtx, options)
+		if err != nil {
+			return err
+		}
+		buffer := new(bytes.Buffer)
+		encoder := json.NewEncoder(buffer)
 		encoder.SetIndent("", "  ")
-		encoder.Encode(options)
+		err = encoder.Encode(options)
+		if err != nil {
+			return E.Cause(err, "encode config")
+		}
+		buffer.WriteTo(os.Stdout)
 	}
 	ctx, cancel := context.WithCancel(globalCtx)
 	instance, err := box.New(box.Options{

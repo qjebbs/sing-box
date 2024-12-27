@@ -4,7 +4,7 @@ import (
 	"encoding/binary"
 	"net"
 
-	"github.com/sagernet/sing-box/outbound"
+	"github.com/sagernet/sing-box/protocol/group"
 	E "github.com/sagernet/sing/common/exceptions"
 	"github.com/sagernet/sing/common/varbin"
 )
@@ -43,11 +43,11 @@ func (s *CommandServer) handleSelectOutbound(conn net.Conn) error {
 	if service == nil {
 		return writeError(conn, E.New("service not ready"))
 	}
-	outboundGroup, isLoaded := service.instance.Router().Outbound(groupTag)
+	outboundGroup, isLoaded := service.instance.Outbound().Outbound(groupTag)
 	if !isLoaded {
 		return writeError(conn, E.New("selector not found: ", groupTag))
 	}
-	selector, isSelector := outboundGroup.(*outbound.SelectorProvider)
+	selector, isSelector := outboundGroup.(*group.SelectorProvider)
 	if !isSelector {
 		return writeError(conn, E.New("outbound is not a selector: ", groupTag))
 	}

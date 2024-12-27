@@ -22,7 +22,7 @@ func groupRouter(server *Server) http.Handler {
 	r := chi.NewRouter()
 	r.Get("/", getGroups(server))
 	r.Route("/{name}", func(r chi.Router) {
-		r.Use(parseProxyName, findProxyByName(server.router))
+		r.Use(parseProxyName, findProxyByName(server))
 		r.Get("/", getGroup(server))
 		r.Get("/delay", getGroupDelay(server))
 	})
@@ -31,7 +31,7 @@ func groupRouter(server *Server) http.Handler {
 
 func getGroups(server *Server) func(w http.ResponseWriter, r *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
-		groups := common.Map(common.Filter(server.router.Outbounds(), func(it adapter.Outbound) bool {
+		groups := common.Map(common.Filter(server.outbound.Outbounds(), func(it adapter.Outbound) bool {
 			_, isGroup := it.(adapter.OutboundGroup)
 			return isGroup
 		}), func(it adapter.Outbound) *badjson.JSONObject {
@@ -58,7 +58,7 @@ func getGroup(server *Server) func(w http.ResponseWriter, r *http.Request) {
 func getGroupDelay(server *Server) func(w http.ResponseWriter, r *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
 		proxy := r.Context().Value(CtxKeyProxy).(adapter.Outbound)
-		group, ok := proxy.(adapter.OutboundGroup)
+		outboundGroup, ok := proxy.(adapter.OutboundGroup)
 		if !ok {
 			render.Status(r, http.StatusNotFound)
 			render.JSON(w, r, ErrNotFound)
@@ -78,11 +78,15 @@ func getGroupDelay(server *Server) func(w http.ResponseWriter, r *http.Request) 
 		}
 
 		var result map[string]uint16
-		if urlTestGroup, isURLTestGroup := group.(adapter.OutboundCheckGroup); isURLTestGroup {
+		if group, isGroup := outboundGroup.(adapter.OutboundCheckGroup); isGroup {
 			// url parameter is applied as a default value for non-OutboundCheckGroup,
 			// it's ignored here
-			result, err = urlTestGroup.CheckAll(r.Context())
+			result, err = group.CheckAll(r.Context())
 		} else {
+			// outbounds := common.FilterNotNil(common.Map(outboundGroup.All(), func(it string) adapter.Outbound {
+			// 	itOutbound, _ := server.outbound.Outbound(it)
+			// 	return itOutbound
+			// }))
 			b, _ := batch.New(r.Context(), batch.WithConcurrencyNum[any](10))
 			checked := make(map[string]bool)
 			result = make(map[string]uint16)
@@ -100,6 +104,10 @@ func getGroupDelay(server *Server) func(w http.ResponseWriter, r *http.Request) 
 					continue
 				}
 				checked[realTag] = true
+				// _, loaded := server.outbound.Outbound(realTag)
+				// if !loaded {
+				// 	continue
+				// }
 				b.Go(realTag, func() (any, error) {
 					ctx, cancel := context.WithTimeout(r.Context(), time.Millisecond*time.Duration(timeout))
 					defer cancel()

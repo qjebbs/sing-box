@@ -1,5 +1,7 @@
 package option
 
+import "github.com/sagernet/sing/common/json/badoption"
+
 // LoadBalanceOutboundOptions is the options for balancer outbound
 type LoadBalanceOutboundOptions struct {
 	ProviderGroupCommonOption
@@ -16,17 +18,17 @@ type LoadBalancePickOptions struct {
 	// max acceptable failures
 	MaxFail uint `json:"max_fail,omitempty"`
 	// max acceptable rtt. defalut 0
-	MaxRTT Duration `json:"max_rtt,omitempty"`
+	MaxRTT badoption.Duration `json:"max_rtt,omitempty"`
 	// expected nodes count to select
 	Expected uint `json:"expected,omitempty"`
 	// ping rtt baselines
-	Baselines []Duration `json:"baselines,omitempty"`
+	Baselines []badoption.Duration `json:"baselines,omitempty"`
 }
 
 // HealthCheckOptions is the settings for health check
 type HealthCheckOptions struct {
-	Interval    Duration `json:"interval"`
-	Sampling    uint     `json:"sampling"`
-	Destination string   `json:"destination"`
-	DetourOf    []string `json:"detour_of,omitempty"`
+	Interval    badoption.Duration `json:"interval"`
+	Sampling    uint               `json:"sampling"`
+	Destination string             `json:"destination"`
+	DetourOf    []string           `json:"detour_of,omitempty"`
 }

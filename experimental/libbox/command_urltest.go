@@ -8,6 +8,7 @@ import (
 
 	"github.com/sagernet/sing-box/adapter"
 	"github.com/sagernet/sing-box/common/urltest"
+	"github.com/sagernet/sing-box/protocol/group"
 	"github.com/sagernet/sing/common"
 	"github.com/sagernet/sing/common/batch"
 	E "github.com/sagernet/sing/common/exceptions"
@@ -41,7 +42,7 @@ func (s *CommandServer) handleURLTest(conn net.Conn) error {
 	if serviceNow == nil {
 		return nil
 	}
-	abstractOutboundGroup, isLoaded := serviceNow.instance.Router().Outbound(groupTag)
+	abstractOutboundGroup, isLoaded := serviceNow.instance.Outbound().Outbound(groupTag)
 	if !isLoaded {
 		return writeError(conn, E.New("outbound group not found: ", groupTag))
 	}
@@ -49,13 +50,13 @@ func (s *CommandServer) handleURLTest(conn net.Conn) error {
 	if !isOutboundGroup {
 		return writeError(conn, E.New("outbound is not a group: ", groupTag))
 	}
-	urlTest, isURLTest := abstractOutboundGroup.(adapter.OutboundCheckGroup)
+	urlTest, isURLTest := abstractOutboundGroup.(*group.URLTestProvider)
 	if isURLTest {
 		go urlTest.CheckAll(context.Background())
 	} else {
 		historyStorage := service.PtrFromContext[urltest.HistoryStorage](serviceNow.ctx)
 		outbounds := common.Filter(common.Map(outboundGroup.All(), func(it string) adapter.Outbound {
-			itOutbound, _ := serviceNow.instance.Router().Outbound(it)
+			itOutbound, _ := serviceNow.instance.Outbound().Outbound(it)
 			return itOutbound
 		}), func(it adapter.Outbound) bool {
 			if it == nil {

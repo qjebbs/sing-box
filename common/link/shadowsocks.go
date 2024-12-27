@@ -93,7 +93,7 @@ func (l *ShadowSocks) Outbound() (*option.Outbound, error) {
 	return &option.Outbound{
 		Type: C.TypeShadowsocks,
 		Tag:  l.Ps,
-		ShadowsocksOptions: option.ShadowsocksOutboundOptions{
+		Options: &option.ShadowsocksOutboundOptions{
 			ServerOptions: option.ServerOptions{
 				Server:     l.Address,
 				ServerPort: l.Port,

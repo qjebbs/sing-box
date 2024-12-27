@@ -1,5 +1,9 @@
 package option
 
+import (
+	"github.com/sagernet/sing/common/json/badoption"
+)
+
 // ProviderSelectorOptions is the options for selector outbounds with providers support
 type ProviderSelectorOptions struct {
 	ProviderGroupCommonOption
@@ -10,9 +14,9 @@ type ProviderSelectorOptions struct {
 // ProviderURLTestOptions is the options for urltest outbounds with providers support
 type ProviderURLTestOptions struct {
 	ProviderGroupCommonOption
-	URL       string   `json:"url,omitempty"`
-	Interval  Duration `json:"interval,omitempty"`
-	Tolerance uint16   `json:"tolerance,omitempty"`
+	URL       string             `json:"url,omitempty"`
+	Interval  badoption.Duration `json:"interval,omitempty"`
+	Tolerance uint16             `json:"tolerance,omitempty"`
 }
 
 // ProviderGroupCommonOption is the common options for group outbounds with providers support

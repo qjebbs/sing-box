@@ -12,6 +12,8 @@ import (
 	"github.com/sagernet/sing-box/option"
 	"github.com/sagernet/sing/common/batch"
 	E "github.com/sagernet/sing/common/exceptions"
+	"github.com/sagernet/sing/common/json/badoption"
+	"github.com/sagernet/sing/service"
 	"github.com/sagernet/sing/service/pause"
 )
 
@@ -26,7 +28,7 @@ type HealthCheck struct {
 
 	pauseManager pause.Manager
 
-	router         adapter.Router
+	om             adapter.OutboundManager
 	logger         log.Logger
 	globalHistory  *urltest.HistoryStorage
 	providers      []adapter.Provider
@@ -46,8 +48,8 @@ type HealthCheck struct {
 // sampling numbers, etc.
 func New(
 	ctx context.Context,
-	router adapter.Router,
-	providers []adapter.Provider, providersByTag map[string]adapter.Provider,
+	outbound adapter.OutboundManager,
+	providers []adapter.Provider,
 	options *option.HealthCheckOptions, logger log.Logger,
 ) *HealthCheck {
 	if options == nil {
@@ -56,20 +58,27 @@ func New(
 	if options.Destination == "" {
 		options.Destination = "https://www.gstatic.com/generate_204"
 	}
-	if options.Interval < option.Duration(10*time.Second) {
-		options.Interval = option.Duration(10 * time.Second)
+	if options.Interval < badoption.Duration(10*time.Second) {
+		options.Interval = badoption.Duration(10 * time.Second)
 	}
 	if options.Sampling <= 0 {
 		options.Sampling = 10
 	}
-	var globalHistory *urltest.HistoryStorage
-	if clashServer := router.ClashServer(); clashServer != nil {
-		globalHistory = clashServer.HistoryStorage()
+	providersByTag := make(map[string]adapter.Provider)
+	for _, provider := range providers {
+		providersByTag[provider.Tag()] = provider
+	}
+	var history *urltest.HistoryStorage
+	if history = service.PtrFromContext[urltest.HistoryStorage](ctx); history != nil {
+	} else if clashServer := service.FromContext[adapter.ClashServer](ctx); clashServer != nil {
+		history = clashServer.HistoryStorage()
+	} else {
+		history = urltest.NewHistoryStorage()
 	}
 	return &HealthCheck{
-		router:         router,
+		om:             outbound,
 		logger:         logger,
-		globalHistory:  globalHistory,
+		globalHistory:  history,
 		providers:      providers,
 		providersByTag: providersByTag,
 		options:        options,
@@ -77,7 +86,7 @@ func New(
 			options.Sampling,
 			time.Duration(options.Sampling+1)*time.Duration(options.Interval),
 		),
-		pauseManager: pause.ManagerFromContext(ctx),
+		pauseManager: service.FromContext[pause.Manager](ctx),
 	}
 }
 
@@ -88,7 +97,7 @@ func (h *HealthCheck) Start() error {
 	}
 	if len(h.options.DetourOf) > 0 {
 		for _, tag := range h.options.DetourOf {
-			outbound, ok := h.router.Outbound(tag)
+			outbound, ok := h.om.Outbound(tag)
 			if !ok {
 				return E.New("detour_of: outbound not found: ", tag)
 			}

@@ -9,7 +9,7 @@ import (
 
 	"github.com/sagernet/sing-box/adapter"
 	"github.com/sagernet/sing-box/common/urltest"
-	"github.com/sagernet/sing-box/outbound"
+	"github.com/sagernet/sing-box/protocol/group"
 	E "github.com/sagernet/sing/common/exceptions"
 	"github.com/sagernet/sing/common/varbin"
 	"github.com/sagernet/sing/service"
@@ -109,7 +109,7 @@ func readGroups(reader io.Reader) (OutboundGroupIterator, error) {
 func writeGroups(writer io.Writer, boxService *BoxService) error {
 	historyStorage := service.PtrFromContext[urltest.HistoryStorage](boxService.ctx)
 	cacheFile := service.FromContext[adapter.CacheFile](boxService.ctx)
-	outbounds := boxService.instance.Router().Outbounds()
+	outbounds := boxService.instance.Outbound().Outbounds()
 	var iGroups []adapter.OutboundGroup
 	for _, it := range outbounds {
 		if group, isGroup := it.(adapter.OutboundGroup); isGroup {
@@ -118,19 +118,19 @@ func writeGroups(writer io.Writer, boxService *BoxService) error {
 	}
 	var groups []OutboundGroup
 	for _, iGroup := range iGroups {
-		var group OutboundGroup
-		group.Tag = iGroup.Tag()
-		group.Type = iGroup.Type()
-		_, group.Selectable = iGroup.(*outbound.SelectorProvider)
-		group.Selected = iGroup.Now()
+		var outboundGroup OutboundGroup
+		outboundGroup.Tag = iGroup.Tag()
+		outboundGroup.Type = iGroup.Type()
+		_, outboundGroup.Selectable = iGroup.(*group.SelectorProvider)
+		outboundGroup.Selected = iGroup.Now()
 		if cacheFile != nil {
-			if isExpand, loaded := cacheFile.LoadGroupExpand(group.Tag); loaded {
-				group.IsExpand = isExpand
+			if isExpand, loaded := cacheFile.LoadGroupExpand(outboundGroup.Tag); loaded {
+				outboundGroup.IsExpand = isExpand
 			}
 		}
 
 		for _, itemTag := range iGroup.All() {
-			itemOutbound, isLoaded := boxService.instance.Router().Outbound(itemTag)
+			itemOutbound, isLoaded := boxService.instance.Outbound().Outbound(itemTag)
 			if !isLoaded {
 				continue
 			}
@@ -146,12 +146,12 @@ func writeGroups(writer io.Writer, boxService *BoxService) error {
 				item.URLTestTime = history.Time.Unix()
 				item.URLTestDelay = int32(history.Delay)
 			}
-			group.ItemList = append(group.ItemList, &item)
+			outboundGroup.ItemList = append(outboundGroup.ItemList, &item)
 		}
-		if len(group.ItemList) < 2 {
+		if len(outboundGroup.ItemList) < 2 {
 			continue
 		}
-		groups = append(groups, group)
+		groups = append(groups, outboundGroup)
 	}
 	return varbin.Write(writer, binary.BigEndian, groups)
 }
