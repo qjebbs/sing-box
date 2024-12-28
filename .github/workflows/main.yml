@@ -1,0 +1,151 @@
+name: Build SFA
+
+on:
+  push:
+
+jobs:
+  go:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{steps.go.outputs.version}}
+    steps:
+      - name: get latest go version
+        id: go
+        run: |
+          echo version=$(curl -s https://raw.githubusercontent.com/actions/go-versions/update-versions-manifest-file/versions-manifest.json | grep -oE '"version": "[0-9]{1}.[0-9]{1,}(.[0-9]{1,})?"' | head -1 | cut -d':' -f2 | sed 's/ //g; s/"//g') >> $GITHUB_OUTPUT
+
+  sing-box:
+    runs-on: ubuntu-latest
+    needs: go
+    outputs:
+      version: ${{steps.sing-box.outputs.version}}
+    steps:
+      - uses: actions/checkout@v4.1.1
+        with:
+          fetch-depth: 0
+
+      - name: setup go
+        uses: actions/setup-go@v5.0.0
+        with:
+          go-version: ${{needs.go.outputs.version}}
+
+      - name: get sing-box version
+        id: sing-box
+        run: |
+          git remote add sekai https://github.com/SagerNet/sing-box.git
+          git fetch --tags sekai
+          version=$(CGO_ENABLED=0 go run ./cmd/internal/read_tag)
+          echo version=$version >> $GITHUB_OUTPUT
+
+  build:
+    runs-on: ubuntu-latest
+    needs:
+      - go
+      - sing-box
+    env:
+      VERSION: ${{ needs.sing-box.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4.1.1
+        with:
+          fetch-depth: 0
+
+      - name: setup go
+        uses: actions/setup-go@v5.0.0
+        with:
+          go-version: ${{needs.go.outputs.version}}
+
+      - name: checkout app repository
+        uses: actions/checkout@v4.1.1
+        with:
+          path: sfa
+          repository: SagerNet/sing-box-for-android
+          submodules: recursive
+
+      - name: setup java
+        uses: actions/setup-java@v4.0.0
+        with:
+          distribution: 'oracle'
+          java-version: 21
+
+      - name: setup ndk
+        uses: nttld/setup-ndk@v1
+        id: setup-ndk
+        with:
+          ndk-version: r27
+
+      - name: get latest build tools version
+        id: sdk
+        run: echo version=$(ls $ANDROID_HOME/build-tools | tail -n 1) >> $GITHUB_OUTPUT
+
+      - name: build libbox
+        env:
+          CC: ${{steps.setup-ndk.outputs.ndk-path}}/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android34-clang
+          TAGS: with_quic,with_dhcp,with_wireguard,with_ech,with_utls,with_clash_api,with_gvisor
+          CGO_ENABLED: '0'
+        run: |
+          make lib_install
+          gomobile bind -v -a -trimpath -buildvcs=false -androidapi 21 -javapkg=io.nekohasekai -libname=box -tags ${TAGS} -ldflags "-checklinkname=0 -X github.com/sagernet/sing-box/constant.Version=${VERSION} -s -w -buildid=" ./experimental/libbox
+
+      - name: setup build env && build app
+        env:
+          KEYSTORE: ${{secrets.SIGN_KEY}}
+          ALIAS_NAME: ${{secrets.ALIAS}}
+          KEYSTORE_PASS: ${{secrets.SIGN_KEY}}
+        run: |
+          mkdir -p sfa/app/libs/
+          cp ./libbox.aar sfa/app/libs/
+          cd sfa
+          echo "" >> gradle.properties
+          echo "org.gradle.jvmargs=-Xmx4096m -Dfile.encoding=UTF-8 -XX:+UseParallelGC" >> gradle.properties
+          echo "org.gradle.caching=true" >> gradle.properties
+          echo "org.gradle.parallel=true" >> gradle.properties
+          echo "VERSION_NAME=${VERSION}" > local.properties
+          echo "VERSION_CODE=$(date +%Y%m%d%H)" >> local.properties
+          sed -i '/signingConfigs\.release/d' app/build.gradle
+          chmod +x ./gradlew
+          ./gradlew assembleRelease --debug
+
+      - name: sign app
+        uses: PuerNya/sign-android-release@v2.0.4
+        env:
+          BUILD_TOOLS_VERSION: ${{steps.sdk.outputs.version}}
+        with:
+          alias: ${{secrets.ALIAS}}
+          releaseDirectory: sfa/app/build/outputs/apk/other/release
+          signingKeyBase64: ${{secrets.SIGN_KEY}}
+          keyStorePassword: ${{secrets.KEY_STORE_PASSWORD}}
+
+      - name: upload arm64-v8a apk
+        uses: actions/upload-artifact@v4.1.0
+        with:
+          name: sfa-${{env.VERSION}}-arm64-v8a
+          path: sfa/app/build/outputs/apk/other/release/*-arm64-v8a-signed.apk
+          compression-level: 9
+
+      - name: upload armeabi-v7a apk
+        uses: actions/upload-artifact@v4.1.0
+        with:
+          name: sfa-${{env.VERSION}}-armeabi-v7a
+          path: sfa/app/build/outputs/apk/other/release/*-armeabi-v7a-signed.apk
+          compression-level: 9
+
+      - name: upload x86_64 apk
+        uses: actions/upload-artifact@v4.1.0
+        with:
+          name: sfa-${{env.VERSION}}-x86_64
+          path: sfa/app/build/outputs/apk/other/release/*-x86_64-signed.apk
+          compression-level: 9
+
+      - name: upload x86 apk
+        uses: actions/upload-artifact@v4.1.0
+        with:
+          name: sfa-${{env.VERSION}}-x86
+          path: sfa/app/build/outputs/apk/other/release/*-x86-signed.apk
+          compression-level: 9
+
+      - name: upload universal apk
+        uses: actions/upload-artifact@v4.1.0
+        with:
+          name: sfa-${{env.VERSION}}-universal
+          path: sfa/app/build/outputs/apk/other/release/*-universal-signed.apk
+          compression-level: 9
