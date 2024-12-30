@@ -2,7 +2,7 @@
 icon: material/alert-decagram
 ---
 
-!!! quote "sing-box 1.10.0 中的更改"
+!!! quote "sing-box 1.8.0 中的更改"
 
     :material-alert-decagram: [utls](#utls)  
 
@@ -48,8 +48,8 @@ icon: material/alert-decagram
     "handshake": {
       "server": "google.com",
       "server_port": 443,
-      ...
-      // 拨号字段
+
+      ... // 拨号字段
     },
     "private_key": "UuMBgl7MXTPx9inmQp2UC7Jcnwc6XYbwDNebonM-FCc",
     "short_id": [
@@ -180,19 +180,11 @@ TLS 版本值：
 
 #### certificate_path
 
-!!! note ""
-
-    文件更改时将自动重新加载。
-
 服务器 PEM 证书路径。
 
 #### key
 
 ==仅服务器==
-
-!!! note ""
-
-    文件更改时将自动重新加载。
 
 服务器 PEM 私钥行数组。
 
@@ -206,25 +198,28 @@ TLS 版本值：
 
 ==仅客户端==
 
-!!! failure ""
+!!! note ""
 
-    没有证据表明 GFW 根据 TLS 客户端指纹检测并阻止服务器，并且，使用一个未经安全审查的不完美模拟可能带来安全隐患。
+    uTLS 维护不善且其效果可能未经证实，使用风险自负。
 
 uTLS 是 "crypto/tls" 的一个分支，它提供了 ClientHello 指纹识别阻力。
 
 可用的指纹值：
 
-!!! warning "已在 sing-box 1.10.0 移除"
+!!! question "自 sing-box 1.8.0 起"
 
-    一些旧 chrome 指纹已被删除，并将会退到 chrome：
-
-    :material-close: chrome_psk  
-    :material-close: chrome_psk_shuffle  
-    :material-close: chrome_padding_psk_shuffle  
-    :material-close: chrome_pq  
-    :material-close: chrome_pq_psk
+    :material-plus: chrome_psk  
+    :material-plus: chrome_psk_shuffle  
+    :material-plus: chrome_padding_psk_shuffle  
+    :material-plus: chrome_pq  
+    :material-plus: chrome_pq_psk
 
 * chrome
+* chrome_psk
+* chrome_psk_shuffle
+* chrome_padding_psk_shuffle
+* chrome_pq
+* chrome_pq_psk
 * firefox
 * edge
 * safari
@@ -266,10 +261,6 @@ ECH PEM 密钥行数组
 #### key_path
 
 ==仅服务器==
-
-!!! note ""
-
-    文件更改时将自动重新加载。
 
 ECH PEM 密钥路径
 
@@ -397,3 +388,7 @@ ACME DNS01 验证字段。如果配置，将禁用其他验证方法。
 服务器与和客户端之间允许的最大时间差。
 
 默认禁用检查。
+
+### 重载
+
+对于服务器配置，如果修改，证书和密钥将自动重新加载。

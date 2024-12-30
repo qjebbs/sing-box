@@ -1,10 +1,15 @@
 package libbox
 
 import (
+	"net"
+	"net/netip"
+	"sync"
+
 	"github.com/sagernet/sing-tun"
-	"github.com/sagernet/sing/common/control"
+	"github.com/sagernet/sing/common"
 	E "github.com/sagernet/sing/common/exceptions"
 	"github.com/sagernet/sing/common/logger"
+	M "github.com/sagernet/sing/common/metadata"
 	"github.com/sagernet/sing/common/x/list"
 )
 
@@ -15,9 +20,19 @@ var (
 
 type platformDefaultInterfaceMonitor struct {
 	*platformInterfaceWrapper
-	element   *list.Element[tun.NetworkUpdateCallback]
-	callbacks list.List[tun.DefaultInterfaceUpdateCallback]
-	logger    logger.Logger
+	networkAddresses      []networkAddress
+	defaultInterfaceName  string
+	defaultInterfaceIndex int
+	element               *list.Element[tun.NetworkUpdateCallback]
+	access                sync.Mutex
+	callbacks             list.List[tun.DefaultInterfaceUpdateCallback]
+	logger                logger.Logger
+}
+
+type networkAddress struct {
+	interfaceName  string
+	interfaceIndex int
+	addresses      []netip.Prefix
 }
 
 func (m *platformDefaultInterfaceMonitor) Start() error {
@@ -28,10 +43,37 @@ func (m *platformDefaultInterfaceMonitor) Close() error {
 	return m.iif.CloseDefaultInterfaceMonitor(m)
 }
 
-func (m *platformDefaultInterfaceMonitor) DefaultInterface() *control.Interface {
-	m.defaultInterfaceAccess.Lock()
-	defer m.defaultInterfaceAccess.Unlock()
-	return m.defaultInterface
+func (m *platformDefaultInterfaceMonitor) DefaultInterfaceName(destination netip.Addr) string {
+	for _, address := range m.networkAddresses {
+		for _, prefix := range address.addresses {
+			if prefix.Contains(destination) {
+				return address.interfaceName
+			}
+		}
+	}
+	return m.defaultInterfaceName
+}
+
+func (m *platformDefaultInterfaceMonitor) DefaultInterfaceIndex(destination netip.Addr) int {
+	for _, address := range m.networkAddresses {
+		for _, prefix := range address.addresses {
+			if prefix.Contains(destination) {
+				return address.interfaceIndex
+			}
+		}
+	}
+	return m.defaultInterfaceIndex
+}
+
+func (m *platformDefaultInterfaceMonitor) DefaultInterface(destination netip.Addr) (string, int) {
+	for _, address := range m.networkAddresses {
+		for _, prefix := range address.addresses {
+			if prefix.Contains(destination) {
+				return address.interfaceName, address.interfaceIndex
+			}
+		}
+	}
+	return m.defaultInterfaceName, m.defaultInterfaceIndex
 }
 
 func (m *platformDefaultInterfaceMonitor) OverrideAndroidVPN() bool {
@@ -43,57 +85,96 @@ func (m *platformDefaultInterfaceMonitor) AndroidVPNEnabled() bool {
 }
 
 func (m *platformDefaultInterfaceMonitor) RegisterCallback(callback tun.DefaultInterfaceUpdateCallback) *list.Element[tun.DefaultInterfaceUpdateCallback] {
-	m.defaultInterfaceAccess.Lock()
-	defer m.defaultInterfaceAccess.Unlock()
+	m.access.Lock()
+	defer m.access.Unlock()
 	return m.callbacks.PushBack(callback)
 }
 
 func (m *platformDefaultInterfaceMonitor) UnregisterCallback(element *list.Element[tun.DefaultInterfaceUpdateCallback]) {
-	m.defaultInterfaceAccess.Lock()
-	defer m.defaultInterfaceAccess.Unlock()
+	m.access.Lock()
+	defer m.access.Unlock()
 	m.callbacks.Remove(element)
 }
 
-func (m *platformDefaultInterfaceMonitor) UpdateDefaultInterface(interfaceName string, interfaceIndex32 int32, isExpensive bool, isConstrained bool) {
-	if sFixAndroidStack {
-		go m.updateDefaultInterface(interfaceName, interfaceIndex32, isExpensive, isConstrained)
-	} else {
-		m.updateDefaultInterface(interfaceName, interfaceIndex32, isExpensive, isConstrained)
-	}
-}
-
-func (m *platformDefaultInterfaceMonitor) updateDefaultInterface(interfaceName string, interfaceIndex32 int32, isExpensive bool, isConstrained bool) {
-	m.isExpensive = isExpensive
-	m.isConstrained = isConstrained
-	err := m.networkManager.UpdateInterfaces()
-	if err != nil {
-		m.logger.Error(E.Cause(err, "update interfaces"))
-	}
-	m.defaultInterfaceAccess.Lock()
-	if interfaceIndex32 == -1 {
-		m.defaultInterface = nil
+func (m *platformDefaultInterfaceMonitor) UpdateDefaultInterface(interfaceName string, interfaceIndex32 int32) {
+	if interfaceName == "" || interfaceIndex32 == -1 {
+		m.defaultInterfaceName = ""
+		m.defaultInterfaceIndex = -1
+		m.access.Lock()
 		callbacks := m.callbacks.Array()
-		m.defaultInterfaceAccess.Unlock()
+		m.access.Unlock()
 		for _, callback := range callbacks {
-			callback(nil, 0)
+			callback(tun.EventNoRoute)
 		}
 		return
 	}
-	oldInterface := m.defaultInterface
-	newInterface, err := m.networkManager.InterfaceFinder().ByIndex(int(interfaceIndex32))
+	var err error
+	if m.iif.UsePlatformInterfaceGetter() {
+		err = m.updateInterfacesPlatform()
+	} else {
+		err = m.updateInterfaces()
+	}
+	if err == nil {
+		err = m.router.UpdateInterfaces()
+	}
 	if err != nil {
-		m.defaultInterfaceAccess.Unlock()
-		m.logger.Error(E.Cause(err, "find updated interface: ", interfaceName))
+		m.logger.Error(E.Cause(err, "update interfaces"))
+	}
+	interfaceIndex := int(interfaceIndex32)
+	if m.defaultInterfaceName == interfaceName && m.defaultInterfaceIndex == interfaceIndex {
 		return
 	}
-	m.defaultInterface = newInterface
-	if oldInterface != nil && oldInterface.Name == m.defaultInterface.Name && oldInterface.Index == m.defaultInterface.Index {
-		m.defaultInterfaceAccess.Unlock()
-		return
-	}
+	m.defaultInterfaceName = interfaceName
+	m.defaultInterfaceIndex = interfaceIndex
+	m.access.Lock()
 	callbacks := m.callbacks.Array()
-	m.defaultInterfaceAccess.Unlock()
+	m.access.Unlock()
 	for _, callback := range callbacks {
-		callback(newInterface, 0)
+		callback(tun.EventInterfaceUpdate)
 	}
+}
+
+func (m *platformDefaultInterfaceMonitor) updateInterfaces() error {
+	interfaces, err := net.Interfaces()
+	if err != nil {
+		return err
+	}
+	var addresses []networkAddress
+	for _, iif := range interfaces {
+		var netAddresses []net.Addr
+		netAddresses, err = iif.Addrs()
+		if err != nil {
+			return err
+		}
+		var address networkAddress
+		address.interfaceName = iif.Name
+		address.interfaceIndex = iif.Index
+		address.addresses = common.Map(common.FilterIsInstance(netAddresses, func(it net.Addr) (*net.IPNet, bool) {
+			value, loaded := it.(*net.IPNet)
+			return value, loaded
+		}), func(it *net.IPNet) netip.Prefix {
+			bits, _ := it.Mask.Size()
+			return netip.PrefixFrom(M.AddrFromIP(it.IP), bits)
+		})
+		addresses = append(addresses, address)
+	}
+	m.networkAddresses = addresses
+	return nil
+}
+
+func (m *platformDefaultInterfaceMonitor) updateInterfacesPlatform() error {
+	interfaces, err := m.Interfaces()
+	if err != nil {
+		return err
+	}
+	var addresses []networkAddress
+	for _, iif := range interfaces {
+		var address networkAddress
+		address.interfaceName = iif.Name
+		address.interfaceIndex = iif.Index
+		// address.addresses = common.Map(iif.Addresses, netip.MustParsePrefix)
+		addresses = append(addresses, address)
+	}
+	m.networkAddresses = addresses
+	return nil
 }

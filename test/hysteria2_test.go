@@ -7,8 +7,6 @@ import (
 	C "github.com/sagernet/sing-box/constant"
 	"github.com/sagernet/sing-box/option"
 	"github.com/sagernet/sing-quic/hysteria2"
-	"github.com/sagernet/sing/common"
-	"github.com/sagernet/sing/common/json/badoption"
 )
 
 func TestHysteria2Self(t *testing.T) {
@@ -34,18 +32,18 @@ func testHysteria2Self(t *testing.T, salamanderPassword string) {
 			{
 				Type: C.TypeMixed,
 				Tag:  "mixed-in",
-				Options: &option.HTTPMixedInboundOptions{
+				MixedOptions: option.HTTPMixedInboundOptions{
 					ListenOptions: option.ListenOptions{
-						Listen:     common.Ptr(badoption.Addr(netip.IPv4Unspecified())),
+						Listen:     option.NewListenAddress(netip.IPv4Unspecified()),
 						ListenPort: clientPort,
 					},
 				},
 			},
 			{
 				Type: C.TypeHysteria2,
-				Options: &option.Hysteria2InboundOptions{
+				Hysteria2Options: option.Hysteria2InboundOptions{
 					ListenOptions: option.ListenOptions{
-						Listen:     common.Ptr(badoption.Addr(netip.IPv4Unspecified())),
+						Listen:     option.NewListenAddress(netip.IPv4Unspecified()),
 						ListenPort: serverPort,
 					},
 					UpMbps:   100,
@@ -72,7 +70,7 @@ func testHysteria2Self(t *testing.T, salamanderPassword string) {
 			{
 				Type: C.TypeHysteria2,
 				Tag:  "hy2-out",
-				Options: &option.Hysteria2OutboundOptions{
+				Hysteria2Options: option.Hysteria2OutboundOptions{
 					ServerOptions: option.ServerOptions{
 						Server:     "127.0.0.1",
 						ServerPort: serverPort,
@@ -96,16 +94,8 @@ func testHysteria2Self(t *testing.T, salamanderPassword string) {
 				{
 					Type: C.RuleTypeDefault,
 					DefaultOptions: option.DefaultRule{
-						RawDefaultRule: option.RawDefaultRule{
-							Inbound: []string{"mixed-in"},
-						},
-						RuleAction: option.RuleAction{
-							Action: C.RuleActionTypeRoute,
-
-							RouteOptions: option.RouteActionOptions{
-								Outbound: "hy2-out",
-							},
-						},
+						Inbound:  []string{"mixed-in"},
+						Outbound: "hy2-out",
 					},
 				},
 			},
@@ -120,9 +110,9 @@ func TestHysteria2Inbound(t *testing.T) {
 		Inbounds: []option.Inbound{
 			{
 				Type: C.TypeHysteria2,
-				Options: &option.Hysteria2InboundOptions{
+				Hysteria2Options: option.Hysteria2InboundOptions{
 					ListenOptions: option.ListenOptions{
-						Listen:     common.Ptr(badoption.Addr(netip.IPv4Unspecified())),
+						Listen:     option.NewListenAddress(netip.IPv4Unspecified()),
 						ListenPort: serverPort,
 					},
 					Obfs: &option.Hysteria2Obfs{
@@ -172,9 +162,9 @@ func TestHysteria2Outbound(t *testing.T) {
 		Inbounds: []option.Inbound{
 			{
 				Type: C.TypeMixed,
-				Options: &option.HTTPMixedInboundOptions{
+				MixedOptions: option.HTTPMixedInboundOptions{
 					ListenOptions: option.ListenOptions{
-						Listen:     common.Ptr(badoption.Addr(netip.IPv4Unspecified())),
+						Listen:     option.NewListenAddress(netip.IPv4Unspecified()),
 						ListenPort: clientPort,
 					},
 				},
@@ -183,7 +173,7 @@ func TestHysteria2Outbound(t *testing.T) {
 		Outbounds: []option.Outbound{
 			{
 				Type: C.TypeHysteria2,
-				Options: &option.Hysteria2OutboundOptions{
+				Hysteria2Options: option.Hysteria2OutboundOptions{
 					ServerOptions: option.ServerOptions{
 						Server:     "127.0.0.1",
 						ServerPort: serverPort,

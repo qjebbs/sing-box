@@ -1,35 +1,35 @@
 package platform
 
 import (
+	"context"
+	"net/netip"
+
 	"github.com/sagernet/sing-box/adapter"
 	"github.com/sagernet/sing-box/common/process"
 	"github.com/sagernet/sing-box/option"
 	"github.com/sagernet/sing-tun"
+	"github.com/sagernet/sing/common/control"
 	"github.com/sagernet/sing/common/logger"
 )
 
 type Interface interface {
-	Initialize(networkManager adapter.NetworkManager) error
+	Initialize(ctx context.Context, router adapter.Router) error
 	UsePlatformAutoDetectInterfaceControl() bool
-	AutoDetectInterfaceControl(fd int) error
+	AutoDetectInterfaceControl() control.Func
 	OpenTun(options *tun.Options, platformOptions option.TunPlatformOptions) (tun.Tun, error)
-	UpdateRouteOptions(options *tun.Options, platformOptions option.TunPlatformOptions) error
+	UsePlatformDefaultInterfaceMonitor() bool
 	CreateDefaultInterfaceMonitor(logger logger.Logger) tun.DefaultInterfaceMonitor
-	Interfaces() ([]adapter.NetworkInterface, error)
+	UsePlatformInterfaceGetter() bool
+	Interfaces() ([]NetworkInterface, error)
 	UnderNetworkExtension() bool
-	IncludeAllNetworks() bool
 	ClearDNSCache()
 	ReadWIFIState() adapter.WIFIState
 	process.Searcher
-	SendNotification(notification *Notification) error
 }
 
-type Notification struct {
-	Identifier string
-	TypeName   string
-	TypeID     int32
-	Title      string
-	Subtitle   string
-	Body       string
-	OpenURL    string
+type NetworkInterface struct {
+	Index     int
+	MTU       int
+	Name      string
+	Addresses []netip.Prefix
 }

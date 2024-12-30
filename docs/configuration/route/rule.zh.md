@@ -1,20 +1,6 @@
 ---
-icon: material/new-box
+icon: material/alert-decagram
 ---
-
-!!! quote "sing-box 1.11.0 中的更改"
-
-    :material-plus: [action](#action)  
-    :material-alert: [outbound](#outbound)  
-    :material-plus: [network_type](#network_type)  
-    :material-plus: [network_is_expensive](#network_is_expensive)  
-    :material-plus: [network_is_constrained](#network_is_constrained)
-
-!!! quote "sing-box 1.10.0 中的更改"
-
-    :material-plus: [client](#client)  
-    :material-delete-clock: [rule_set_ipcidr_match_source](#rule_set_ipcidr_match_source)  
-    :material-plus: [process_path_regex](#process_path_regex)
 
 !!! quote "sing-box 1.8.0 中的更改"
 
@@ -48,12 +34,6 @@ icon: material/new-box
           "tls",
           "http",
           "quic"
-        ],
-        "client": [
-          "chromium",
-          "safari",
-          "firefox",
-          "quic-go"
         ],
         "domain": [
           "test.com"
@@ -107,9 +87,6 @@ icon: material/new-box
         "process_path": [
           "/usr/bin/curl"
         ],
-        "process_path_regex": [
-          "^/usr/bin/.+"
-        ],
         "package_name": [
           "com.termux"
         ],
@@ -120,11 +97,6 @@ icon: material/new-box
           1000
         ],
         "clash_mode": "direct",
-        "network_type": [
-          "wifi"
-        ],
-        "network_is_expensive": false,
-        "network_is_constrained": false,
         "wifi_ssid": [
           "My WIFI"
         ],
@@ -135,11 +107,7 @@ icon: material/new-box
           "geoip-cn",
           "geosite-cn"
         ],
-        // 已弃用
-        "rule_set_ipcidr_match_source": false,
-        "rule_set_ip_cidr_match_source": false,
         "invert": false,
-        "action": "route",
         "outbound": "direct"
       },
       {
@@ -147,7 +115,6 @@ icon: material/new-box
         "mode": "and",
         "rules": [],
         "invert": false,
-        "action": "route",
         "outbound": "direct"
       }
     ]
@@ -160,7 +127,7 @@ icon: material/new-box
 
     当内容只有一项时，可以忽略 JSON 数组 [] 标签。
 
-### 默认字段
+### Default Fields
 
 !!! note ""
 
@@ -190,12 +157,6 @@ icon: material/new-box
 #### protocol
 
 探测到的协议, 参阅 [协议探测](/zh/configuration/route/sniff/)。
-
-#### client
-
-!!! question "自 sing-box 1.10.0 起"
-
-探测到的客户端类型, 参阅 [协议探测](/zh/configuration/route/sniff/)。
 
 #### network
 
@@ -293,16 +254,6 @@ icon: material/new-box
 
 匹配进程路径。
 
-#### process_path_regex
-
-!!! question "自 sing-box 1.10.0 起"
-
-!!! quote ""
-
-    仅支持 Linux、Windows 和 macOS.
-
-使用正则表达式匹配进程路径。
-
 #### package_name
 
 匹配 Android 应用包名。
@@ -327,44 +278,11 @@ icon: material/new-box
 
 匹配 Clash 模式。
 
-#### network_type
-
-!!! question "自 sing-box 1.11.0 起"
-
-!!! quote ""
-
-    仅在 Android 与 Apple 平台图形客户端中支持。
-
-匹配网络类型。
-
-Available values: `wifi`, `cellular`, `ethernet` and `other`.
-
-#### network_is_expensive
-
-!!! question "自 sing-box 1.11.0 起"
-
-!!! quote ""
-
-    仅在 Android 与 Apple 平台图形客户端中支持。
-
-匹配如果网络被视为计费 (在 Android) 或被视为昂贵，
-像蜂窝网络或个人热点 (在 Apple 平台)。
-
-#### network_is_constrained
-
-!!! question "自 sing-box 1.11.0 起"
-
-!!! quote ""
-
-    仅在 Apple 平台图形客户端中支持。
-
-匹配如果网络在低数据模式下。
-
 #### wifi_ssid
 
 !!! quote ""
 
-    仅在 Android 与 Apple 平台图形客户端中支持。
+    仅在 Android 与 iOS 的图形客户端中支持。
 
 匹配 WiFi SSID。
 
@@ -372,7 +290,7 @@ Available values: `wifi`, `cellular`, `ethernet` and `other`.
 
 !!! quote ""
 
-    仅在 Android 与 Apple 平台图形客户端中支持。
+    仅在 Android 与 iOS 的图形客户端中支持。
 
 匹配 WiFi BSSID。
 
@@ -386,33 +304,17 @@ Available values: `wifi`, `cellular`, `ethernet` and `other`.
 
 !!! question "自 sing-box 1.8.0 起"
 
-!!! failure "已在 sing-box 1.10.0 废弃"
-
-    `rule_set_ipcidr_match_source` 已重命名为 `rule_set_ip_cidr_match_source` 且将在 sing-box 1.11.0 中被移除。
-
-使规则集中的 `ip_cidr` 规则匹配源 IP。
-
-#### rule_set_ip_cidr_match_source
-
-!!! question "自 sing-box 1.10.0 起"
-
-使规则集中的 `ip_cidr` 规则匹配源 IP。
+使规则集中的 `ipcidr` 规则匹配源 IP。
 
 #### invert
 
 反选匹配结果。
 
-#### action
+#### outbound
 
 ==必填==
 
-参阅 [规则动作](../rule_action/)。
-
-#### outbound
-
-!!! failure "已在 sing-box 1.11.0 废弃"
-
-    已移动到 [规则动作](../rule_action#route).
+目标出站的标签。
 
 ### 逻辑字段
 

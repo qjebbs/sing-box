@@ -1,11 +1,10 @@
 package option
 
-import "github.com/sagernet/sing/common/json/badoption"
-
 type NTPOptions struct {
-	Enabled       bool               `json:"enabled,omitempty"`
-	Interval      badoption.Duration `json:"interval,omitempty"`
-	WriteToSystem bool               `json:"write_to_system,omitempty"`
-	ServerOptions
+	Enabled       bool     `json:"enabled,omitempty"`
+	Server        string   `json:"server,omitempty"`
+	ServerPort    uint16   `json:"server_port,omitempty"`
+	Interval      Duration `json:"interval,omitempty"`
+	WriteToSystem bool     `json:"write_to_system,omitempty"`
 	DialerOptions
 }

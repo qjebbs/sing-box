@@ -9,12 +9,13 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/sagernet/sing-box/adapter"
-	C "github.com/sagernet/sing-box/constant"
 	"github.com/sagernet/sing/common"
 	E "github.com/sagernet/sing/common/exceptions"
 	M "github.com/sagernet/sing/common/metadata"
+	N "github.com/sagernet/sing/common/network"
 	"github.com/sagernet/sing/service/filemanager"
 )
 
@@ -44,19 +45,22 @@ func (s *Server) downloadExternalUI() error {
 	s.logger.Info("downloading external ui")
 	var detour adapter.Outbound
 	if s.externalUIDownloadDetour != "" {
-		outbound, loaded := s.outbound.Outbound(s.externalUIDownloadDetour)
+		outbound, loaded := s.router.Outbound(s.externalUIDownloadDetour)
 		if !loaded {
 			return E.New("detour outbound not found: ", s.externalUIDownloadDetour)
 		}
 		detour = outbound
 	} else {
-		outbound := s.outbound.Default()
+		outbound, err := s.router.DefaultOutbound(N.NetworkTCP)
+		if err != nil {
+			return err
+		}
 		detour = outbound
 	}
 	httpClient := &http.Client{
 		Transport: &http.Transport{
 			ForceAttemptHTTP2:   true,
-			TLSHandshakeTimeout: C.TCPTimeout,
+			TLSHandshakeTimeout: 5 * time.Second,
 			DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
 				return detour.DialContext(ctx, network, M.ParseSocksaddr(addr))
 			},

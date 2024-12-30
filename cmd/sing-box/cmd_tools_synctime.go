@@ -9,6 +9,7 @@ import (
 	"github.com/sagernet/sing-box/log"
 	E "github.com/sagernet/sing/common/exceptions"
 	M "github.com/sagernet/sing/common/metadata"
+	N "github.com/sagernet/sing/common/network"
 	"github.com/sagernet/sing/common/ntp"
 
 	"github.com/spf13/cobra"
@@ -44,7 +45,7 @@ func syncTime() error {
 	if err != nil {
 		return err
 	}
-	dialer, err := createDialer(instance, commandToolsFlagOutbound)
+	dialer, err := createDialer(instance, N.NetworkUDP, commandToolsFlagOutbound)
 	if err != nil {
 		return err
 	}

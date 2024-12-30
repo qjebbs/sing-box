@@ -21,24 +21,25 @@ import (
 	"github.com/sagernet/sing/common/buf"
 	"github.com/sagernet/sing/common/control"
 	E "github.com/sagernet/sing/common/exceptions"
+	"github.com/sagernet/sing/common/logger"
+	M "github.com/sagernet/sing/common/metadata"
+	N "github.com/sagernet/sing/common/network"
 	"github.com/sagernet/sing/common/task"
 	"github.com/sagernet/sing/common/x/list"
-	"github.com/sagernet/sing/service"
 
 	"github.com/insomniacslk/dhcp/dhcpv4"
 	mDNS "github.com/miekg/dns"
 )
 
 func init() {
-	dns.RegisterTransport([]string{"dhcp"}, func(options dns.TransportOptions) (dns.Transport, error) {
-		return NewTransport(options)
-	})
+	dns.RegisterTransport([]string{"dhcp"}, NewTransport)
 }
 
 type Transport struct {
-	options           dns.TransportOptions
+	name              string
+	ctx               context.Context
 	router            adapter.Router
-	networkManager    adapter.NetworkManager
+	logger            logger.Logger
 	interfaceName     string
 	autoInterface     bool
 	interfaceCallback *list.Element[tun.DefaultInterfaceUpdateCallback]
@@ -47,25 +48,31 @@ type Transport struct {
 	updatedAt         time.Time
 }
 
-func NewTransport(options dns.TransportOptions) (*Transport, error) {
-	linkURL, err := url.Parse(options.Address)
+func NewTransport(name string, ctx context.Context, logger logger.ContextLogger, dialer N.Dialer, link string) (dns.Transport, error) {
+	linkURL, err := url.Parse(link)
 	if err != nil {
 		return nil, err
 	}
 	if linkURL.Host == "" {
 		return nil, E.New("missing interface name for DHCP")
 	}
+	router := adapter.RouterFromContext(ctx)
+	if router == nil {
+		return nil, E.New("missing router in context")
+	}
 	transport := &Transport{
-		options:        options,
-		networkManager: service.FromContext[adapter.NetworkManager](options.Context),
-		interfaceName:  linkURL.Host,
-		autoInterface:  linkURL.Host == "auto",
+		name:          name,
+		ctx:           ctx,
+		router:        router,
+		logger:        logger,
+		interfaceName: linkURL.Host,
+		autoInterface: linkURL.Host == "auto",
 	}
 	return transport, nil
 }
 
 func (t *Transport) Name() string {
-	return t.options.Name
+	return t.name
 }
 
 func (t *Transport) Start() error {
@@ -74,7 +81,7 @@ func (t *Transport) Start() error {
 		return err
 	}
 	if t.autoInterface {
-		t.interfaceCallback = t.networkManager.InterfaceMonitor().RegisterCallback(t.interfaceUpdated)
+		t.interfaceCallback = t.router.InterfaceMonitor().RegisterCallback(t.interfaceUpdated)
 	}
 	return nil
 }
@@ -90,7 +97,7 @@ func (t *Transport) Close() error {
 		transport.Close()
 	}
 	if t.interfaceCallback != nil {
-		t.networkManager.InterfaceMonitor().UnregisterCallback(t.interfaceCallback)
+		t.router.InterfaceMonitor().UnregisterCallback(t.interfaceCallback)
 	}
 	return nil
 }
@@ -119,19 +126,18 @@ func (t *Transport) Exchange(ctx context.Context, message *mDNS.Msg) (*mDNS.Msg,
 	return nil, err
 }
 
-func (t *Transport) fetchInterface() (*control.Interface, error) {
+func (t *Transport) fetchInterface() (*net.Interface, error) {
+	interfaceName := t.interfaceName
 	if t.autoInterface {
-		if t.networkManager.InterfaceMonitor() == nil {
+		if t.router.InterfaceMonitor() == nil {
 			return nil, E.New("missing monitor for auto DHCP, set route.auto_detect_interface")
 		}
-		defaultInterface := t.networkManager.InterfaceMonitor().DefaultInterface()
-		if defaultInterface == nil {
-			return nil, E.New("missing default interface")
-		}
-		return defaultInterface, nil
-	} else {
-		return t.networkManager.InterfaceFinder().ByName(t.interfaceName)
+		interfaceName = t.router.InterfaceMonitor().DefaultInterfaceName(netip.Addr{})
 	}
+	if interfaceName == "" {
+		return nil, E.New("missing default interface")
+	}
+	return net.InterfaceByName(interfaceName)
 }
 
 func (t *Transport) fetchServers() error {
@@ -152,8 +158,8 @@ func (t *Transport) updateServers() error {
 		return E.Cause(err, "dhcp: prepare interface")
 	}
 
-	t.options.Logger.Info("dhcp: query DNS servers on ", iface.Name)
-	fetchCtx, cancel := context.WithTimeout(t.options.Context, C.DHCPTimeout)
+	t.logger.Info("dhcp: query DNS servers on ", iface.Name)
+	fetchCtx, cancel := context.WithTimeout(t.ctx, C.DHCPTimeout)
 	err = t.fetchServers0(fetchCtx, iface)
 	cancel()
 	if err != nil {
@@ -166,22 +172,22 @@ func (t *Transport) updateServers() error {
 	}
 }
 
-func (t *Transport) interfaceUpdated(defaultInterface *control.Interface, flags int) {
+func (t *Transport) interfaceUpdated(int) {
 	err := t.updateServers()
 	if err != nil {
-		t.options.Logger.Error("update servers: ", err)
+		t.logger.Error("update servers: ", err)
 	}
 }
 
-func (t *Transport) fetchServers0(ctx context.Context, iface *control.Interface) error {
+func (t *Transport) fetchServers0(ctx context.Context, iface *net.Interface) error {
 	var listener net.ListenConfig
-	listener.Control = control.Append(listener.Control, control.BindToInterface(t.networkManager.InterfaceFinder(), iface.Name, iface.Index))
+	listener.Control = control.Append(listener.Control, control.BindToInterface(t.router.InterfaceFinder(), iface.Name, iface.Index))
 	listener.Control = control.Append(listener.Control, control.ReuseAddr())
 	listenAddr := "0.0.0.0:68"
 	if runtime.GOOS == "linux" || runtime.GOOS == "android" {
 		listenAddr = "255.255.255.255:68"
 	}
-	packetConn, err := listener.ListenPacket(t.options.Context, "udp4", listenAddr)
+	packetConn, err := listener.ListenPacket(t.ctx, "udp4", listenAddr)
 	if err != nil {
 		return err
 	}
@@ -207,7 +213,7 @@ func (t *Transport) fetchServers0(ctx context.Context, iface *control.Interface)
 	return group.Run(ctx)
 }
 
-func (t *Transport) fetchServersResponse(iface *control.Interface, packetConn net.PacketConn, transactionID dhcpv4.TransactionID) error {
+func (t *Transport) fetchServersResponse(iface *net.Interface, packetConn net.PacketConn, transactionID dhcpv4.TransactionID) error {
 	buffer := buf.NewSize(dhcpv4.MaxMessageSize)
 	defer buffer.Release()
 
@@ -219,17 +225,17 @@ func (t *Transport) fetchServersResponse(iface *control.Interface, packetConn ne
 
 		dhcpPacket, err := dhcpv4.FromBytes(buffer.Bytes())
 		if err != nil {
-			t.options.Logger.Trace("dhcp: parse DHCP response: ", err)
+			t.logger.Trace("dhcp: parse DHCP response: ", err)
 			return err
 		}
 
 		if dhcpPacket.MessageType() != dhcpv4.MessageTypeOffer {
-			t.options.Logger.Trace("dhcp: expected OFFER response, but got ", dhcpPacket.MessageType())
+			t.logger.Trace("dhcp: expected OFFER response, but got ", dhcpPacket.MessageType())
 			continue
 		}
 
 		if dhcpPacket.TransactionID != transactionID {
-			t.options.Logger.Trace("dhcp: expected transaction ID ", transactionID, ", but got ", dhcpPacket.TransactionID)
+			t.logger.Trace("dhcp: expected transaction ID ", transactionID, ", but got ", dhcpPacket.TransactionID)
 			continue
 		}
 
@@ -247,24 +253,22 @@ func (t *Transport) fetchServersResponse(iface *control.Interface, packetConn ne
 	}
 }
 
-func (t *Transport) recreateServers(iface *control.Interface, serverAddrs []netip.Addr) error {
+func (t *Transport) recreateServers(iface *net.Interface, serverAddrs []netip.Addr) error {
 	if len(serverAddrs) > 0 {
-		t.options.Logger.Info("dhcp: updated DNS servers from ", iface.Name, ": [", strings.Join(common.Map(serverAddrs, func(it netip.Addr) string {
+		t.logger.Info("dhcp: updated DNS servers from ", iface.Name, ": [", strings.Join(common.Map(serverAddrs, func(it netip.Addr) string {
 			return it.String()
 		}), ","), "]")
 	}
-	serverDialer := common.Must1(dialer.NewDefault(t.options.Context, option.DialerOptions{
+
+	serverDialer := common.Must1(dialer.NewDefault(t.router, option.DialerOptions{
 		BindInterface:      iface.Name,
 		UDPFragmentDefault: true,
 	}))
 	var transports []dns.Transport
 	for _, serverAddr := range serverAddrs {
-		newOptions := t.options
-		newOptions.Address = serverAddr.String()
-		newOptions.Dialer = serverDialer
-		serverTransport, err := dns.NewUDPTransport(newOptions)
+		serverTransport, err := dns.NewUDPTransport(t.name, t.ctx, serverDialer, M.Socksaddr{Addr: serverAddr, Port: 53})
 		if err != nil {
-			return E.Cause(err, "create UDP transport from DHCP result: ", serverAddr)
+			return err
 		}
 		transports = append(transports, serverTransport)
 	}

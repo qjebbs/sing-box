@@ -1,3 +1,7 @@
+---
+icon: material/alert-decagram
+---
+
 # Experimental
 
 !!! quote "Changes in sing-box 1.8.0"

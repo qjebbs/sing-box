@@ -1,26 +1,11 @@
 package libbox
 
 import (
-	"bufio"
 	"context"
+	"encoding/binary"
 	"io"
 	"net"
-	"time"
-
-	"github.com/sagernet/sing/common/binary"
-	E "github.com/sagernet/sing/common/exceptions"
-	"github.com/sagernet/sing/common/varbin"
 )
-
-func (s *CommandServer) ResetLog() {
-	s.access.Lock()
-	defer s.access.Unlock()
-	s.savedLines.Init()
-	select {
-	case s.logReset <- struct{}{}:
-	default:
-	}
-}
 
 func (s *CommandServer) WriteMessage(message string) {
 	s.subscriber.Emit(message)
@@ -32,19 +17,43 @@ func (s *CommandServer) WriteMessage(message string) {
 	s.access.Unlock()
 }
 
-func (s *CommandServer) handleLogConn(conn net.Conn) error {
-	var (
-		interval int64
-		timer    *time.Timer
-	)
-	err := binary.Read(conn, binary.BigEndian, &interval)
+func readLog(reader io.Reader) ([]byte, error) {
+	var messageLength uint16
+	err := binary.Read(reader, binary.BigEndian, &messageLength)
 	if err != nil {
-		return E.Cause(err, "read interval")
+		return nil, err
 	}
-	timer = time.NewTimer(time.Duration(interval))
-	if !timer.Stop() {
-		<-timer.C
+	if messageLength == 0 {
+		return nil, nil
 	}
+	data := make([]byte, messageLength)
+	_, err = io.ReadFull(reader, data)
+	if err != nil {
+		return nil, err
+	}
+	return data, nil
+}
+
+func writeLog(writer io.Writer, message []byte) error {
+	err := binary.Write(writer, binary.BigEndian, uint8(0))
+	if err != nil {
+		return err
+	}
+	err = binary.Write(writer, binary.BigEndian, uint16(len(message)))
+	if err != nil {
+		return err
+	}
+	if len(message) > 0 {
+		_, err = writer.Write(message)
+	}
+	return err
+}
+
+func writeClearLog(writer io.Writer) error {
+	return binary.Write(writer, binary.BigEndian, uint8(1))
+}
+
+func (s *CommandServer) handleLogConn(conn net.Conn) error {
 	var savedLines []string
 	s.access.Lock()
 	savedLines = make([]string, 0, s.savedLines.Len())
@@ -57,90 +66,52 @@ func (s *CommandServer) handleLogConn(conn net.Conn) error {
 		return err
 	}
 	defer s.observer.UnSubscribe(subscription)
-	writer := bufio.NewWriter(conn)
-	select {
-	case <-s.logReset:
-		err = writer.WriteByte(1)
-		if err != nil {
-			return err
-		}
-		err = writer.Flush()
-		if err != nil {
-			return err
-		}
-	default:
-	}
-	if len(savedLines) > 0 {
-		err = writer.WriteByte(0)
-		if err != nil {
-			return err
-		}
-		err = varbin.Write(writer, binary.BigEndian, savedLines)
+	for _, line := range savedLines {
+		err = writeLog(conn, []byte(line))
 		if err != nil {
 			return err
 		}
 	}
 	ctx := connKeepAlive(conn)
-	var logLines []string
 	for {
-		err = writer.Flush()
-		if err != nil {
-			return err
-		}
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
+		case message := <-subscription:
+			err = writeLog(conn, []byte(message))
+			if err != nil {
+				return err
+			}
 		case <-s.logReset:
-			err = writer.WriteByte(1)
+			err = writeClearLog(conn)
 			if err != nil {
 				return err
 			}
 		case <-done:
 			return nil
-		case logLine := <-subscription:
-			logLines = logLines[:0]
-			logLines = append(logLines, logLine)
-			timer.Reset(time.Duration(interval))
-		loopLogs:
-			for {
-				select {
-				case logLine = <-subscription:
-					logLines = append(logLines, logLine)
-				case <-timer.C:
-					break loopLogs
-				}
-			}
-			err = writer.WriteByte(0)
-			if err != nil {
-				return err
-			}
-			err = varbin.Write(writer, binary.BigEndian, logLines)
-			if err != nil {
-				return err
-			}
 		}
 	}
 }
 
 func (c *CommandClient) handleLogConn(conn net.Conn) {
-	reader := bufio.NewReader(conn)
 	for {
-		messageType, err := reader.ReadByte()
+		var messageType uint8
+		err := binary.Read(conn, binary.BigEndian, &messageType)
 		if err != nil {
 			c.handler.Disconnected(err.Error())
 			return
 		}
-		var messages []string
+		var message []byte
 		switch messageType {
 		case 0:
-			err = varbin.Read(reader, binary.BigEndian, &messages)
+			message, err = readLog(conn)
 			if err != nil {
 				c.handler.Disconnected(err.Error())
 				return
 			}
-			c.handler.WriteLogs(newIterator(messages))
+			c.handler.WriteLog(string(message))
 		case 1:
-			c.handler.ClearLogs()
+			c.handler.ClearLog()
 		}
 	}
 }
@@ -149,7 +120,7 @@ func connKeepAlive(reader io.Reader) context.Context {
 	ctx, cancel := context.WithCancelCause(context.Background())
 	go func() {
 		for {
-			_, err := reader.Read(make([]byte, 1))
+			_, err := readLog(reader)
 			if err != nil {
 				cancel(err)
 				return

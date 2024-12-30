@@ -7,8 +7,6 @@ import (
 
 	C "github.com/sagernet/sing-box/constant"
 	"github.com/sagernet/sing-box/option"
-	"github.com/sagernet/sing/common"
-	"github.com/sagernet/sing/common/json/badoption"
 
 	"github.com/gofrs/uuid/v5"
 	"github.com/spyzhov/ajson"
@@ -66,9 +64,9 @@ func testV2RayWebsocketInbound(t *testing.T, maxEarlyData uint32, earlyDataHeade
 		Inbounds: []option.Inbound{
 			{
 				Type: C.TypeVMess,
-				Options: &option.VMessInboundOptions{
+				VMessOptions: option.VMessInboundOptions{
 					ListenOptions: option.ListenOptions{
-						Listen:     common.Ptr(badoption.Addr(netip.IPv4Unspecified())),
+						Listen:     option.NewListenAddress(netip.IPv4Unspecified()),
 						ListenPort: serverPort,
 					},
 					Users: []option.VMessUser{
@@ -164,9 +162,9 @@ func testV2RayWebsocketOutbound(t *testing.T, maxEarlyData uint32, earlyDataHead
 			{
 				Type: C.TypeMixed,
 				Tag:  "mixed-in",
-				Options: &option.HTTPMixedInboundOptions{
+				MixedOptions: option.HTTPMixedInboundOptions{
 					ListenOptions: option.ListenOptions{
-						Listen:     common.Ptr(badoption.Addr(netip.IPv4Unspecified())),
+						Listen:     option.NewListenAddress(netip.IPv4Unspecified()),
 						ListenPort: clientPort,
 					},
 				},
@@ -176,7 +174,7 @@ func testV2RayWebsocketOutbound(t *testing.T, maxEarlyData uint32, earlyDataHead
 			{
 				Type: C.TypeVMess,
 				Tag:  "vmess-out",
-				Options: &option.VMessOutboundOptions{
+				VMessOptions: option.VMessOutboundOptions{
 					ServerOptions: option.ServerOptions{
 						Server:     "127.0.0.1",
 						ServerPort: serverPort,

@@ -6,8 +6,6 @@ import (
 
 	C "github.com/sagernet/sing-box/constant"
 	"github.com/sagernet/sing-box/option"
-	"github.com/sagernet/sing/common"
-	"github.com/sagernet/sing/common/json/badoption"
 
 	"github.com/gofrs/uuid/v5"
 )
@@ -35,18 +33,18 @@ func testTUICSelf(t *testing.T, udpStream bool, zeroRTTHandshake bool) {
 			{
 				Type: C.TypeMixed,
 				Tag:  "mixed-in",
-				Options: &option.HTTPMixedInboundOptions{
+				MixedOptions: option.HTTPMixedInboundOptions{
 					ListenOptions: option.ListenOptions{
-						Listen:     common.Ptr(badoption.Addr(netip.IPv4Unspecified())),
+						Listen:     option.NewListenAddress(netip.IPv4Unspecified()),
 						ListenPort: clientPort,
 					},
 				},
 			},
 			{
 				Type: C.TypeTUIC,
-				Options: &option.TUICInboundOptions{
+				TUICOptions: option.TUICInboundOptions{
 					ListenOptions: option.ListenOptions{
-						Listen:     common.Ptr(badoption.Addr(netip.IPv4Unspecified())),
+						Listen:     option.NewListenAddress(netip.IPv4Unspecified()),
 						ListenPort: serverPort,
 					},
 					Users: []option.TUICUser{{
@@ -71,7 +69,7 @@ func testTUICSelf(t *testing.T, udpStream bool, zeroRTTHandshake bool) {
 			{
 				Type: C.TypeTUIC,
 				Tag:  "tuic-out",
-				Options: &option.TUICOutboundOptions{
+				TUICOptions: option.TUICOutboundOptions{
 					ServerOptions: option.ServerOptions{
 						Server:     "127.0.0.1",
 						ServerPort: serverPort,
@@ -92,18 +90,9 @@ func testTUICSelf(t *testing.T, udpStream bool, zeroRTTHandshake bool) {
 		Route: &option.RouteOptions{
 			Rules: []option.Rule{
 				{
-					Type: C.RuleTypeDefault,
 					DefaultOptions: option.DefaultRule{
-						RawDefaultRule: option.RawDefaultRule{
-							Inbound: []string{"mixed-in"},
-						},
-						RuleAction: option.RuleAction{
-							Action: C.RuleActionTypeRoute,
-
-							RouteOptions: option.RouteActionOptions{
-								Outbound: "tuic-out",
-							},
-						},
+						Inbound:  []string{"mixed-in"},
+						Outbound: "tuic-out",
 					},
 				},
 			},
@@ -118,9 +107,9 @@ func TestTUICInbound(t *testing.T) {
 		Inbounds: []option.Inbound{
 			{
 				Type: C.TypeTUIC,
-				Options: &option.TUICInboundOptions{
+				TUICOptions: option.TUICInboundOptions{
 					ListenOptions: option.ListenOptions{
-						Listen:     common.Ptr(badoption.Addr(netip.IPv4Unspecified())),
+						Listen:     option.NewListenAddress(netip.IPv4Unspecified()),
 						ListenPort: serverPort,
 					},
 					Users: []option.TUICUser{{
@@ -165,9 +154,9 @@ func TestTUICOutbound(t *testing.T) {
 		Inbounds: []option.Inbound{
 			{
 				Type: C.TypeMixed,
-				Options: &option.HTTPMixedInboundOptions{
+				MixedOptions: option.HTTPMixedInboundOptions{
 					ListenOptions: option.ListenOptions{
-						Listen:     common.Ptr(badoption.Addr(netip.IPv4Unspecified())),
+						Listen:     option.NewListenAddress(netip.IPv4Unspecified()),
 						ListenPort: clientPort,
 					},
 				},
@@ -176,7 +165,7 @@ func TestTUICOutbound(t *testing.T) {
 		Outbounds: []option.Outbound{
 			{
 				Type: C.TypeTUIC,
-				Options: &option.TUICOutboundOptions{
+				TUICOptions: option.TUICOutboundOptions{
 					ServerOptions: option.ServerOptions{
 						Server:     "127.0.0.1",
 						ServerPort: serverPort,

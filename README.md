@@ -8,11 +8,9 @@ The universal proxy platform.
 
 https://sing-box.sagernet.org
 
-For extended features
+## Support
 
-- Providers: [中文](./docs/configuration/provider/index.zh.md), [English](./docs/configuration/provider/index.md)
-- Load Balance: [中文](./docs/configuration/outbound/loadbalance.zh.md), [English](./docs/configuration/outbound/loadbalance.md)
-- Muiltifile Configuration Extended: [中文](./docs/configuration/index.zh.md), [English](./docs/configuration/index.md)
+https://community.sagernet.org/c/sing-box/
 
 ## License
 

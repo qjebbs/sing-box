@@ -3,7 +3,6 @@ package option
 import (
 	E "github.com/sagernet/sing/common/exceptions"
 	"github.com/sagernet/sing/common/json"
-	"github.com/sagernet/sing/common/json/badoption"
 )
 
 type OnDemandOptions struct {
@@ -13,10 +12,10 @@ type OnDemandOptions struct {
 
 type OnDemandRule struct {
 	Action                *OnDemandRuleAction        `json:"action,omitempty"`
-	DNSSearchDomainMatch  badoption.Listable[string] `json:"dns_search_domain_match,omitempty"`
-	DNSServerAddressMatch badoption.Listable[string] `json:"dns_server_address_match,omitempty"`
+	DNSSearchDomainMatch  Listable[string]           `json:"dns_search_domain_match,omitempty"`
+	DNSServerAddressMatch Listable[string]           `json:"dns_server_address_match,omitempty"`
 	InterfaceTypeMatch    *OnDemandRuleInterfaceType `json:"interface_type_match,omitempty"`
-	SSIDMatch             badoption.Listable[string] `json:"ssid_match,omitempty"`
+	SSIDMatch             Listable[string]           `json:"ssid_match,omitempty"`
 	ProbeURL              string                     `json:"probe_url,omitempty"`
 }
 

@@ -1,4 +1,4 @@
-FROM --platform=$BUILDPLATFORM golang:1.23-alpine AS builder
+FROM --platform=$BUILDPLATFORM golang:1.21-alpine AS builder
 LABEL maintainer="nekohasekai <contact-git@sekai.icu>"
 COPY . /go/src/github.com/sagernet/sing-box
 WORKDIR /go/src/github.com/sagernet/sing-box
@@ -21,7 +21,7 @@ FROM --platform=$TARGETPLATFORM alpine AS dist
 LABEL maintainer="nekohasekai <contact-git@sekai.icu>"
 RUN set -ex \
     && apk upgrade \
-    && apk add bash tzdata ca-certificates nftables \
+    && apk add bash tzdata ca-certificates \
     && rm -rf /var/cache/apk/*
 COPY --from=builder /go/bin/sing-box /usr/local/bin/sing-box
 ENTRYPOINT ["sing-box"]

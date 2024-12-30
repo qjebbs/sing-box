@@ -2,36 +2,6 @@
 icon: material/alert-decagram
 ---
 
-!!! quote "sing-box 1.11.0 中的更改"
-
-    :material-delete-alert: [gso](#gso)  
-    :material-alert-decagram: [route_address_set](#stack)  
-    :material-alert-decagram: [route_exclude_address_set](#stack)
-
-!!! quote "sing-box 1.10.0 中的更改"
-
-    :material-plus: [address](#address)  
-    :material-delete-clock: [inet4_address](#inet4_address)  
-    :material-delete-clock: [inet6_address](#inet6_address)  
-    :material-plus: [route_address](#route_address)  
-    :material-delete-clock: [inet4_route_address](#inet4_route_address)  
-    :material-delete-clock: [inet6_route_address](#inet6_route_address)  
-    :material-plus: [route_exclude_address](#route_address)  
-    :material-delete-clock: [inet4_route_exclude_address](#inet4_route_exclude_address)  
-    :material-delete-clock: [inet6_route_exclude_address](#inet6_route_exclude_address)   
-    :material-plus: [iproute2_table_index](#iproute2_table_index)  
-    :material-plus: [iproute2_rule_index](#iproute2_table_index)  
-    :material-plus: [auto_redirect](#auto_redirect)  
-    :material-plus: [auto_redirect_input_mark](#auto_redirect_input_mark)  
-    :material-plus: [auto_redirect_output_mark](#auto_redirect_output_mark)  
-    :material-plus: [route_address_set](#route_address_set)  
-    :material-plus: [route_exclude_address_set](#route_address_set)
-
-!!! quote "sing-box 1.9.0 中的更改"
-
-    :material-plus: [platform.http_proxy.bypass_domain](#platformhttp_proxybypass_domain)  
-    :material-plus: [platform.http_proxy.match_domain](#platformhttp_proxymatch_domain)  
-
 !!! quote "sing-box 1.8.0 中的更改"
 
     :material-plus: [gso](#gso)  
@@ -48,34 +18,25 @@ icon: material/alert-decagram
   "type": "tun",
   "tag": "tun-in",
   "interface_name": "tun0",
-  "address": [
-    "172.18.0.1/30",
-    "fdfe:dcba:9876::1/126"
-  ],
+  "inet4_address": "172.19.0.1/30",
+  "inet6_address": "fdfe:dcba:9876::1/126",
   "mtu": 9000,
+  "gso": false,
   "auto_route": true,
-  "iproute2_table_index": 2022,
-  "iproute2_rule_index": 9000,
-  "auto_redirect": false,
-  "auto_redirect_input_mark": "0x2023",
-  "auto_redirect_output_mark": "0x2024",
   "strict_route": true,
-  "route_address": [
+  "inet4_route_address": [
     "0.0.0.0/1",
-    "128.0.0.0/1",
+    "128.0.0.0/1"
+  ],
+  "inet6_route_address": [
     "::/1",
     "8000::/1"
   ],
-
-  "route_exclude_address": [
-    "192.168.0.0/16",
+  "inet4_route_exclude_address": [
+    "192.168.0.0/16"
+  ],
+  "inet6_route_exclude_address": [
     "fc00::/7"
-  ],
-  "route_address_set": [
-    "geoip-cloudflare"
-  ],
-  "route_exclude_address_set": [
-    "geoip-cn"
   ],
   "endpoint_independent_nat": false,
   "udp_timeout": "5m",
@@ -90,13 +51,13 @@ icon: material/alert-decagram
     0
   ],
   "include_uid_range": [
-    "1000:99999"
+    "1000-99999"
   ],
   "exclude_uid": [
     1000
   ],
   "exclude_uid_range": [
-    "1000:99999"
+    "1000-99999"
   ],
   "include_android_user": [
     0,
@@ -112,34 +73,9 @@ icon: material/alert-decagram
     "http_proxy": {
       "enabled": false,
       "server": "127.0.0.1",
-      "server_port": 8080,
-      "bypass_domain": [],
-      "match_domain": []
+      "server_port": 8080
     }
   },
-
-  // 已弃用
-  "gso": false,
-  "inet4_address": [
-    "172.19.0.1/30"
-  ],
-  "inet6_address": [
-    "fdfe:dcba:9876::1/126"
-  ],
-  "inet4_route_address": [
-    "0.0.0.0/1",
-    "128.0.0.0/1"
-  ],
-  "inet6_route_address": [
-    "::/1",
-    "8000::/1"
-  ],
-  "inet4_route_exclude_address": [
-    "192.168.0.0/16"
-  ],
-  "inet6_route_exclude_address": [
-    "fc00::/7"
-  ],
   
   ... // 监听字段
 }
@@ -159,29 +95,13 @@ icon: material/alert-decagram
 
 虚拟设备名称，默认自动选择。
 
-#### address
-
-!!! question "自 sing-box 1.10.0 起"
-
-==必填==
-
-tun 接口的 IPv4 和 IPv6 前缀。
-
 #### inet4_address
-
-!!! failure "已在 sing-box 1.10.0 废弃"
-
-    `inet4_address` 已合并到 `address` 且将在 sing-box 1.12.0 中被移除。
 
 ==必填==
 
 tun 接口的 IPv4 前缀。
 
 #### inet6_address
-
-!!! failure "已在 sing-box 1.10.0 废弃"
-
-    `inet6_address` 已合并到 `address` 且将在 sing-box 1.12.0 中被移除。
 
 tun 接口的 IPv6 前缀。
 
@@ -190,10 +110,6 @@ tun 接口的 IPv6 前缀。
 最大传输单元。
 
 #### gso
-
-!!! failure "已在 sing-box 1.11.0 废弃"
-
-    GSO 对于透明代理场景没有优势，已废弃和不再生效，且将在 sing-box 1.12.0 中被移除。
 
 !!! question "自 sing-box 1.8.0 起"
 
@@ -215,56 +131,6 @@ tun 接口的 IPv6 前缀。
 
     VPN 默认优先于 tun。要使 tun 经过 VPN，启用 `route.override_android_vpn`。
 
-#### iproute2_table_index
-
-!!! question "自 sing-box 1.10.0 起"
-
-`auto_route` 生成的 iproute2 路由表索引。
-
-默认使用 `2022`。
-
-#### iproute2_rule_index
-
-!!! question "自 sing-box 1.10.0 起"
-
-`auto_route` 生成的 iproute2 规则起始索引。
-
-默认使用 `9000`。
-
-#### auto_redirect
-
-!!! question "自 sing-box 1.10.0 起"
-
-!!! quote ""
-
-    仅支持 Linux，且需要 `auto_route` 已启用。 
-
-自动配置 iptables/nftables 以重定向连接。
-
-*在 Android 中*：
-
-仅转发本地 IPv4 连接。 要通过热点或中继共享您的 VPN 连接，请使用 [VPNHotspot](https://github.com/Mygod/VPNHotspot)。
-
-*在 Linux 中*:
-
-带有 `auto_redirect `的 `auto_route` 可以在路由器上按预期工作，**无需干预**。
-
-#### auto_redirect_input_mark
-
-!!! question "自 sing-box 1.10.0 起"
-
-`route_address_set` 和 `route_exclude_address_set` 使用的连接输入标记。
-
-默认使用 `0x2023`。
-
-#### auto_redirect_output_mark
-
-!!! question "自 sing-box 1.10.0 起"
-
-`route_address_set` 和 `route_exclude_address_set` 使用的连接输出标记。
-
-默认使用 `0x2024`。
-
 #### strict_route
 
 启用 `auto_route` 时执行严格的路由规则。
@@ -272,10 +138,9 @@ tun 接口的 IPv6 前缀。
 *在 Linux 中*:
 
 * 让不支持的网络无法到达
-* 使 ICMP 流量路由到 tun 而不是上游接口
 * 将所有连接路由到 tun
 
-它可以防止 IP 地址泄漏，并使 DNS 劫持在 Android 上工作。
+它可以防止地址泄漏，并使 DNS 劫持在 Android 上工作，但你的设备将无法其他设备被访问。
 
 *在 Windows 中*:
 
@@ -285,99 +150,21 @@ tun 接口的 IPv6 前缀。
 
 它可能会使某些应用程序（如 VirtualBox）在某些情况下无法正常工作。
 
-#### route_address
-
-!!! question "自 sing-box 1.10.0 起"
-
-设置到 Tun 的自定义路由。
-
 #### inet4_route_address
-
-!!! failure "已在 sing-box 1.10.0 废弃"
-
-    `inet4_route_address` 已合并到 `route_address` 且将在 sing-box 1.12.0 中被移除。
 
 启用 `auto_route` 时使用自定义路由而不是默认路由。
 
 #### inet6_route_address
 
-!!! failure "已在 sing-box 1.10.0 废弃"
-
-    `inet6_route_address` 已合并到 `route_address` 且将在 sing-box 1.12.0 中被移除。
-
 启用 `auto_route` 时使用自定义路由而不是默认路由。
 
-#### route_exclude_address
-
-!!! question "自 sing-box 1.10.0 起"
-
-设置到 Tun 的排除自定义路由。
-
 #### inet4_route_exclude_address
-
-!!! failure "已在 sing-box 1.10.0 废弃"
-
-    `inet4_route_exclude_address` 已合并到 `route_exclude_address` 且将在 sing-box 1.12.0 中被移除。
 
 启用 `auto_route` 时排除自定义路由。
 
 #### inet6_route_exclude_address
 
-!!! failure "已在 sing-box 1.10.0 废弃"
-
-    `inet6_route_exclude_address` 已合并到 `route_exclude_address` 且将在 sing-box 1.12.0 中被移除。
-
 启用 `auto_route` 时排除自定义路由。
-
-#### route_address_set
-
-=== "`auto_redirect` 已启用"
-
-    !!! question "自 sing-box 1.10.0 起"
-    
-    !!! quote ""
-    
-        仅支持 Linux，且需要 nftables，`auto_route` 和 `auto_redirect` 已启用。 
-    
-    将指定规则集中的目标 IP CIDR 规则添加到防火墙。
-    不匹配的流量将绕过 sing-box 路由。
-    
-    与 `route.default_mark` 和 `[dialOptions].routing_mark` 冲突。
-
-=== "`auto_redirect` 未启用"
-
-    !!! question "自 sing-box 1.11.0 起"
-
-    将指定规则集中的目标 IP CIDR 规则添加到路由，相当于添加到 `route_address`。
-    不匹配的流量将绕过 sing-box 路由。
-
-    请注意，由于 Android VpnService 无法处理大量路由（DeadSystemException），
-    因此它**在 Android 图形客户端上不起作用**，但除此之外，它在所有命令行客户端和 Apple 平台上都可以正常工作。
-
-#### route_exclude_address_set
-
-=== "`auto_redirect` 已启用"
-
-    !!! question "自 sing-box 1.10.0 起"
-    
-    !!! quote ""
-    
-        仅支持 Linux，且需要 nftables，`auto_route` 和 `auto_redirect` 已启用。 
-
-    将指定规则集中的目标 IP CIDR 规则添加到防火墙。
-    匹配的流量将绕过 sing-box 路由。
-
-    与 `route.default_mark` 和 `[dialOptions].routing_mark` 冲突。
-
-=== "`auto_redirect` 未启用"
-
-    !!! question "自 sing-box 1.11.0 起"
-
-    将指定规则集中的目标 IP CIDR 规则添加到路由，相当于添加到 `route_exclude_address`。
-    匹配的流量将绕过 sing-box 路由。
-
-    请注意，由于 Android VpnService 无法处理大量路由（DeadSystemException），
-    因此它**在 Android 图形客户端上不起作用**，但除此之外，它在所有命令行客户端和 Apple 平台上都可以正常工作。
 
 #### endpoint_independent_nat
 
@@ -387,9 +174,7 @@ tun 接口的 IPv6 前缀。
 
 #### udp_timeout
 
-UDP NAT 过期时间。
-
-默认使用 `5m`。
+UDP NAT 过期时间，以秒为单位，默认为 300（5 分钟）。
 
 #### stack
 
@@ -418,10 +203,6 @@ TCP/IP 栈。
 与 `exclude_interface` 冲突。
 
 #### exclude_interface
-
-!!! warning ""
-
-    当 `strict_route` 启用，到被排除接口的回程流量将不会被自动排除，因此也要添加它们（例：`br-lan` 与 `pppoe-wan`）。
 
 排除路由的接口。
 
@@ -475,38 +256,6 @@ TCP/IP 栈。
 #### platform.http_proxy
 
 系统 HTTP 代理设置。
-
-##### platform.http_proxy.enabled
-
-启用系统 HTTP 代理。
-
-##### platform.http_proxy.server
-
-==必填==
-
-系统 HTTP 代理服务器地址。
-
-##### platform.http_proxy.server_port
-
-==必填==
-
-系统 HTTP 代理服务器端口。
-
-##### platform.http_proxy.bypass_domain
-
-!!! note ""
-
-    在 Apple 平台，`bypass_domain` 项匹配主机名 **后缀**.
-
-绕过代理的主机名列表。
-
-##### platform.http_proxy.match_domain
-
-!!! quote ""
-
-    仅在 Apple 平台图形客户端中支持。
-
-代理的主机名列表。
 
 ### 监听字段
 

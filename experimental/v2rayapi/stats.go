@@ -22,7 +22,7 @@ func init() {
 }
 
 var (
-	_ adapter.ConnectionTracker = (*StatsService)(nil)
+	_ adapter.V2RayStatsService = (*StatsService)(nil)
 	_ StatsServiceServer        = (*StatsService)(nil)
 )
 
@@ -60,10 +60,7 @@ func NewStatsService(options option.V2RayStatsServiceOptions) *StatsService {
 	}
 }
 
-func (s *StatsService) RoutedConnection(ctx context.Context, conn net.Conn, metadata adapter.InboundContext, matchedRule adapter.Rule, matchOutbound adapter.Outbound) net.Conn {
-	inbound := metadata.Inbound
-	user := metadata.User
-	outbound := matchOutbound.Tag()
+func (s *StatsService) RoutedConnection(inbound string, outbound string, user string, conn net.Conn) net.Conn {
 	var readCounter []*atomic.Int64
 	var writeCounter []*atomic.Int64
 	countInbound := inbound != "" && s.inbounds[inbound]
@@ -89,10 +86,7 @@ func (s *StatsService) RoutedConnection(ctx context.Context, conn net.Conn, meta
 	return bufio.NewInt64CounterConn(conn, readCounter, writeCounter)
 }
 
-func (s *StatsService) RoutedPacketConnection(ctx context.Context, conn N.PacketConn, metadata adapter.InboundContext, matchedRule adapter.Rule, matchOutbound adapter.Outbound) N.PacketConn {
-	inbound := metadata.Inbound
-	user := metadata.User
-	outbound := matchOutbound.Tag()
+func (s *StatsService) RoutedPacketConnection(inbound string, outbound string, user string, conn N.PacketConn) N.PacketConn {
 	var readCounter []*atomic.Int64
 	var writeCounter []*atomic.Int64
 	countInbound := inbound != "" && s.inbounds[inbound]

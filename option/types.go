@@ -1,9 +1,11 @@
 package option
 
 import (
+	"net/http"
+	"net/netip"
 	"strings"
+	"time"
 
-	C "github.com/sagernet/sing-box/constant"
 	"github.com/sagernet/sing-dns"
 	E "github.com/sagernet/sing/common/exceptions"
 	F "github.com/sagernet/sing/common/format"
@@ -12,6 +14,42 @@ import (
 
 	mDNS "github.com/miekg/dns"
 )
+
+type ListenAddress netip.Addr
+
+func NewListenAddress(addr netip.Addr) *ListenAddress {
+	address := ListenAddress(addr)
+	return &address
+}
+
+func (a ListenAddress) MarshalJSON() ([]byte, error) {
+	addr := netip.Addr(a)
+	if !addr.IsValid() {
+		return nil, nil
+	}
+	return json.Marshal(addr.String())
+}
+
+func (a *ListenAddress) UnmarshalJSON(content []byte) error {
+	var value string
+	err := json.Unmarshal(content, &value)
+	if err != nil {
+		return err
+	}
+	addr, err := netip.ParseAddr(value)
+	if err != nil {
+		return err
+	}
+	*a = ListenAddress(addr)
+	return nil
+}
+
+func (a *ListenAddress) Build() netip.Addr {
+	if a == nil {
+		return netip.AddrFrom4([4]byte{127, 0, 0, 1})
+	}
+	return (netip.Addr)(*a)
+}
 
 type NetworkList string
 
@@ -45,31 +83,38 @@ func (v NetworkList) Build() []string {
 	return strings.Split(string(v), "\n")
 }
 
-type DomainStrategy dns.DomainStrategy
+type Listable[T any] []T
 
-func (s DomainStrategy) String() string {
-	switch dns.DomainStrategy(s) {
-	case dns.DomainStrategyAsIS:
-		return ""
-	case dns.DomainStrategyPreferIPv4:
-		return "prefer_ipv4"
-	case dns.DomainStrategyPreferIPv6:
-		return "prefer_ipv6"
-	case dns.DomainStrategyUseIPv4:
-		return "ipv4_only"
-	case dns.DomainStrategyUseIPv6:
-		return "ipv6_only"
-	default:
-		panic(E.New("unknown domain strategy: ", s))
+func (l Listable[T]) MarshalJSON() ([]byte, error) {
+	arrayList := []T(l)
+	if len(arrayList) == 1 {
+		return json.Marshal(arrayList[0])
 	}
+	return json.Marshal(arrayList)
 }
+
+func (l *Listable[T]) UnmarshalJSON(content []byte) error {
+	err := json.Unmarshal(content, (*[]T)(l))
+	if err == nil {
+		return nil
+	}
+	var singleItem T
+	newError := json.Unmarshal(content, &singleItem)
+	if newError != nil {
+		return E.Errors(err, newError)
+	}
+	*l = []T{singleItem}
+	return nil
+}
+
+type DomainStrategy dns.DomainStrategy
 
 func (s DomainStrategy) MarshalJSON() ([]byte, error) {
 	var value string
 	switch dns.DomainStrategy(s) {
 	case dns.DomainStrategyAsIS:
 		value = ""
-		// value = "as_is"
+		// value = "AsIS"
 	case dns.DomainStrategyPreferIPv4:
 		value = "prefer_ipv4"
 	case dns.DomainStrategyPreferIPv6:
@@ -104,6 +149,26 @@ func (s *DomainStrategy) UnmarshalJSON(bytes []byte) error {
 	default:
 		return E.New("unknown domain strategy: ", value)
 	}
+	return nil
+}
+
+type Duration time.Duration
+
+func (d Duration) MarshalJSON() ([]byte, error) {
+	return json.Marshal((time.Duration)(d).String())
+}
+
+func (d *Duration) UnmarshalJSON(bytes []byte) error {
+	var value string
+	err := json.Unmarshal(bytes, &value)
+	if err != nil {
+		return err
+	}
+	duration, err := ParseDuration(value)
+	if err != nil {
+		return err
+	}
+	*d = Duration(duration)
 	return nil
 }
 
@@ -152,46 +217,14 @@ func DNSQueryTypeToString(queryType uint16) string {
 	return F.ToString(queryType)
 }
 
-type NetworkStrategy C.NetworkStrategy
+type HTTPHeader map[string]Listable[string]
 
-func (n NetworkStrategy) MarshalJSON() ([]byte, error) {
-	return json.Marshal(C.NetworkStrategy(n).String())
-}
-
-func (n *NetworkStrategy) UnmarshalJSON(content []byte) error {
-	var value string
-	err := json.Unmarshal(content, &value)
-	if err != nil {
-		return err
+func (h HTTPHeader) Build() http.Header {
+	header := make(http.Header)
+	for name, values := range h {
+		for _, value := range values {
+			header.Add(name, value)
+		}
 	}
-	strategy, loaded := C.StringToNetworkStrategy[value]
-	if !loaded {
-		return E.New("unknown network strategy: ", value)
-	}
-	*n = NetworkStrategy(strategy)
-	return nil
-}
-
-type InterfaceType C.InterfaceType
-
-func (t InterfaceType) Build() C.InterfaceType {
-	return C.InterfaceType(t)
-}
-
-func (t InterfaceType) MarshalJSON() ([]byte, error) {
-	return json.Marshal(C.InterfaceType(t).String())
-}
-
-func (t *InterfaceType) UnmarshalJSON(content []byte) error {
-	var value string
-	err := json.Unmarshal(content, &value)
-	if err != nil {
-		return err
-	}
-	interfaceType, loaded := C.StringToInterfaceType[value]
-	if !loaded {
-		return E.New("unknown interface type: ", value)
-	}
-	*t = InterfaceType(interfaceType)
-	return nil
+	return header
 }

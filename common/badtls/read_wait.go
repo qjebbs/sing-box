@@ -4,8 +4,6 @@ package badtls
 
 import (
 	"bytes"
-	"context"
-	"net"
 	"os"
 	"reflect"
 	"sync"
@@ -20,32 +18,20 @@ import (
 var _ N.ReadWaiter = (*ReadWaitConn)(nil)
 
 type ReadWaitConn struct {
-	tls.Conn
-	halfAccess                    *sync.Mutex
-	rawInput                      *bytes.Buffer
-	input                         *bytes.Reader
-	hand                          *bytes.Buffer
-	readWaitOptions               N.ReadWaitOptions
-	tlsReadRecord                 func() error
-	tlsHandlePostHandshakeMessage func() error
+	*tls.STDConn
+	halfAccess      *sync.Mutex
+	rawInput        *bytes.Buffer
+	input           *bytes.Reader
+	hand            *bytes.Buffer
+	readWaitOptions N.ReadWaitOptions
 }
 
 func NewReadWaitConn(conn tls.Conn) (tls.Conn, error) {
-	var (
-		loaded                        bool
-		tlsReadRecord                 func() error
-		tlsHandlePostHandshakeMessage func() error
-	)
-	for _, tlsCreator := range tlsRegistry {
-		loaded, tlsReadRecord, tlsHandlePostHandshakeMessage = tlsCreator(conn)
-		if loaded {
-			break
-		}
-	}
-	if !loaded {
+	stdConn, isSTDConn := conn.(*tls.STDConn)
+	if !isSTDConn {
 		return nil, os.ErrInvalid
 	}
-	rawConn := reflect.Indirect(reflect.ValueOf(conn))
+	rawConn := reflect.Indirect(reflect.ValueOf(stdConn))
 	rawHalfConn := rawConn.FieldByName("in")
 	if !rawHalfConn.IsValid() || rawHalfConn.Kind() != reflect.Struct {
 		return nil, E.New("badtls: invalid half conn")
@@ -71,13 +57,11 @@ func NewReadWaitConn(conn tls.Conn) (tls.Conn, error) {
 	}
 	hand := (*bytes.Buffer)(unsafe.Pointer(rawHand.UnsafeAddr()))
 	return &ReadWaitConn{
-		Conn:                          conn,
-		halfAccess:                    halfAccess,
-		rawInput:                      rawInput,
-		input:                         input,
-		hand:                          hand,
-		tlsReadRecord:                 tlsReadRecord,
-		tlsHandlePostHandshakeMessage: tlsHandlePostHandshakeMessage,
+		STDConn:    stdConn,
+		halfAccess: halfAccess,
+		rawInput:   rawInput,
+		input:      input,
+		hand:       hand,
 	}, nil
 }
 
@@ -87,19 +71,19 @@ func (c *ReadWaitConn) InitializeReadWaiter(options N.ReadWaitOptions) (needCopy
 }
 
 func (c *ReadWaitConn) WaitReadBuffer() (buffer *buf.Buffer, err error) {
-	err = c.HandshakeContext(context.Background())
+	err = c.Handshake()
 	if err != nil {
 		return
 	}
 	c.halfAccess.Lock()
 	defer c.halfAccess.Unlock()
 	for c.input.Len() == 0 {
-		err = c.tlsReadRecord()
+		err = tlsReadRecord(c.STDConn)
 		if err != nil {
 			return
 		}
 		for c.hand.Len() > 0 {
-			err = c.tlsHandlePostHandshakeMessage()
+			err = tlsHandlePostHandshakeMessage(c.STDConn)
 			if err != nil {
 				return
 			}
@@ -116,7 +100,7 @@ func (c *ReadWaitConn) WaitReadBuffer() (buffer *buf.Buffer, err error) {
 	if n != 0 && c.input.Len() == 0 && c.rawInput.Len() > 0 &&
 		// recordType(c.rawInput.Bytes()[0]) == recordTypeAlert {
 		c.rawInput.Bytes()[0] == 21 {
-		_ = c.tlsReadRecord()
+		_ = tlsReadRecord(c.STDConn)
 		// return n, err // will be io.EOF on closeNotify
 	}
 
@@ -125,27 +109,11 @@ func (c *ReadWaitConn) WaitReadBuffer() (buffer *buf.Buffer, err error) {
 }
 
 func (c *ReadWaitConn) Upstream() any {
-	return c.Conn
+	return c.STDConn
 }
 
-var tlsRegistry []func(conn net.Conn) (loaded bool, tlsReadRecord func() error, tlsHandlePostHandshakeMessage func() error)
+//go:linkname tlsReadRecord crypto/tls.(*Conn).readRecord
+func tlsReadRecord(c *tls.STDConn) error
 
-func init() {
-	tlsRegistry = append(tlsRegistry, func(conn net.Conn) (loaded bool, tlsReadRecord func() error, tlsHandlePostHandshakeMessage func() error) {
-		tlsConn, loaded := conn.(*tls.STDConn)
-		if !loaded {
-			return
-		}
-		return true, func() error {
-				return stdTLSReadRecord(tlsConn)
-			}, func() error {
-				return stdTLSHandlePostHandshakeMessage(tlsConn)
-			}
-	})
-}
-
-//go:linkname stdTLSReadRecord crypto/tls.(*Conn).readRecord
-func stdTLSReadRecord(c *tls.STDConn) error
-
-//go:linkname stdTLSHandlePostHandshakeMessage crypto/tls.(*Conn).handlePostHandshakeMessage
-func stdTLSHandlePostHandshakeMessage(c *tls.STDConn) error
+//go:linkname tlsHandlePostHandshakeMessage crypto/tls.(*Conn).handlePostHandshakeMessage
+func tlsHandlePostHandshakeMessage(c *tls.STDConn) error

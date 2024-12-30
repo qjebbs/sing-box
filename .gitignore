@@ -1,9 +1,4 @@
 /.idea/
-/.vscode/*
-!/.vscode/tasks.json
-!/.vscode/launch.json
-!/.vscode/settings.json
-/.devcontainer/
 /vendor/
 /*.json
 /*.srs
@@ -19,5 +14,3 @@
 /*.xcframework/
 .DS_Store
 /config.d/
-/venv/
-

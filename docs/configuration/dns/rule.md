@@ -1,32 +1,6 @@
 ---
-icon: material/new-box
+icon: material/alert-decagram
 ---
-
-!!! quote "Changes in sing-box 1.11.0"
-
-    :material-plus: [action](#action)  
-    :material-alert: [server](#server)  
-    :material-alert: [disable_cache](#disable_cache)  
-    :material-alert: [rewrite_ttl](#rewrite_ttl)  
-    :material-alert: [client_subnet](#client_subnet)  
-    :material-plus: [network_type](#network_type)  
-    :material-plus: [network_is_expensive](#network_is_expensive)  
-    :material-plus: [network_is_constrained](#network_is_constrained)
-
-!!! quote "Changes in sing-box 1.10.0"
-
-    :material-delete-clock: [rule_set_ipcidr_match_source](#rule_set_ipcidr_match_source)  
-    :material-plus: [rule_set_ip_cidr_match_source](#rule_set_ip_cidr_match_source)  
-    :material-plus: [rule_set_ip_cidr_accept_empty](#rule_set_ip_cidr_accept_empty)  
-    :material-plus: [process_path_regex](#process_path_regex)
-
-!!! quote "Changes in sing-box 1.9.0"
-
-    :material-plus: [geoip](#geoip)  
-    :material-plus: [ip_cidr](#ip_cidr)  
-    :material-plus: [ip_is_private](#ip_is_private)  
-    :material-plus: [client_subnet](#client_subnet)  
-    :material-plus: [rule_set_ipcidr_match_source](#rule_set_ipcidr_match_source)
 
 !!! quote "Changes in sing-box 1.8.0"
 
@@ -79,19 +53,11 @@ icon: material/new-box
         "source_geoip": [
           "private"
         ],
-        "geoip": [
-          "cn"
-        ],
         "source_ip_cidr": [
           "10.0.0.0/24",
           "192.168.0.1"
         ],
         "source_ip_is_private": false,
-        "ip_cidr": [
-          "10.0.0.0/24",
-          "192.168.0.1"
-        ],
-        "ip_is_private": false,
         "source_port": [
           12345
         ],
@@ -115,9 +81,6 @@ icon: material/new-box
         "process_path": [
           "/usr/bin/curl"
         ],
-        "process_path_regex": [
-          "^/usr/bin/.+"
-        ],
         "package_name": [
           "com.termux"
         ],
@@ -128,11 +91,6 @@ icon: material/new-box
           1000
         ],
         "clash_mode": "direct",
-        "network_type": [
-          "wifi"
-        ],
-        "network_is_expensive": false,
-        "network_is_constrained": false,
         "wifi_ssid": [
           "My WIFI"
         ],
@@ -143,23 +101,21 @@ icon: material/new-box
           "geoip-cn",
           "geosite-cn"
         ],
-        // deprecated
-        "rule_set_ipcidr_match_source": false,
-        "rule_set_ip_cidr_match_source": false,
-        "rule_set_ip_cidr_accept_empty": false,
         "invert": false,
         "outbound": [
           "direct"
         ],
-        "action": "route",
-        "server": "local"
+        "server": "local",
+        "disable_cache": false,
+        "rewrite_ttl": 100
       },
       {
         "type": "logical",
         "mode": "and",
         "rules": [],
-        "action": "route",
-        "server": "local"
+        "server": "local",
+        "disable_cache": false,
+        "rewrite_ttl": 100
       }
     ]
   }
@@ -182,7 +138,7 @@ icon: material/new-box
     (`source_port` || `source_port_range`) &&  
     `other fields`
 
-    Additionally, included rule-sets can be considered merged rather than as a single rule sub-item.
+    Additionally, included rule sets can be considered merged rather than as a single rule sub-item.
 
 #### inbound
 
@@ -230,7 +186,7 @@ Match domain using regular expression.
 
 !!! failure "Deprecated in sing-box 1.8.0"
 
-    Geosite is deprecated and will be removed in sing-box 1.12.0, check [Migration](/migration/#migrate-geosite-to-rule-sets).
+    Geosite is deprecated and may be removed in the future, check [Migration](/migration/#migrate-geosite-to-rule-sets).
 
 Match geosite.
 
@@ -238,7 +194,7 @@ Match geosite.
 
 !!! failure "Deprecated in sing-box 1.8.0"
 
-    GeoIP is deprecated and will be removed in sing-box 1.12.0, check [Migration](/migration/#migrate-geoip-to-rule-sets).
+    GeoIP is deprecated and may be removed in the future, check [Migration](/migration/#migrate-geoip-to-rule-sets).
 
 Match source geoip.
 
@@ -284,16 +240,6 @@ Match process name.
 
 Match process path.
 
-#### process_path_regex
-
-!!! question "Since sing-box 1.10.0"
-
-!!! quote ""
-
-    Only supported on Linux, Windows, and macOS.
-
-Match process path using regular expression.
-
 #### package_name
 
 Match android package name.
@@ -318,44 +264,13 @@ Match user id.
 
 Match Clash mode.
 
-#### network_type
-
-!!! question "Since sing-box 1.11.0"
-
-!!! quote ""
-
-    Only supported in graphical clients on Android and Apple platforms.
-
-Match network type.
-
-Available values: `wifi`, `cellular`, `ethernet` and `other`.
-
-#### network_is_expensive
-
-!!! question "Since sing-box 1.11.0"
-
-!!! quote ""
-
-    Only supported in graphical clients on Android and Apple platforms.
-
-Match if network is considered Metered (on Android) or considered expensive,
-such as Cellular or a Personal Hotspot (on Apple platforms).
-
-#### network_is_constrained
-
-!!! question "Since sing-box 1.11.0"
-
-!!! quote ""
-
-    Only supported in graphical clients on Apple platforms.
-
-Match if network is in Low Data Mode.
-
 #### wifi_ssid
 
+<!-- md:version 1.7.0-beta.4 -->
+
 !!! quote ""
 
-    Only supported in graphical clients on Android and Apple platforms.
+    Only supported in graphical clients on Android and iOS.
 
 Match WiFi SSID.
 
@@ -363,7 +278,7 @@ Match WiFi SSID.
 
 !!! quote ""
 
-    Only supported in graphical clients on Android and Apple platforms.
+    Only supported in graphical clients on Android and iOS.
 
 Match WiFi BSSID.
 
@@ -371,23 +286,7 @@ Match WiFi BSSID.
 
 !!! question "Since sing-box 1.8.0"
 
-Match [rule-set](/configuration/route/#rule_set).
-
-#### rule_set_ipcidr_match_source
-
-!!! question "Since sing-box 1.9.0"
-
-!!! failure "Deprecated in sing-box 1.10.0"
-    
-    `rule_set_ipcidr_match_source` is renamed to `rule_set_ip_cidr_match_source` and will be remove in sing-box 1.11.0.
-
-Make `ip_cidr` rule items in rule-sets match the source IP.
-
-#### rule_set_ip_cidr_match_source
-
-!!! question "Since sing-box 1.10.0"
-
-Make `ip_cidr` rule items in rule-sets match the source IP.
+Match [Rule Set](/configuration/route/#rule_set).
 
 #### invert
 
@@ -399,71 +298,19 @@ Match outbound.
 
 `any` can be used as a value to match any outbound.
 
-#### action
+#### server
 
 ==Required==
 
-See [DNS Rule Actions](../rule_action/) for details.
-
-#### server
-
-!!! failure "Deprecated in sing-box 1.11.0"
-
-    Moved to [DNS Rule Action](../rule_action#route).
+Tag of the target dns server.
 
 #### disable_cache
 
-!!! failure "Deprecated in sing-box 1.11.0"
-
-    Moved to [DNS Rule Action](../rule_action#route).
+Disable cache and save cache in this query.
 
 #### rewrite_ttl
 
-!!! failure "Deprecated in sing-box 1.11.0"
-
-    Moved to [DNS Rule Action](../rule_action#route).
-
-#### client_subnet
-
-!!! failure "Deprecated in sing-box 1.11.0"
-
-    Moved to [DNS Rule Action](../rule_action#route).
-
-### Address Filter Fields
-
-Only takes effect for address requests (A/AAAA/HTTPS). When the query results do not match the address filtering rule items, the current rule will be skipped.
-
-!!! info ""
-
-    `ip_cidr` items in included rule-sets also takes effect as an address filtering field.
-
-!!! note ""
-
-    Enable `experimental.cache_file.store_rdrc` to cache results.
-
-#### geoip
-
-!!! question "Since sing-box 1.9.0"
-
-Match GeoIP with query response.
-
-#### ip_cidr
-
-!!! question "Since sing-box 1.9.0"
-
-Match IP CIDR with query response.
-
-#### ip_is_private
-
-!!! question "Since sing-box 1.9.0"
-
-Match private IP with query response.
-
-#### rule_set_ip_cidr_accept_empty
-
-!!! question "Since sing-box 1.10.0"
-
-Make `ip_cidr` rules in rule-sets accept empty query response.
+Rewrite TTL in DNS responses.
 
 ### Logical Fields
 

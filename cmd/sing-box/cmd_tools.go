@@ -1,9 +1,6 @@
 package main
 
 import (
-	"errors"
-	"os"
-
 	"github.com/sagernet/sing-box"
 	E "github.com/sagernet/sing/common/exceptions"
 	N "github.com/sagernet/sing/common/network"
@@ -26,11 +23,9 @@ func init() {
 func createPreStartedClient() (*box.Box, error) {
 	options, err := readConfigAndMerge()
 	if err != nil {
-		if !(errors.Is(err, os.ErrNotExist) && len(configDirectories) == 0 && len(configPaths) == 1) || configPaths[0] != "config.json" {
-			return nil, err
-		}
+		return nil, err
 	}
-	instance, err := box.New(box.Options{Context: globalCtx, Options: options})
+	instance, err := box.New(box.Options{Options: options})
 	if err != nil {
 		return nil, E.Cause(err, "create service")
 	}
@@ -41,11 +36,11 @@ func createPreStartedClient() (*box.Box, error) {
 	return instance, nil
 }
 
-func createDialer(instance *box.Box, outboundTag string) (N.Dialer, error) {
+func createDialer(instance *box.Box, network string, outboundTag string) (N.Dialer, error) {
 	if outboundTag == "" {
-		return instance.Outbound().Default(), nil
+		return instance.Router().DefaultOutbound(N.NetworkName(network))
 	} else {
-		outbound, loaded := instance.Outbound().Outbound(outboundTag)
+		outbound, loaded := instance.Router().Outbound(outboundTag)
 		if !loaded {
 			return nil, E.New("outbound not found: ", outboundTag)
 		}

@@ -6,8 +6,6 @@ import (
 
 	C "github.com/sagernet/sing-box/constant"
 	"github.com/sagernet/sing-box/option"
-	"github.com/sagernet/sing/common"
-	"github.com/sagernet/sing/common/json/badoption"
 )
 
 func TestHTTPSelf(t *testing.T) {
@@ -16,18 +14,18 @@ func TestHTTPSelf(t *testing.T) {
 			{
 				Type: C.TypeMixed,
 				Tag:  "mixed-in",
-				Options: &option.HTTPMixedInboundOptions{
+				MixedOptions: option.HTTPMixedInboundOptions{
 					ListenOptions: option.ListenOptions{
-						Listen:     common.Ptr(badoption.Addr(netip.IPv4Unspecified())),
+						Listen:     option.NewListenAddress(netip.IPv4Unspecified()),
 						ListenPort: clientPort,
 					},
 				},
 			},
 			{
 				Type: C.TypeMixed,
-				Options: &option.HTTPMixedInboundOptions{
+				MixedOptions: option.HTTPMixedInboundOptions{
 					ListenOptions: option.ListenOptions{
-						Listen:     common.Ptr(badoption.Addr(netip.IPv4Unspecified())),
+						Listen:     option.NewListenAddress(netip.IPv4Unspecified()),
 						ListenPort: serverPort,
 					},
 				},
@@ -40,7 +38,7 @@ func TestHTTPSelf(t *testing.T) {
 			{
 				Type: C.TypeHTTP,
 				Tag:  "http-out",
-				Options: &option.HTTPOutboundOptions{
+				HTTPOptions: option.HTTPOutboundOptions{
 					ServerOptions: option.ServerOptions{
 						Server:     "127.0.0.1",
 						ServerPort: serverPort,
@@ -51,18 +49,9 @@ func TestHTTPSelf(t *testing.T) {
 		Route: &option.RouteOptions{
 			Rules: []option.Rule{
 				{
-					Type: C.RuleTypeDefault,
 					DefaultOptions: option.DefaultRule{
-						RawDefaultRule: option.RawDefaultRule{
-							Inbound: []string{"mixed-in"},
-						},
-						RuleAction: option.RuleAction{
-							Action: C.RuleActionTypeRoute,
-
-							RouteOptions: option.RouteActionOptions{
-								Outbound: "http-out",
-							},
-						},
+						Inbound:  []string{"mixed-in"},
+						Outbound: "http-out",
 					},
 				},
 			},

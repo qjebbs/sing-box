@@ -18,7 +18,7 @@ import (
 )
 
 var commandMerge = &cobra.Command{
-	Use:   "merge <output-path>",
+	Use:   "merge <output>",
 	Short: "Merge configurations",
 	Run: func(cmd *cobra.Command, args []string) {
 		err := merge(args[0])
@@ -54,11 +54,7 @@ func merge(outputPath string) error {
 			return nil
 		}
 	}
-	err = rw.MkdirParent(outputPath)
-	if err != nil {
-		return err
-	}
-	err = os.WriteFile(outputPath, buffer.Bytes(), 0o644)
+	err = rw.WriteFile(outputPath, buffer.Bytes())
 	if err != nil {
 		return err
 	}
@@ -68,19 +64,29 @@ func merge(outputPath string) error {
 }
 
 func mergePathResources(options *option.Options) error {
-	for _, inbound := range options.Inbounds {
-		if tlsOptions, containsTLSOptions := inbound.Options.(option.InboundTLSOptionsWrapper); containsTLSOptions {
+	for index, inbound := range options.Inbounds {
+		rawOptions, err := inbound.RawOptions()
+		if err != nil {
+			return err
+		}
+		if tlsOptions, containsTLSOptions := rawOptions.(option.InboundTLSOptionsWrapper); containsTLSOptions {
 			tlsOptions.ReplaceInboundTLSOptions(mergeTLSInboundOptions(tlsOptions.TakeInboundTLSOptions()))
 		}
+		options.Inbounds[index] = inbound
 	}
-	for _, outbound := range options.Outbounds {
+	for index, outbound := range options.Outbounds {
+		rawOptions, err := outbound.RawOptions()
+		if err != nil {
+			return err
+		}
 		switch outbound.Type {
 		case C.TypeSSH:
-			mergeSSHOutboundOptions(outbound.Options.(*option.SSHOutboundOptions))
+			outbound.SSHOptions = mergeSSHOutboundOptions(outbound.SSHOptions)
 		}
-		if tlsOptions, containsTLSOptions := outbound.Options.(option.OutboundTLSOptionsWrapper); containsTLSOptions {
+		if tlsOptions, containsTLSOptions := rawOptions.(option.OutboundTLSOptionsWrapper); containsTLSOptions {
 			tlsOptions.ReplaceOutboundTLSOptions(mergeTLSOutboundOptions(tlsOptions.TakeOutboundTLSOptions()))
 		}
+		options.Outbounds[index] = outbound
 	}
 	return nil
 }
@@ -128,12 +134,13 @@ func mergeTLSOutboundOptions(options *option.OutboundTLSOptions) *option.Outboun
 	return options
 }
 
-func mergeSSHOutboundOptions(options *option.SSHOutboundOptions) {
+func mergeSSHOutboundOptions(options option.SSHOutboundOptions) option.SSHOutboundOptions {
 	if options.PrivateKeyPath != "" {
 		if content, err := os.ReadFile(os.ExpandEnv(options.PrivateKeyPath)); err == nil {
 			options.PrivateKey = trimStringArray(strings.Split(string(content), "\n"))
 		}
 	}
+	return options
 }
 
 func trimStringArray(array []string) []string {

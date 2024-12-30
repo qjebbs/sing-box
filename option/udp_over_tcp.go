@@ -26,5 +26,5 @@ func (o *UDPOverTCPOptions) UnmarshalJSON(bytes []byte) error {
 	if err == nil {
 		return nil
 	}
-	return json.UnmarshalDisallowUnknownFields(bytes, (*_UDPOverTCPOptions)(o))
+	return json.Unmarshal(bytes, (*_UDPOverTCPOptions)(o))
 }

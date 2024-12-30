@@ -13,7 +13,7 @@ import (
 	"github.com/sagernet/sing/common/baderror"
 	"github.com/sagernet/sing/common/buf"
 	M "github.com/sagernet/sing/common/metadata"
-	"github.com/sagernet/sing/common/varbin"
+	"github.com/sagernet/sing/common/rw"
 )
 
 // kanged from: https://github.com/Qv2ray/gun-lite
@@ -96,7 +96,7 @@ func (c *GunConn) read(b []byte) (n int, err error) {
 }
 
 func (c *GunConn) Write(b []byte) (n int, err error) {
-	varLen := varbin.UvarintLen(uint64(len(b)))
+	varLen := rw.UVariantLen(uint64(len(b)))
 	buffer := buf.NewSize(6 + varLen + len(b))
 	header := buffer.Extend(6 + varLen)
 	header[0] = 0x00
@@ -117,13 +117,13 @@ func (c *GunConn) Write(b []byte) (n int, err error) {
 func (c *GunConn) WriteBuffer(buffer *buf.Buffer) error {
 	defer buffer.Release()
 	dataLen := buffer.Len()
-	varLen := varbin.UvarintLen(uint64(dataLen))
+	varLen := rw.UVariantLen(uint64(dataLen))
 	header := buffer.ExtendHeader(6 + varLen)
 	header[0] = 0x00
 	binary.BigEndian.PutUint32(header[1:5], uint32(1+varLen+dataLen))
 	header[5] = 0x0A
 	binary.PutUvarint(header[6:], uint64(dataLen))
-	err := common.Error(c.writer.Write(buffer.Bytes()))
+	err := rw.WriteBytes(c.writer, buffer.Bytes())
 	if err != nil {
 		return baderror.WrapH2(err)
 	}

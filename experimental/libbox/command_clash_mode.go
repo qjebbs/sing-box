@@ -9,7 +9,7 @@ import (
 	"github.com/sagernet/sing-box/adapter"
 	"github.com/sagernet/sing-box/experimental/clashapi"
 	E "github.com/sagernet/sing/common/exceptions"
-	"github.com/sagernet/sing/common/varbin"
+	"github.com/sagernet/sing/common/rw"
 )
 
 func (c *CommandClient) SetClashMode(newMode string) error {
@@ -22,7 +22,7 @@ func (c *CommandClient) SetClashMode(newMode string) error {
 	if err != nil {
 		return err
 	}
-	err = varbin.Write(conn, binary.BigEndian, newMode)
+	err = rw.WriteVString(conn, newMode)
 	if err != nil {
 		return err
 	}
@@ -30,7 +30,8 @@ func (c *CommandClient) SetClashMode(newMode string) error {
 }
 
 func (s *CommandServer) handleSetClashMode(conn net.Conn) error {
-	newMode, err := varbin.ReadValue[string](conn, binary.BigEndian)
+	defer conn.Close()
+	newMode, err := rw.ReadVString(conn)
 	if err != nil {
 		return err
 	}
@@ -38,7 +39,11 @@ func (s *CommandServer) handleSetClashMode(conn net.Conn) error {
 	if service == nil {
 		return writeError(conn, E.New("service not ready"))
 	}
-	service.clashServer.(*clashapi.Server).SetMode(newMode)
+	clashServer := service.instance.Router().ClashServer()
+	if clashServer == nil {
+		return writeError(conn, E.New("Clash API disabled"))
+	}
+	clashServer.(*clashapi.Server).SetMode(newMode)
 	return writeError(conn, nil)
 }
 
@@ -46,7 +51,7 @@ func (c *CommandClient) handleModeConn(conn net.Conn) {
 	defer conn.Close()
 
 	for {
-		newMode, err := varbin.ReadValue[string](conn, binary.BigEndian)
+		newMode, err := rw.ReadVString(conn)
 		if err != nil {
 			c.handler.Disconnected(err.Error())
 			return
@@ -56,6 +61,7 @@ func (c *CommandClient) handleModeConn(conn net.Conn) {
 }
 
 func (s *CommandServer) handleModeConn(conn net.Conn) error {
+	defer conn.Close()
 	ctx := connKeepAlive(conn)
 	for s.service == nil {
 		select {
@@ -65,14 +71,19 @@ func (s *CommandServer) handleModeConn(conn net.Conn) error {
 			return ctx.Err()
 		}
 	}
-	err := writeClashModeList(conn, s.service.clashServer)
+	clashServer := s.service.instance.Router().ClashServer()
+	if clashServer == nil {
+		defer conn.Close()
+		return binary.Write(conn, binary.BigEndian, uint16(0))
+	}
+	err := writeClashModeList(conn, clashServer)
 	if err != nil {
 		return err
 	}
 	for {
 		select {
 		case <-s.modeUpdate:
-			err = varbin.Write(conn, binary.BigEndian, s.service.clashServer.Mode())
+			err = rw.WriteVString(conn, clashServer.Mode())
 			if err != nil {
 				return err
 			}
@@ -93,12 +104,12 @@ func readClashModeList(reader io.Reader) (modeList []string, currentMode string,
 	}
 	modeList = make([]string, modeListLength)
 	for i := 0; i < int(modeListLength); i++ {
-		modeList[i], err = varbin.ReadValue[string](reader, binary.BigEndian)
+		modeList[i], err = rw.ReadVString(reader)
 		if err != nil {
 			return
 		}
 	}
-	currentMode, err = varbin.ReadValue[string](reader, binary.BigEndian)
+	currentMode, err = rw.ReadVString(reader)
 	return
 }
 
@@ -110,12 +121,12 @@ func writeClashModeList(writer io.Writer, clashServer adapter.ClashServer) error
 	}
 	if len(modeList) > 0 {
 		for _, mode := range modeList {
-			err = varbin.Write(writer, binary.BigEndian, mode)
+			err = rw.WriteVString(writer, mode)
 			if err != nil {
 				return err
 			}
 		}
-		err = varbin.Write(writer, binary.BigEndian, clashServer.Mode())
+		err = rw.WriteVString(writer, clashServer.Mode())
 		if err != nil {
 			return err
 		}

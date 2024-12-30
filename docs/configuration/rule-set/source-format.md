@@ -2,13 +2,7 @@
 icon: material/new-box
 ---
 
-!!! quote "Changes in sing-box 1.11.0"
-
-    :material-plus: version `3`
-
-!!! quote "Changes in sing-box 1.10.0"
-
-    :material-plus: version `2`
+# Source Format
 
 !!! question "Since sing-box 1.8.0"
 
@@ -16,7 +10,7 @@ icon: material/new-box
 
 ```json
 {
-  "version": 3,
+  "version": 1,
   "rules": []
 }
 ```
@@ -31,14 +25,10 @@ Use `sing-box rule-set compile [--output <file-name>.srs] <file-name>.json` to c
 
 ==Required==
 
-Version of rule-set.
-
-* 1: sing-box 1.8.0: Initial rule-set version.
-* 2: sing-box 1.10.0: Optimized memory usages of `domain_suffix` rules in binary rule-sets.
-* 3: sing-box 1.11.0: Added `network_type`, `network_is_expensive` and `network_is_constrainted` rule items.
+Version of Rule Set, must be `1`.
 
 #### rules
 
 ==Required==
 
-List of [Headless Rule](../headless-rule/).
+List of [Headless Rule](./headless-rule.md/).

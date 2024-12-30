@@ -25,13 +25,12 @@ type CommandClientOptions struct {
 type CommandClientHandler interface {
 	Connected()
 	Disconnected(message string)
-	ClearLogs()
-	WriteLogs(messageList StringIterator)
+	ClearLog()
+	WriteLog(message string)
 	WriteStatus(message *StatusMessage)
 	WriteGroups(message OutboundGroupIterator)
 	InitializeClashMode(modeList StringIterator, currentMode string)
 	UpdateClashMode(newMode string)
-	WriteConnections(message *Connections)
 }
 
 func NewStandaloneCommandClient() *CommandClient {
@@ -84,10 +83,6 @@ func (c *CommandClient) Connect() error {
 	}
 	switch c.options.Command {
 	case CommandLog:
-		err = binary.Write(conn, binary.BigEndian, c.options.StatusInterval)
-		if err != nil {
-			return E.Cause(err, "write interval")
-		}
 		c.handler.Connected()
 		go c.handleLogConn(conn)
 	case CommandStatus:
@@ -113,34 +108,14 @@ func (c *CommandClient) Connect() error {
 		if err != nil {
 			return err
 		}
-		if sFixAndroidStack {
-			go func() {
-				c.handler.Connected()
-				c.handler.InitializeClashMode(newIterator(modeList), currentMode)
-				if len(modeList) == 0 {
-					conn.Close()
-					c.handler.Disconnected(os.ErrInvalid.Error())
-				}
-			}()
-		} else {
-			c.handler.Connected()
-			c.handler.InitializeClashMode(newIterator(modeList), currentMode)
-			if len(modeList) == 0 {
-				conn.Close()
-				c.handler.Disconnected(os.ErrInvalid.Error())
-			}
-		}
+		c.handler.Connected()
+		c.handler.InitializeClashMode(newIterator(modeList), currentMode)
 		if len(modeList) == 0 {
+			conn.Close()
+			c.handler.Disconnected(os.ErrInvalid.Error())
 			return nil
 		}
 		go c.handleModeConn(conn)
-	case CommandConnections:
-		err = binary.Write(conn, binary.BigEndian, c.options.StatusInterval)
-		if err != nil {
-			return E.Cause(err, "write interval")
-		}
-		c.handler.Connected()
-		go c.handleConnectionsConn(conn)
 	}
 	return nil
 }

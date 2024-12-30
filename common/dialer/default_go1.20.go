@@ -5,15 +5,11 @@ package dialer
 import (
 	"net"
 
-	"github.com/metacubex/tfo-go"
+	"github.com/sagernet/tfo-go"
 )
 
 type tcpDialer = tfo.Dialer
 
 func newTCPDialer(dialer net.Dialer, tfoEnabled bool) (tcpDialer, error) {
 	return tfo.Dialer{Dialer: dialer, DisableTFO: !tfoEnabled}, nil
-}
-
-func dialerFromTCPDialer(dialer tcpDialer) net.Dialer {
-	return dialer.Dialer
 }

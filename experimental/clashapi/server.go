@@ -7,12 +7,9 @@ import (
 	"net"
 	"net/http"
 	"os"
-	"runtime"
 	"strings"
-	"syscall"
 	"time"
 
-	"github.com/sagernet/cors"
 	"github.com/sagernet/sing-box/adapter"
 	"github.com/sagernet/sing-box/common/urltest"
 	C "github.com/sagernet/sing-box/constant"
@@ -22,6 +19,7 @@ import (
 	"github.com/sagernet/sing-box/option"
 	"github.com/sagernet/sing/common"
 	E "github.com/sagernet/sing/common/exceptions"
+	F "github.com/sagernet/sing/common/format"
 	"github.com/sagernet/sing/common/json"
 	N "github.com/sagernet/sing/common/network"
 	"github.com/sagernet/sing/service"
@@ -30,6 +28,7 @@ import (
 	"github.com/sagernet/ws/wsutil"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/go-chi/cors"
 	"github.com/go-chi/render"
 )
 
@@ -42,9 +41,6 @@ var _ adapter.ClashServer = (*Server)(nil)
 type Server struct {
 	ctx            context.Context
 	router         adapter.Router
-	outbound       adapter.OutboundManager
-	provider       adapter.ProviderManager
-	endpoint       adapter.EndpointManager
 	logger         log.Logger
 	httpServer     *http.Server
 	trafficManager *trafficontrol.Manager
@@ -59,16 +55,13 @@ type Server struct {
 	externalUIDownloadDetour string
 }
 
-func NewServer(ctx context.Context, logFactory log.ObservableFactory, options option.ClashAPIOptions) (adapter.ClashServer, error) {
+func NewServer(ctx context.Context, router adapter.Router, logFactory log.ObservableFactory, options option.ClashAPIOptions) (adapter.ClashServer, error) {
 	trafficManager := trafficontrol.NewManager()
 	chiRouter := chi.NewRouter()
-	s := &Server{
-		ctx:      ctx,
-		router:   service.FromContext[adapter.Router](ctx),
-		outbound: service.FromContext[adapter.OutboundManager](ctx),
-		provider: service.FromContext[adapter.ProviderManager](ctx),
-		endpoint: service.FromContext[adapter.EndpointManager](ctx),
-		logger:   logFactory.NewLogger("clash-api"),
+	server := &Server{
+		ctx:    ctx,
+		router: router,
+		logger: logFactory.NewLogger("clash-api"),
 		httpServer: &http.Server{
 			Addr:    options.ExternalController,
 			Handler: chiRouter,
@@ -79,33 +72,28 @@ func NewServer(ctx context.Context, logFactory log.ObservableFactory, options op
 		externalUIDownloadURL:    options.ExternalUIDownloadURL,
 		externalUIDownloadDetour: options.ExternalUIDownloadDetour,
 	}
-	s.urlTestHistory = service.PtrFromContext[urltest.HistoryStorage](ctx)
-	if s.urlTestHistory == nil {
-		s.urlTestHistory = urltest.NewHistoryStorage()
+	server.urlTestHistory = service.PtrFromContext[urltest.HistoryStorage](ctx)
+	if server.urlTestHistory == nil {
+		server.urlTestHistory = urltest.NewHistoryStorage()
 	}
 	defaultMode := "Rule"
 	if options.DefaultMode != "" {
 		defaultMode = options.DefaultMode
 	}
-	if !common.Contains(s.modeList, defaultMode) {
-		s.modeList = append([]string{defaultMode}, s.modeList...)
+	if !common.Contains(server.modeList, defaultMode) {
+		server.modeList = append([]string{defaultMode}, server.modeList...)
 	}
-	s.mode = defaultMode
+	server.mode = defaultMode
 	//goland:noinspection GoDeprecation
 	//nolint:staticcheck
 	if options.StoreMode || options.StoreSelected || options.StoreFakeIP || options.CacheFile != "" || options.CacheID != "" {
 		return nil, E.New("cache_file and related fields in Clash API is deprecated in sing-box 1.8.0, use experimental.cache_file instead.")
 	}
-	allowedOrigins := options.AccessControlAllowOrigin
-	if len(allowedOrigins) == 0 {
-		allowedOrigins = []string{"*"}
-	}
 	cors := cors.New(cors.Options{
-		AllowedOrigins:      allowedOrigins,
-		AllowedMethods:      []string{"GET", "POST", "PUT", "PATCH", "DELETE"},
-		AllowedHeaders:      []string{"Content-Type", "Authorization"},
-		AllowPrivateNetwork: options.AccessControlAllowPrivateNetwork,
-		MaxAge:              300,
+		AllowedOrigins: []string{"*"},
+		AllowedMethods: []string{"GET", "POST", "PUT", "PATCH", "DELETE"},
+		AllowedHeaders: []string{"Content-Type", "Authorization"},
+		MaxAge:         300,
 	})
 	chiRouter.Use(cors.Handler)
 	chiRouter.Group(func(r chi.Router) {
@@ -114,73 +102,60 @@ func NewServer(ctx context.Context, logFactory log.ObservableFactory, options op
 		r.Get("/logs", getLogs(logFactory))
 		r.Get("/traffic", traffic(trafficManager))
 		r.Get("/version", version)
-		r.Mount("/configs", configRouter(s, logFactory))
-		r.Mount("/proxies", proxyRouter(s, s.router))
-		r.Mount("/rules", ruleRouter(s.router))
-		r.Mount("/connections", connectionRouter(s.router, trafficManager))
-		r.Mount("/providers/proxies", proxyProviderRouter(s))
+		r.Mount("/configs", configRouter(server, logFactory))
+		r.Mount("/proxies", proxyRouter(server, router))
+		r.Mount("/rules", ruleRouter(router))
+		r.Mount("/connections", connectionRouter(router, trafficManager))
+		r.Mount("/providers/proxies", proxyProviderRouter())
 		r.Mount("/providers/rules", ruleProviderRouter())
 		r.Mount("/script", scriptRouter())
 		r.Mount("/profile", profileRouter())
 		r.Mount("/cache", cacheRouter(ctx))
-		r.Mount("/dns", dnsRouter(s.router))
+		r.Mount("/dns", dnsRouter(router))
 
-		s.setupMetaAPI(r)
+		server.setupMetaAPI(r)
 	})
 	if options.ExternalUI != "" {
-		s.externalUI = filemanager.BasePath(ctx, os.ExpandEnv(options.ExternalUI))
+		server.externalUI = filemanager.BasePath(ctx, os.ExpandEnv(options.ExternalUI))
 		chiRouter.Group(func(r chi.Router) {
-			r.Get("/ui", http.RedirectHandler("/ui/", http.StatusMovedPermanently).ServeHTTP)
-			r.Handle("/ui/*", http.StripPrefix("/ui/", http.FileServer(http.Dir(s.externalUI))))
+			fs := http.StripPrefix("/ui", http.FileServer(http.Dir(server.externalUI)))
+			r.Get("/ui", http.RedirectHandler("/ui/", http.StatusTemporaryRedirect).ServeHTTP)
+			r.Get("/ui/*", func(w http.ResponseWriter, r *http.Request) {
+				fs.ServeHTTP(w, r)
+			})
 		})
 	}
-	return s, nil
+	return server, nil
 }
 
-func (s *Server) Name() string {
-	return "clash server"
-}
-
-func (s *Server) Start(stage adapter.StartStage) error {
-	switch stage {
-	case adapter.StartStateStart:
-		cacheFile := service.FromContext[adapter.CacheFile](s.ctx)
-		if cacheFile != nil {
-			mode := cacheFile.LoadMode()
-			if common.Any(s.modeList, func(it string) bool {
-				return strings.EqualFold(it, mode)
-			}) {
-				s.mode = mode
-			}
-		}
-	case adapter.StartStateStarted:
-		if s.externalController {
-			s.checkAndDownloadExternalUI()
-			var (
-				listener net.Listener
-				err      error
-			)
-			for i := 0; i < 3; i++ {
-				listener, err = net.Listen("tcp", s.httpServer.Addr)
-				if runtime.GOOS == "android" && errors.Is(err, syscall.EADDRINUSE) {
-					time.Sleep(100 * time.Millisecond)
-					continue
-				}
-				break
-			}
-			if err != nil {
-				return E.Cause(err, "external controller listen error")
-			}
-			s.logger.Info("restful api listening at ", listener.Addr())
-			go func() {
-				err = s.httpServer.Serve(listener)
-				if err != nil && !errors.Is(err, http.ErrServerClosed) {
-					s.logger.Error("external controller serve error: ", err)
-				}
-			}()
+func (s *Server) PreStart() error {
+	cacheFile := service.FromContext[adapter.CacheFile](s.ctx)
+	if cacheFile != nil {
+		mode := cacheFile.LoadMode()
+		if common.Any(s.modeList, func(it string) bool {
+			return strings.EqualFold(it, mode)
+		}) {
+			s.mode = mode
 		}
 	}
+	return nil
+}
 
+func (s *Server) Start() error {
+	if s.externalController {
+		s.checkAndDownloadExternalUI()
+		listener, err := net.Listen("tcp", s.httpServer.Addr)
+		if err != nil {
+			return E.Cause(err, "external controller listen error")
+		}
+		s.logger.Info("restful api listening at ", listener.Addr())
+		go func() {
+			err = s.httpServer.Serve(listener)
+			if err != nil && !errors.Is(err, http.ErrServerClosed) {
+				s.logger.Error("external controller serve error: ", err)
+			}
+		}()
+	}
 	return nil
 }
 
@@ -242,12 +217,57 @@ func (s *Server) TrafficManager() *trafficontrol.Manager {
 	return s.trafficManager
 }
 
-func (s *Server) RoutedConnection(ctx context.Context, conn net.Conn, metadata adapter.InboundContext, matchedRule adapter.Rule, matchOutbound adapter.Outbound) net.Conn {
-	return trafficontrol.NewTCPTracker(conn, s.trafficManager, metadata, s.outbound, matchedRule, matchOutbound)
+func (s *Server) RoutedConnection(ctx context.Context, conn net.Conn, metadata adapter.InboundContext, matchedRule adapter.Rule) (net.Conn, adapter.Tracker) {
+	tracker := trafficontrol.NewTCPTracker(conn, s.trafficManager, castMetadata(metadata), s.router, matchedRule)
+	return tracker, tracker
 }
 
-func (s *Server) RoutedPacketConnection(ctx context.Context, conn N.PacketConn, metadata adapter.InboundContext, matchedRule adapter.Rule, matchOutbound adapter.Outbound) N.PacketConn {
-	return trafficontrol.NewUDPTracker(conn, s.trafficManager, metadata, s.outbound, matchedRule, matchOutbound)
+func (s *Server) RoutedPacketConnection(ctx context.Context, conn N.PacketConn, metadata adapter.InboundContext, matchedRule adapter.Rule) (N.PacketConn, adapter.Tracker) {
+	tracker := trafficontrol.NewUDPTracker(conn, s.trafficManager, castMetadata(metadata), s.router, matchedRule)
+	return tracker, tracker
+}
+
+func castMetadata(metadata adapter.InboundContext) trafficontrol.Metadata {
+	var inbound string
+	if metadata.Inbound != "" {
+		inbound = metadata.InboundType + "/" + metadata.Inbound
+	} else {
+		inbound = metadata.InboundType
+	}
+	var domain string
+	if metadata.Domain != "" {
+		domain = metadata.Domain
+	} else {
+		domain = metadata.Destination.Fqdn
+	}
+	var processPath string
+	if metadata.ProcessInfo != nil {
+		if metadata.ProcessInfo.ProcessPath != "" {
+			processPath = metadata.ProcessInfo.ProcessPath
+		} else if metadata.ProcessInfo.PackageName != "" {
+			processPath = metadata.ProcessInfo.PackageName
+		}
+		if processPath == "" {
+			if metadata.ProcessInfo.UserId != -1 {
+				processPath = F.ToString(metadata.ProcessInfo.UserId)
+			}
+		} else if metadata.ProcessInfo.User != "" {
+			processPath = F.ToString(processPath, " (", metadata.ProcessInfo.User, ")")
+		} else if metadata.ProcessInfo.UserId != -1 {
+			processPath = F.ToString(processPath, " (", metadata.ProcessInfo.UserId, ")")
+		}
+	}
+	return trafficontrol.Metadata{
+		NetWork:     metadata.Network,
+		Type:        inbound,
+		SrcIP:       metadata.Source.Addr,
+		DstIP:       metadata.Destination.Addr,
+		SrcPort:     F.ToString(metadata.Source.Port),
+		DstPort:     F.ToString(metadata.Destination.Port),
+		Host:        domain,
+		DNSMode:     "normal",
+		ProcessPath: processPath,
+	}
 }
 
 func authentication(serverSecret string) func(next http.Handler) http.Handler {
@@ -288,11 +308,10 @@ func authentication(serverSecret string) func(next http.Handler) http.Handler {
 
 func hello(redirect bool) func(w http.ResponseWriter, r *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
-		contentType := r.Header.Get("Content-Type")
-		if !redirect || contentType == "application/json" {
-			render.JSON(w, r, render.M{"hello": "clash"})
-		} else {
+		if redirect {
 			http.Redirect(w, r, "/ui/", http.StatusTemporaryRedirect)
+		} else {
+			render.JSON(w, r, render.M{"hello": "clash"})
 		}
 	}
 }
@@ -322,29 +341,27 @@ func traffic(trafficManager *trafficontrol.Manager) func(w http.ResponseWriter, 
 		tick := time.NewTicker(time.Second)
 		defer tick.Stop()
 		buf := &bytes.Buffer{}
-		uploadTotal, downloadTotal := trafficManager.Total()
+		var err error
 		for range tick.C {
 			buf.Reset()
-			uploadTotalNew, downloadTotalNew := trafficManager.Total()
-			err := json.NewEncoder(buf).Encode(Traffic{
-				Up:   uploadTotalNew - uploadTotal,
-				Down: downloadTotalNew - downloadTotal,
-			})
-			if err != nil {
+			up, down := trafficManager.Now()
+			if err := json.NewEncoder(buf).Encode(Traffic{
+				Up:   up,
+				Down: down,
+			}); err != nil {
 				break
 			}
+
 			if conn == nil {
 				_, err = w.Write(buf.Bytes())
 				w.(http.Flusher).Flush()
 			} else {
 				err = wsutil.WriteServerText(conn, buf.Bytes())
 			}
+
 			if err != nil {
 				break
 			}
-
-			uploadTotal = uploadTotalNew
-			downloadTotal = downloadTotalNew
 		}
 	}
 }

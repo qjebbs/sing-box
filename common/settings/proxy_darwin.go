@@ -2,17 +2,16 @@ package settings
 
 import (
 	"context"
+	"net/netip"
 	"strconv"
 	"strings"
 
 	"github.com/sagernet/sing-box/adapter"
 	"github.com/sagernet/sing-tun"
-	"github.com/sagernet/sing/common/control"
 	E "github.com/sagernet/sing/common/exceptions"
 	M "github.com/sagernet/sing/common/metadata"
 	"github.com/sagernet/sing/common/shell"
 	"github.com/sagernet/sing/common/x/list"
-	"github.com/sagernet/sing/service"
 )
 
 type DarwinSystemProxy struct {
@@ -25,7 +24,7 @@ type DarwinSystemProxy struct {
 }
 
 func NewSystemProxy(ctx context.Context, serverAddr M.Socksaddr, supportSOCKS bool) (*DarwinSystemProxy, error) {
-	interfaceMonitor := service.FromContext[adapter.NetworkManager](ctx).InterfaceMonitor()
+	interfaceMonitor := adapter.RouterFromContext(ctx).InterfaceMonitor()
 	if interfaceMonitor == nil {
 		return nil, E.New("missing interface monitor")
 	}
@@ -34,7 +33,7 @@ func NewSystemProxy(ctx context.Context, serverAddr M.Socksaddr, supportSOCKS bo
 		serverAddr:   serverAddr,
 		supportSOCKS: supportSOCKS,
 	}
-	proxy.element = interfaceMonitor.RegisterCallback(proxy.routeUpdate)
+	proxy.element = interfaceMonitor.RegisterCallback(proxy.update)
 	return proxy, nil
 }
 
@@ -66,22 +65,25 @@ func (p *DarwinSystemProxy) Disable() error {
 	return err
 }
 
-func (p *DarwinSystemProxy) routeUpdate(defaultInterface *control.Interface, flags int) {
-	if !p.isEnabled || defaultInterface == nil {
+func (p *DarwinSystemProxy) update(event int) {
+	if event&tun.EventInterfaceUpdate == 0 {
+		return
+	}
+	if !p.isEnabled {
 		return
 	}
 	_ = p.update0()
 }
 
 func (p *DarwinSystemProxy) update0() error {
-	newInterface := p.monitor.DefaultInterface()
-	if p.interfaceName == newInterface.Name {
+	newInterfaceName := p.monitor.DefaultInterfaceName(netip.IPv4Unspecified())
+	if p.interfaceName == newInterfaceName {
 		return nil
 	}
 	if p.interfaceName != "" {
 		_ = p.Disable()
 	}
-	p.interfaceName = newInterface.Name
+	p.interfaceName = newInterfaceName
 	interfaceDisplayName, err := getInterfaceDisplayName(p.interfaceName)
 	if err != nil {
 		return err

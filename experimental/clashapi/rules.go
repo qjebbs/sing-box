@@ -30,9 +30,10 @@ func getRules(router adapter.Router) func(w http.ResponseWriter, r *http.Request
 			rules = append(rules, Rule{
 				Type:    rule.Type(),
 				Payload: rule.String(),
-				Proxy:   rule.Action().String(),
+				Proxy:   rule.Outbound(),
 			})
 		}
+
 		render.JSON(w, r, render.M{
 			"rules": rules,
 		})

@@ -10,6 +10,7 @@ import (
 
 	"github.com/sagernet/sing-box/adapter"
 	"github.com/sagernet/sing-box/common/urltest"
+	"github.com/sagernet/sing-box/outbound"
 	"github.com/sagernet/sing/common"
 	"github.com/sagernet/sing/common/batch"
 	"github.com/sagernet/sing/common/json/badjson"
@@ -22,7 +23,7 @@ func groupRouter(server *Server) http.Handler {
 	r := chi.NewRouter()
 	r.Get("/", getGroups(server))
 	r.Route("/{name}", func(r chi.Router) {
-		r.Use(parseProxyName, findProxyByName(server))
+		r.Use(parseProxyName, findProxyByName(server.router))
 		r.Get("/", getGroup(server))
 		r.Get("/delay", getGroupDelay(server))
 	})
@@ -31,7 +32,7 @@ func groupRouter(server *Server) http.Handler {
 
 func getGroups(server *Server) func(w http.ResponseWriter, r *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
-		groups := common.Map(common.Filter(server.outbound.Outbounds(), func(it adapter.Outbound) bool {
+		groups := common.Map(common.Filter(server.router.Outbounds(), func(it adapter.Outbound) bool {
 			_, isGroup := it.(adapter.OutboundGroup)
 			return isGroup
 		}), func(it adapter.Outbound) *badjson.JSONObject {
@@ -58,7 +59,7 @@ func getGroup(server *Server) func(w http.ResponseWriter, r *http.Request) {
 func getGroupDelay(server *Server) func(w http.ResponseWriter, r *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
 		proxy := r.Context().Value(CtxKeyProxy).(adapter.Outbound)
-		outboundGroup, ok := proxy.(adapter.OutboundGroup)
+		group, ok := proxy.(adapter.OutboundGroup)
 		if !ok {
 			render.Status(r, http.StatusNotFound)
 			render.JSON(w, r, ErrNotFound)
@@ -77,41 +78,34 @@ func getGroupDelay(server *Server) func(w http.ResponseWriter, r *http.Request) 
 			return
 		}
 
+		ctx, cancel := context.WithTimeout(r.Context(), time.Millisecond*time.Duration(timeout))
+		defer cancel()
+
 		var result map[string]uint16
-		if group, isGroup := outboundGroup.(adapter.OutboundCheckGroup); isGroup {
-			// url parameter is applied as a default value for non-OutboundCheckGroup,
-			// it's ignored here
-			result, err = group.CheckAll(r.Context())
+		if urlTestGroup, isURLTestGroup := group.(adapter.URLTestGroup); isURLTestGroup {
+			result, err = urlTestGroup.URLTest(ctx)
 		} else {
-			// outbounds := common.FilterNotNil(common.Map(outboundGroup.All(), func(it string) adapter.Outbound {
-			// 	itOutbound, _ := server.outbound.Outbound(it)
-			// 	return itOutbound
-			// }))
-			b, _ := batch.New(r.Context(), batch.WithConcurrencyNum[any](10))
+			outbounds := common.FilterNotNil(common.Map(group.All(), func(it string) adapter.Outbound {
+				itOutbound, _ := server.router.Outbound(it)
+				return itOutbound
+			}))
+			b, _ := batch.New(ctx, batch.WithConcurrencyNum[any](10))
 			checked := make(map[string]bool)
 			result = make(map[string]uint16)
 			var resultAccess sync.Mutex
-			for _, detour := range group.Outbounds() {
+			for _, detour := range outbounds {
 				tag := detour.Tag()
-				realOutbound, err := adapter.RealOutbound(detour)
-				if err != nil {
-					render.Status(r, http.StatusInternalServerError)
-					render.JSON(w, r, ErrServerError)
-					return
-				}
-				realTag := realOutbound.Tag()
+				realTag := outbound.RealTag(detour)
 				if checked[realTag] {
 					continue
 				}
 				checked[realTag] = true
-				// _, loaded := server.outbound.Outbound(realTag)
-				// if !loaded {
-				// 	continue
-				// }
+				p, loaded := server.router.Outbound(realTag)
+				if !loaded {
+					continue
+				}
 				b.Go(realTag, func() (any, error) {
-					ctx, cancel := context.WithTimeout(r.Context(), time.Millisecond*time.Duration(timeout))
-					defer cancel()
-					t, err := urltest.URLTest(ctx, url, detour)
+					t, err := urltest.URLTest(ctx, url, p)
 					if err != nil {
 						server.logger.Debug("outbound ", tag, " unavailable: ", err)
 						server.urlTestHistory.DeleteURLTestHistory(realTag)

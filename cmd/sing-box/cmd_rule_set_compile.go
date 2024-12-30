@@ -55,6 +55,10 @@ func compileRuleSet(sourcePath string) error {
 	if err != nil {
 		return err
 	}
+	if err != nil {
+		return err
+	}
+	ruleSet := plainRuleSet.Upgrade()
 	var outputPath string
 	if flagRuleSetCompileOutput == flagRuleSetCompileDefaultOutput {
 		if strings.HasSuffix(sourcePath, ".json") {
@@ -69,7 +73,7 @@ func compileRuleSet(sourcePath string) error {
 	if err != nil {
 		return err
 	}
-	err = srs.Write(outputFile, plainRuleSet.Options, plainRuleSet.Version)
+	err = srs.Write(outputFile, ruleSet)
 	if err != nil {
 		outputFile.Close()
 		os.Remove(outputPath)

@@ -6,9 +6,7 @@ import (
 
 	C "github.com/sagernet/sing-box/constant"
 	"github.com/sagernet/sing-box/option"
-	"github.com/sagernet/sing/common"
 	"github.com/sagernet/sing/common/auth"
-	"github.com/sagernet/sing/common/json/badoption"
 	"github.com/sagernet/sing/common/network"
 )
 
@@ -18,9 +16,9 @@ func TestNaiveInboundWithNginx(t *testing.T) {
 		Inbounds: []option.Inbound{
 			{
 				Type: C.TypeNaive,
-				Options: &option.NaiveInboundOptions{
+				NaiveOptions: option.NaiveInboundOptions{
 					ListenOptions: option.ListenOptions{
-						Listen:     common.Ptr(badoption.Addr(netip.IPv4Unspecified())),
+						Listen:     option.NewListenAddress(netip.IPv4Unspecified()),
 						ListenPort: otherPort,
 					},
 					Users: []auth.User{
@@ -64,9 +62,9 @@ func TestNaiveInbound(t *testing.T) {
 		Inbounds: []option.Inbound{
 			{
 				Type: C.TypeNaive,
-				Options: &option.NaiveInboundOptions{
+				NaiveOptions: option.NaiveInboundOptions{
 					ListenOptions: option.ListenOptions{
-						Listen:     common.Ptr(badoption.Addr(netip.IPv4Unspecified())),
+						Listen:     option.NewListenAddress(netip.IPv4Unspecified()),
 						ListenPort: serverPort,
 					},
 					Users: []auth.User{
@@ -108,9 +106,9 @@ func TestNaiveHTTP3Inbound(t *testing.T) {
 		Inbounds: []option.Inbound{
 			{
 				Type: C.TypeNaive,
-				Options: &option.NaiveInboundOptions{
+				NaiveOptions: option.NaiveInboundOptions{
 					ListenOptions: option.ListenOptions{
-						Listen:     common.Ptr(badoption.Addr(netip.IPv4Unspecified())),
+						Listen:     option.NewListenAddress(netip.IPv4Unspecified()),
 						ListenPort: serverPort,
 					},
 					Users: []auth.User{

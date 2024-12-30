@@ -4,9 +4,9 @@ import (
 	"encoding/binary"
 	"net"
 
-	"github.com/sagernet/sing-box/protocol/group"
+	"github.com/sagernet/sing-box/outbound"
 	E "github.com/sagernet/sing/common/exceptions"
-	"github.com/sagernet/sing/common/varbin"
+	"github.com/sagernet/sing/common/rw"
 )
 
 func (c *CommandClient) SelectOutbound(groupTag string, outboundTag string) error {
@@ -19,11 +19,11 @@ func (c *CommandClient) SelectOutbound(groupTag string, outboundTag string) erro
 	if err != nil {
 		return err
 	}
-	err = varbin.Write(conn, binary.BigEndian, groupTag)
+	err = rw.WriteVString(conn, groupTag)
 	if err != nil {
 		return err
 	}
-	err = varbin.Write(conn, binary.BigEndian, outboundTag)
+	err = rw.WriteVString(conn, outboundTag)
 	if err != nil {
 		return err
 	}
@@ -31,11 +31,12 @@ func (c *CommandClient) SelectOutbound(groupTag string, outboundTag string) erro
 }
 
 func (s *CommandServer) handleSelectOutbound(conn net.Conn) error {
-	groupTag, err := varbin.ReadValue[string](conn, binary.BigEndian)
+	defer conn.Close()
+	groupTag, err := rw.ReadVString(conn)
 	if err != nil {
 		return err
 	}
-	outboundTag, err := varbin.ReadValue[string](conn, binary.BigEndian)
+	outboundTag, err := rw.ReadVString(conn)
 	if err != nil {
 		return err
 	}
@@ -43,11 +44,11 @@ func (s *CommandServer) handleSelectOutbound(conn net.Conn) error {
 	if service == nil {
 		return writeError(conn, E.New("service not ready"))
 	}
-	outboundGroup, isLoaded := service.instance.Outbound().Outbound(groupTag)
+	outboundGroup, isLoaded := service.instance.Router().Outbound(groupTag)
 	if !isLoaded {
 		return writeError(conn, E.New("selector not found: ", groupTag))
 	}
-	selector, isSelector := outboundGroup.(*group.SelectorProvider)
+	selector, isSelector := outboundGroup.(*outbound.Selector)
 	if !isSelector {
 		return writeError(conn, E.New("outbound is not a selector: ", groupTag))
 	}

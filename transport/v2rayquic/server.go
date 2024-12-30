@@ -8,15 +8,12 @@ import (
 	"os"
 
 	"github.com/sagernet/quic-go"
-	"github.com/sagernet/quic-go/http3"
 	"github.com/sagernet/sing-box/adapter"
 	"github.com/sagernet/sing-box/common/tls"
 	C "github.com/sagernet/sing-box/constant"
 	"github.com/sagernet/sing-box/option"
 	"github.com/sagernet/sing-quic"
 	"github.com/sagernet/sing/common"
-	E "github.com/sagernet/sing/common/exceptions"
-	"github.com/sagernet/sing/common/logger"
 	M "github.com/sagernet/sing/common/metadata"
 	N "github.com/sagernet/sing/common/network"
 )
@@ -25,7 +22,6 @@ var _ adapter.V2RayServerTransport = (*Server)(nil)
 
 type Server struct {
 	ctx          context.Context
-	logger       logger.ContextLogger
 	tlsConfig    tls.ServerConfig
 	quicConfig   *quic.Config
 	handler      adapter.V2RayServerTransportHandler
@@ -33,16 +29,15 @@ type Server struct {
 	quicListener qtls.Listener
 }
 
-func NewServer(ctx context.Context, logger logger.ContextLogger, options option.V2RayQUICOptions, tlsConfig tls.ServerConfig, handler adapter.V2RayServerTransportHandler) (adapter.V2RayServerTransport, error) {
+func NewServer(ctx context.Context, options option.V2RayQUICOptions, tlsConfig tls.ServerConfig, handler adapter.V2RayServerTransportHandler) (adapter.V2RayServerTransport, error) {
 	quicConfig := &quic.Config{
 		DisablePathMTUDiscovery: !C.IsLinux && !C.IsWindows,
 	}
 	if len(tlsConfig.NextProtos()) == 0 {
-		tlsConfig.SetNextProtos([]string{http3.NextProtoH3})
+		tlsConfig.SetNextProtos([]string{"h2", "http/1.1"})
 	}
 	server := &Server{
 		ctx:        ctx,
-		logger:     logger,
 		tlsConfig:  tlsConfig,
 		quicConfig: quicConfig,
 		handler:    handler,
@@ -77,8 +72,8 @@ func (s *Server) acceptLoop() {
 		}
 		go func() {
 			hErr := s.streamAcceptLoop(conn)
-			if hErr != nil && !E.IsClosedOrCanceled(hErr) {
-				s.logger.ErrorContext(conn.Context(), hErr)
+			if hErr != nil {
+				s.handler.NewError(conn.Context(), hErr)
 			}
 		}()
 	}
@@ -90,7 +85,7 @@ func (s *Server) streamAcceptLoop(conn quic.Connection) error {
 		if err != nil {
 			return err
 		}
-		go s.handler.NewConnectionEx(conn.Context(), &StreamWrapper{Conn: conn, Stream: stream}, M.SocksaddrFromNet(conn.RemoteAddr()), M.Socksaddr{}, nil)
+		go s.handler.NewConnection(conn.Context(), &StreamWrapper{Conn: conn, Stream: stream}, M.Metadata{})
 	}
 }
 

@@ -33,13 +33,10 @@ type CommandServer struct {
 	urlTestUpdate chan struct{}
 	modeUpdate    chan struct{}
 	logReset      chan struct{}
-
-	closedConnections []Connection
 }
 
 type CommandServerHandler interface {
 	ServiceReload() error
-	PostServiceClose()
 	GetSystemProxyStatus() *SystemProxyStatus
 	SetSystemProxyEnabled(isEnabled bool) error
 }
@@ -60,7 +57,12 @@ func NewCommandServer(handler CommandServerHandler, maxLines int32) *CommandServ
 func (s *CommandServer) SetService(newService *BoxService) {
 	if newService != nil {
 		service.PtrFromContext[urltest.HistoryStorage](newService.ctx).SetHook(s.urlTestUpdate)
-		newService.clashServer.(*clashapi.Server).SetModeUpdateHook(s.modeUpdate)
+		newService.instance.Router().ClashServer().(*clashapi.Server).SetModeUpdateHook(s.modeUpdate)
+		s.savedLines.Init()
+		select {
+		case s.logReset <- struct{}{}:
+		default:
+		}
 	}
 	s.service = newService
 	s.notifyURLTestUpdate()
@@ -150,8 +152,6 @@ func (s *CommandServer) handleConnection(conn net.Conn) error {
 		return s.handleStatusConn(conn)
 	case CommandServiceReload:
 		return s.handleServiceReload(conn)
-	case CommandServiceClose:
-		return s.handleServiceClose(conn)
 	case CommandCloseConnections:
 		return s.handleCloseConnections(conn)
 	case CommandGroup:
@@ -170,12 +170,6 @@ func (s *CommandServer) handleConnection(conn net.Conn) error {
 		return s.handleGetSystemProxyStatus(conn)
 	case CommandSetSystemProxyEnabled:
 		return s.handleSetSystemProxyEnabled(conn)
-	case CommandConnections:
-		return s.handleConnectionsConn(conn)
-	case CommandCloseConnection:
-		return s.handleCloseConnection(conn)
-	case CommandGetDeprecatedNotes:
-		return s.handleGetDeprecatedNotes(conn)
 	default:
 		return E.New("unknown command: ", command)
 	}

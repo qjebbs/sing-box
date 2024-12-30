@@ -2,43 +2,26 @@ package adapter
 
 import (
 	"context"
+	"net"
 	"net/netip"
-	"time"
 
 	"github.com/sagernet/sing-box/common/process"
-	C "github.com/sagernet/sing-box/constant"
-	"github.com/sagernet/sing-box/log"
 	"github.com/sagernet/sing-box/option"
 	M "github.com/sagernet/sing/common/metadata"
+	N "github.com/sagernet/sing/common/network"
 )
 
 type Inbound interface {
-	Lifecycle
+	Service
 	Type() string
 	Tag() string
 }
 
-type TCPInjectableInbound interface {
+type InjectableInbound interface {
 	Inbound
-	ConnectionHandlerEx
-}
-
-type UDPInjectableInbound interface {
-	Inbound
-	PacketConnectionHandlerEx
-}
-
-type InboundRegistry interface {
-	option.InboundOptionsRegistry
-	Create(ctx context.Context, router Router, logger log.ContextLogger, tag string, inboundType string, options any) (Inbound, error)
-}
-
-type InboundManager interface {
-	Lifecycle
-	Inbounds() []Inbound
-	Get(tag string) (Inbound, bool)
-	Remove(tag string) error
-	Create(ctx context.Context, router Router, logger log.ContextLogger, tag string, inboundType string, options any) error
+	Network() []string
+	NewConnection(ctx context.Context, conn net.Conn, metadata InboundContext) error
+	NewPacketConnection(ctx context.Context, conn N.PacketConn, metadata InboundContext) error
 }
 
 type InboundContext struct {
@@ -48,37 +31,17 @@ type InboundContext struct {
 	Network     string
 	Source      M.Socksaddr
 	Destination M.Socksaddr
+	Domain      string
+	Protocol    string
 	User        string
 	Outbound    string
 
-	// sniffer
-
-	Protocol     string
-	Domain       string
-	Client       string
-	SniffContext any
-
 	// cache
 
-	// Deprecated: implement in rule action
-	InboundDetour            string
-	LastInbound              string
-	OriginDestination        M.Socksaddr
-	RouteOriginalDestination M.Socksaddr
-	// Deprecated: to be removed
-	//nolint:staticcheck
-	InboundOptions            option.InboundOptions
-	UDPDisableDomainUnmapping bool
-	UDPConnect                bool
-	UDPTimeout                time.Duration
-
-	NetworkStrategy     *C.NetworkStrategy
-	NetworkType         []C.InterfaceType
-	FallbackNetworkType []C.InterfaceType
-	FallbackDelay       time.Duration
-
-	DNSServer string
-
+	InboundDetour        string
+	LastInbound          string
+	OriginDestination    M.Socksaddr
+	InboundOptions       option.InboundOptions
 	DestinationAddresses []netip.Addr
 	SourceGeoIPCode      string
 	GeoIPCode            string
@@ -88,25 +51,19 @@ type InboundContext struct {
 
 	// rule cache
 
-	IPCIDRMatchSource bool
-	IPCIDRAcceptEmpty bool
-
-	SourceAddressMatch           bool
-	SourcePortMatch              bool
-	DestinationAddressMatch      bool
-	DestinationPortMatch         bool
-	DidMatch                     bool
-	IgnoreDestinationIPCIDRMatch bool
+	IPCIDRMatchSource       bool
+	SourceAddressMatch      bool
+	SourcePortMatch         bool
+	DestinationAddressMatch bool
+	DestinationPortMatch    bool
 }
 
 func (c *InboundContext) ResetRuleCache() {
 	c.IPCIDRMatchSource = false
-	c.IPCIDRAcceptEmpty = false
 	c.SourceAddressMatch = false
 	c.SourcePortMatch = false
 	c.DestinationAddressMatch = false
 	c.DestinationPortMatch = false
-	c.DidMatch = false
 }
 
 type inboundContextKey struct{}
@@ -123,19 +80,19 @@ func ContextFrom(ctx context.Context) *InboundContext {
 	return metadata.(*InboundContext)
 }
 
+func AppendContext(ctx context.Context) (context.Context, *InboundContext) {
+	metadata := ContextFrom(ctx)
+	if metadata != nil {
+		return ctx, metadata
+	}
+	metadata = new(InboundContext)
+	return WithContext(ctx, metadata), metadata
+}
+
 func ExtendContext(ctx context.Context) (context.Context, *InboundContext) {
 	var newMetadata InboundContext
 	if metadata := ContextFrom(ctx); metadata != nil {
 		newMetadata = *metadata
 	}
 	return WithContext(ctx, &newMetadata), &newMetadata
-}
-
-func OverrideContext(ctx context.Context) context.Context {
-	if metadata := ContextFrom(ctx); metadata != nil {
-		var newMetadata InboundContext
-		newMetadata = *metadata
-		return WithContext(ctx, &newMetadata)
-	}
-	return ctx
 }

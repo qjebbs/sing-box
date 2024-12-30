@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"fmt"
 	"io"
 	"os"
 	"os/signal"
@@ -13,8 +12,7 @@ import (
 	"syscall"
 	"time"
 
-	box "github.com/sagernet/sing-box"
-	"github.com/sagernet/sing-box/common/jsonsmerge"
+	"github.com/sagernet/sing-box"
 	C "github.com/sagernet/sing-box/constant"
 	"github.com/sagernet/sing-box/log"
 	"github.com/sagernet/sing-box/option"
@@ -59,7 +57,7 @@ func readConfigAt(path string) (*OptionsEntry, error) {
 	if err != nil {
 		return nil, E.Cause(err, "read config at ", path)
 	}
-	options, err := json.UnmarshalExtendedContext[option.Options](globalCtx, configContent)
+	options, err := json.UnmarshalExtended[option.Options](configContent)
 	if err != nil {
 		return nil, E.Cause(err, "decode config at ", path)
 	}
@@ -73,9 +71,6 @@ func readConfigAt(path string) (*OptionsEntry, error) {
 func readConfig() ([]*OptionsEntry, error) {
 	var optionsList []*OptionsEntry
 	for _, path := range configPaths {
-		if !strings.HasSuffix(path, ".json") {
-			return nil, E.New("unsupported file extension: ", path)
-		}
 		optionsEntry, err := readConfigAt(path)
 		if err != nil {
 			return nil, err
@@ -105,13 +100,6 @@ func readConfig() ([]*OptionsEntry, error) {
 }
 
 func readConfigAndMerge() (option.Options, error) {
-	if configMergeExtended {
-		return jsonsMerge()
-	}
-	return badjsonMerge()
-}
-
-func badjsonMerge() (option.Options, error) {
 	optionsList, err := readConfig()
 	if err != nil {
 		return option.Options{}, err
@@ -121,30 +109,17 @@ func badjsonMerge() (option.Options, error) {
 	}
 	var mergedMessage json.RawMessage
 	for _, options := range optionsList {
-		mergedMessage, err = badjson.MergeJSON(globalCtx, options.options.RawMessage, mergedMessage, false)
+		mergedMessage, err = badjson.MergeJSON(options.options.RawMessage, mergedMessage)
 		if err != nil {
 			return option.Options{}, E.Cause(err, "merge config at ", options.path)
 		}
 	}
 	var mergedOptions option.Options
-	err = mergedOptions.UnmarshalJSONContext(globalCtx, mergedMessage)
+	err = mergedOptions.UnmarshalJSON(mergedMessage)
 	if err != nil {
 		return option.Options{}, E.Cause(err, "unmarshal merged config")
 	}
 	return mergedOptions, nil
-}
-
-func jsonsMerge() (option.Options, error) {
-	c, err := jsonsmerge.Files(configPaths, configDirectories)
-	if err != nil {
-		return option.Options{}, err
-	}
-	var options option.Options
-	err = options.UnmarshalJSONContext(globalCtx, c)
-	if err != nil {
-		return option.Options{}, fmt.Errorf("decode config: %w\n%s", err, string(c))
-	}
-	return options, nil
 }
 
 func create() (*box.Box, context.CancelFunc, error) {
@@ -213,12 +188,9 @@ func run() error {
 			cancel()
 			closeCtx, closed := context.WithCancel(context.Background())
 			go closeMonitor(closeCtx)
-			err = instance.Close()
+			instance.Close()
 			closed()
 			if osSignal != syscall.SIGHUP {
-				if err != nil {
-					log.Error(E.Cause(err, "sing-box did not closed properly"))
-				}
 				return nil
 			}
 			break
@@ -227,7 +199,7 @@ func run() error {
 }
 
 func closeMonitor(ctx context.Context) {
-	time.Sleep(C.FatalStopTimeout)
+	time.Sleep(C.DefaultStopFatalTimeout)
 	select {
 	case <-ctx.Done():
 		return

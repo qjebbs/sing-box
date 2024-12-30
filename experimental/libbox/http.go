@@ -17,8 +17,8 @@ import (
 	"os"
 	"strconv"
 	"sync"
+	"time"
 
-	C "github.com/sagernet/sing-box/constant"
 	"github.com/sagernet/sing/common"
 	"github.com/sagernet/sing/common/bufio"
 	E "github.com/sagernet/sing/common/exceptions"
@@ -50,7 +50,8 @@ type HTTPRequest interface {
 }
 
 type HTTPResponse interface {
-	GetContent() (*StringBox, error)
+	GetContent() ([]byte, error)
+	GetContentString() (string, error)
 	WriteTo(path string) error
 }
 
@@ -68,9 +69,8 @@ type httpClient struct {
 
 func NewHTTPClient() HTTPClient {
 	client := new(httpClient)
+	client.client.Timeout = 15 * time.Second
 	client.client.Transport = &client.transport
-	client.transport.ForceAttemptHTTP2 = true
-	client.transport.TLSHandshakeTimeout = C.TCPTimeout
 	client.transport.TLSClientConfig = &client.tls
 	client.transport.DisableKeepAlives = true
 	return client
@@ -127,6 +127,7 @@ func (c *httpClient) TrySocks5(port int32) {
 }
 
 func (c *httpClient) KeepAlive() {
+	c.transport.ForceAttemptHTTP2 = true
 	c.transport.DisableKeepAlives = false
 }
 
@@ -209,22 +210,27 @@ type httpResponse struct {
 }
 
 func (h *httpResponse) errorString() string {
-	content, err := h.GetContent()
+	content, err := h.GetContentString()
 	if err != nil {
 		return fmt.Sprint("HTTP ", h.Status)
 	}
 	return fmt.Sprint("HTTP ", h.Status, ": ", content)
 }
 
-func (h *httpResponse) GetContent() (*StringBox, error) {
+func (h *httpResponse) GetContent() ([]byte, error) {
 	h.getContentOnce.Do(func() {
 		defer h.Body.Close()
 		h.content, h.contentError = io.ReadAll(h.Body)
 	})
-	if h.contentError != nil {
-		return nil, h.contentError
+	return h.content, h.contentError
+}
+
+func (h *httpResponse) GetContentString() (string, error) {
+	content, err := h.GetContent()
+	if err != nil {
+		return "", err
 	}
-	return wrapString(string(h.content)), nil
+	return string(content), nil
 }
 
 func (h *httpResponse) WriteTo(path string) error {

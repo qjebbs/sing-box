@@ -5,6 +5,7 @@ package wireguard
 import (
 	"context"
 	"net"
+	"net/netip"
 	"os"
 
 	"github.com/sagernet/gvisor/pkg/buffer"
@@ -14,41 +15,52 @@ import (
 	"github.com/sagernet/gvisor/pkg/tcpip/network/ipv4"
 	"github.com/sagernet/gvisor/pkg/tcpip/network/ipv6"
 	"github.com/sagernet/gvisor/pkg/tcpip/stack"
+	"github.com/sagernet/gvisor/pkg/tcpip/transport/icmp"
 	"github.com/sagernet/gvisor/pkg/tcpip/transport/tcp"
 	"github.com/sagernet/gvisor/pkg/tcpip/transport/udp"
 	"github.com/sagernet/sing-tun"
+	"github.com/sagernet/sing/common/buf"
 	E "github.com/sagernet/sing/common/exceptions"
 	M "github.com/sagernet/sing/common/metadata"
 	N "github.com/sagernet/sing/common/network"
-	"github.com/sagernet/wireguard-go/device"
 	wgTun "github.com/sagernet/wireguard-go/tun"
 )
 
-var _ Device = (*stackDevice)(nil)
+var _ Device = (*StackDevice)(nil)
 
-type stackDevice struct {
-	stack      *stack.Stack
-	mtu        uint32
-	events     chan wgTun.Event
-	outbound   chan *stack.PacketBuffer
-	done       chan struct{}
-	dispatcher stack.NetworkDispatcher
-	addr4      tcpip.Address
-	addr6      tcpip.Address
+const defaultNIC tcpip.NICID = 1
+
+type StackDevice struct {
+	stack          *stack.Stack
+	mtu            uint32
+	events         chan wgTun.Event
+	outbound       chan stack.PacketBufferPtr
+	packetOutbound chan *buf.Buffer
+	done           chan struct{}
+	dispatcher     stack.NetworkDispatcher
+	addr4          tcpip.Address
+	addr6          tcpip.Address
 }
 
-func newStackDevice(options DeviceOptions) (*stackDevice, error) {
-	tunDevice := &stackDevice{
-		mtu:      options.MTU,
-		events:   make(chan wgTun.Event, 1),
-		outbound: make(chan *stack.PacketBuffer, 256),
-		done:     make(chan struct{}),
+func NewStackDevice(localAddresses []netip.Prefix, mtu uint32) (*StackDevice, error) {
+	ipStack := stack.New(stack.Options{
+		NetworkProtocols:   []stack.NetworkProtocolFactory{ipv4.NewProtocol, ipv6.NewProtocol},
+		TransportProtocols: []stack.TransportProtocolFactory{tcp.NewProtocol, udp.NewProtocol, icmp.NewProtocol4, icmp.NewProtocol6},
+		HandleLocal:        true,
+	})
+	tunDevice := &StackDevice{
+		stack:          ipStack,
+		mtu:            mtu,
+		events:         make(chan wgTun.Event, 1),
+		outbound:       make(chan stack.PacketBufferPtr, 256),
+		packetOutbound: make(chan *buf.Buffer, 256),
+		done:           make(chan struct{}),
 	}
-	ipStack, err := tun.NewGVisorStack((*wireEndpoint)(tunDevice))
+	err := ipStack.CreateNIC(defaultNIC, (*wireEndpoint)(tunDevice))
 	if err != nil {
-		return nil, err
+		return nil, E.New(err.String())
 	}
-	for _, prefix := range options.Address {
+	for _, prefix := range localAddresses {
 		addr := tun.AddressFromAddr(prefix.Addr())
 		protoAddr := tcpip.ProtocolAddress{
 			AddressWithPrefix: tcpip.AddressWithPrefix{
@@ -63,27 +75,32 @@ func newStackDevice(options DeviceOptions) (*stackDevice, error) {
 			tunDevice.addr6 = addr
 			protoAddr.Protocol = ipv6.ProtocolNumber
 		}
-		gErr := ipStack.AddProtocolAddress(tun.DefaultNIC, protoAddr, stack.AddressProperties{})
-		if gErr != nil {
-			return nil, E.New("parse local address ", protoAddr.AddressWithPrefix, ": ", gErr.String())
+		err = ipStack.AddProtocolAddress(defaultNIC, protoAddr, stack.AddressProperties{})
+		if err != nil {
+			return nil, E.New("parse local address ", protoAddr.AddressWithPrefix, ": ", err.String())
 		}
 	}
-	tunDevice.stack = ipStack
-	if options.Handler != nil {
-		ipStack.SetTransportProtocolHandler(tcp.ProtocolNumber, tun.NewTCPForwarder(options.Context, ipStack, options.Handler).HandlePacket)
-		ipStack.SetTransportProtocolHandler(udp.ProtocolNumber, tun.NewUDPForwarder(options.Context, ipStack, options.Handler, options.UDPTimeout).HandlePacket)
-	}
+	sOpt := tcpip.TCPSACKEnabled(true)
+	ipStack.SetTransportProtocolOption(tcp.ProtocolNumber, &sOpt)
+	cOpt := tcpip.CongestionControlOption("cubic")
+	ipStack.SetTransportProtocolOption(tcp.ProtocolNumber, &cOpt)
+	ipStack.AddRoute(tcpip.Route{Destination: header.IPv4EmptySubnet, NIC: defaultNIC})
+	ipStack.AddRoute(tcpip.Route{Destination: header.IPv6EmptySubnet, NIC: defaultNIC})
 	return tunDevice, nil
 }
 
-func (w *stackDevice) DialContext(ctx context.Context, network string, destination M.Socksaddr) (net.Conn, error) {
+func (w *StackDevice) NewEndpoint() (stack.LinkEndpoint, error) {
+	return (*wireEndpoint)(w), nil
+}
+
+func (w *StackDevice) DialContext(ctx context.Context, network string, destination M.Socksaddr) (net.Conn, error) {
 	addr := tcpip.FullAddress{
-		NIC:  tun.DefaultNIC,
+		NIC:  defaultNIC,
 		Port: destination.Port,
 		Addr: tun.AddressFromAddr(destination.Addr),
 	}
 	bind := tcpip.FullAddress{
-		NIC: tun.DefaultNIC,
+		NIC: defaultNIC,
 	}
 	var networkProtocol tcpip.NetworkProtocolNumber
 	if destination.IsIPv4() {
@@ -111,9 +128,9 @@ func (w *stackDevice) DialContext(ctx context.Context, network string, destinati
 	}
 }
 
-func (w *stackDevice) ListenPacket(ctx context.Context, destination M.Socksaddr) (net.PacketConn, error) {
+func (w *StackDevice) ListenPacket(ctx context.Context, destination M.Socksaddr) (net.PacketConn, error) {
 	bind := tcpip.FullAddress{
-		NIC: tun.DefaultNIC,
+		NIC: defaultNIC,
 	}
 	var networkProtocol tcpip.NetworkProtocolNumber
 	if destination.IsIPv4() {
@@ -130,19 +147,24 @@ func (w *stackDevice) ListenPacket(ctx context.Context, destination M.Socksaddr)
 	return udpConn, nil
 }
 
-func (w *stackDevice) SetDevice(device *device.Device) {
+func (w *StackDevice) Inet4Address() netip.Addr {
+	return tun.AddrFromAddress(w.addr4)
 }
 
-func (w *stackDevice) Start() error {
+func (w *StackDevice) Inet6Address() netip.Addr {
+	return tun.AddrFromAddress(w.addr6)
+}
+
+func (w *StackDevice) Start() error {
 	w.events <- wgTun.EventUp
 	return nil
 }
 
-func (w *stackDevice) File() *os.File {
+func (w *StackDevice) File() *os.File {
 	return nil
 }
 
-func (w *stackDevice) Read(bufs [][]byte, sizes []int, offset int) (count int, err error) {
+func (w *StackDevice) Read(bufs [][]byte, sizes []int, offset int) (count int, err error) {
 	select {
 	case packetBuffer, ok := <-w.outbound:
 		if !ok {
@@ -158,12 +180,17 @@ func (w *stackDevice) Read(bufs [][]byte, sizes []int, offset int) (count int, e
 		sizes[0] = n
 		count = 1
 		return
+	case packet := <-w.packetOutbound:
+		defer packet.Release()
+		sizes[0] = copy(bufs[0][offset:], packet.Bytes())
+		count = 1
+		return
 	case <-w.done:
 		return 0, os.ErrClosed
 	}
 }
 
-func (w *stackDevice) Write(bufs [][]byte, offset int) (count int, err error) {
+func (w *StackDevice) Write(bufs [][]byte, offset int) (count int, err error) {
 	for _, b := range bufs {
 		b = b[offset:]
 		if len(b) == 0 {
@@ -186,46 +213,47 @@ func (w *stackDevice) Write(bufs [][]byte, offset int) (count int, err error) {
 	return
 }
 
-func (w *stackDevice) Flush() error {
+func (w *StackDevice) Flush() error {
 	return nil
 }
 
-func (w *stackDevice) MTU() (int, error) {
+func (w *StackDevice) MTU() (int, error) {
 	return int(w.mtu), nil
 }
 
-func (w *stackDevice) Name() (string, error) {
+func (w *StackDevice) Name() (string, error) {
 	return "sing-box", nil
 }
 
-func (w *stackDevice) Events() <-chan wgTun.Event {
+func (w *StackDevice) Events() <-chan wgTun.Event {
 	return w.events
 }
 
-func (w *stackDevice) Close() error {
-	close(w.done)
-	close(w.events)
+func (w *StackDevice) Close() error {
+	select {
+	case <-w.done:
+		return os.ErrClosed
+	default:
+	}
 	w.stack.Close()
 	for _, endpoint := range w.stack.CleanupEndpoints() {
 		endpoint.Abort()
 	}
 	w.stack.Wait()
+	close(w.done)
 	return nil
 }
 
-func (w *stackDevice) BatchSize() int {
+func (w *StackDevice) BatchSize() int {
 	return 1
 }
 
 var _ stack.LinkEndpoint = (*wireEndpoint)(nil)
 
-type wireEndpoint stackDevice
+type wireEndpoint StackDevice
 
 func (ep *wireEndpoint) MTU() uint32 {
 	return ep.mtu
-}
-
-func (ep *wireEndpoint) SetMTU(mtu uint32) {
 }
 
 func (ep *wireEndpoint) MaxHeaderLength() uint16 {
@@ -234,9 +262,6 @@ func (ep *wireEndpoint) MaxHeaderLength() uint16 {
 
 func (ep *wireEndpoint) LinkAddress() tcpip.LinkAddress {
 	return ""
-}
-
-func (ep *wireEndpoint) SetLinkAddress(addr tcpip.LinkAddress) {
 }
 
 func (ep *wireEndpoint) Capabilities() stack.LinkEndpointCapabilities {
@@ -258,10 +283,10 @@ func (ep *wireEndpoint) ARPHardwareType() header.ARPHardwareType {
 	return header.ARPHardwareNone
 }
 
-func (ep *wireEndpoint) AddHeader(buffer *stack.PacketBuffer) {
+func (ep *wireEndpoint) AddHeader(buffer stack.PacketBufferPtr) {
 }
 
-func (ep *wireEndpoint) ParseHeader(ptr *stack.PacketBuffer) bool {
+func (ep *wireEndpoint) ParseHeader(ptr stack.PacketBufferPtr) bool {
 	return true
 }
 
@@ -275,10 +300,4 @@ func (ep *wireEndpoint) WritePackets(list stack.PacketBufferList) (int, tcpip.Er
 		}
 	}
 	return list.Len(), nil
-}
-
-func (ep *wireEndpoint) Close() {
-}
-
-func (ep *wireEndpoint) SetOnCloseAction(f func()) {
 }

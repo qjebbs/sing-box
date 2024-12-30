@@ -27,10 +27,11 @@ func (c *echClientConfig) DialEarly(ctx context.Context, conn net.PacketConn, ad
 	return quic.DialEarly(ctx, conn, addr, c.config, config)
 }
 
-func (c *echClientConfig) CreateTransport(conn net.PacketConn, quicConnPtr *quic.EarlyConnection, serverAddr M.Socksaddr, quicConfig *quic.Config) http.RoundTripper {
+func (c *echClientConfig) CreateTransport(conn net.PacketConn, quicConnPtr *quic.EarlyConnection, serverAddr M.Socksaddr, quicConfig *quic.Config, enableDatagrams bool) http.RoundTripper {
 	return &http3.RoundTripper{
 		TLSClientConfig: c.config,
-		QUICConfig:      quicConfig,
+		QuicConfig:      quicConfig,
+		EnableDatagrams: enableDatagrams,
 		Dial: func(ctx context.Context, addr string, tlsCfg *tls.Config, cfg *quic.Config) (quic.EarlyConnection, error) {
 			quicConn, err := quic.DialEarly(ctx, conn, serverAddr.UDPAddr(), tlsCfg, cfg)
 			if err != nil {

@@ -7,8 +7,6 @@ import (
 
 	C "github.com/sagernet/sing-box/constant"
 	"github.com/sagernet/sing-box/option"
-	"github.com/sagernet/sing/common"
-	"github.com/sagernet/sing/common/json/badoption"
 )
 
 func _TestWireGuard(t *testing.T) {
@@ -26,9 +24,9 @@ func _TestWireGuard(t *testing.T) {
 		Inbounds: []option.Inbound{
 			{
 				Type: C.TypeMixed,
-				Options: &option.HTTPMixedInboundOptions{
+				MixedOptions: option.HTTPMixedInboundOptions{
 					ListenOptions: option.ListenOptions{
-						Listen:     common.Ptr(badoption.Addr(netip.IPv4Unspecified())),
+						Listen:     option.NewListenAddress(netip.IPv4Unspecified()),
 						ListenPort: clientPort,
 					},
 				},
@@ -37,12 +35,12 @@ func _TestWireGuard(t *testing.T) {
 		Outbounds: []option.Outbound{
 			{
 				Type: C.TypeWireGuard,
-				Options: &option.WireGuardEndpointOptions{
+				WireGuardOptions: option.WireGuardOutboundOptions{
 					ServerOptions: option.ServerOptions{
 						Server:     "127.0.0.1",
 						ServerPort: serverPort,
 					},
-					Address:       []netip.Prefix{netip.MustParsePrefix("10.0.0.2/32")},
+					LocalAddress:  []netip.Prefix{netip.MustParsePrefix("10.0.0.2/32")},
 					PrivateKey:    "qGnwlkZljMxeECW8fbwAWdvgntnbK7B8UmMFl3zM0mk=",
 					PeerPublicKey: "QsdcBm+oJw2oNv0cIFXLIq1E850lgTBonup4qnKEQBg=",
 				},

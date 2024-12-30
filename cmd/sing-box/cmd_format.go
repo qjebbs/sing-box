@@ -33,15 +33,12 @@ func init() {
 }
 
 func format() error {
-	if configMergeExtended {
-		return E.New("format does not support extended config")
-	}
 	optionsList, err := readConfig()
 	if err != nil {
 		return err
 	}
 	for _, optionsEntry := range optionsList {
-		optionsEntry.options, err = badjson.Omitempty(globalCtx, optionsEntry.options)
+		optionsEntry.options, err = badjson.Omitempty(optionsEntry.options)
 		if err != nil {
 			return err
 		}

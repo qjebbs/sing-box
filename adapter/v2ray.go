@@ -4,6 +4,7 @@ import (
 	"context"
 	"net"
 
+	E "github.com/sagernet/sing/common/exceptions"
 	N "github.com/sagernet/sing/common/network"
 )
 
@@ -15,10 +16,10 @@ type V2RayServerTransport interface {
 }
 
 type V2RayServerTransportHandler interface {
-	N.TCPConnectionHandlerEx
+	N.TCPConnectionHandler
+	E.Handler
 }
 
 type V2RayClientTransport interface {
 	DialContext(ctx context.Context) (net.Conn, error)
-	Close() error
 }

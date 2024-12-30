@@ -9,7 +9,9 @@ import (
 	"github.com/sagernet/sing-dns"
 	"github.com/sagernet/sing/common"
 	E "github.com/sagernet/sing/common/exceptions"
+	"github.com/sagernet/sing/common/logger"
 	M "github.com/sagernet/sing/common/metadata"
+	N "github.com/sagernet/sing/common/network"
 	"github.com/sagernet/sing/common/task"
 
 	mDNS "github.com/miekg/dns"
@@ -23,11 +25,9 @@ type LocalDNSTransport interface {
 
 func RegisterLocalDNSTransport(transport LocalDNSTransport) {
 	if transport == nil {
-		dns.RegisterTransport([]string{"local"}, func(options dns.TransportOptions) (dns.Transport, error) {
-			return dns.NewLocalTransport(options), nil
-		})
+		dns.RegisterTransport([]string{"local"}, dns.CreateLocalTransport)
 	} else {
-		dns.RegisterTransport([]string{"local"}, func(options dns.TransportOptions) (dns.Transport, error) {
+		dns.RegisterTransport([]string{"local"}, func(name string, ctx context.Context, logger logger.ContextLogger, dialer N.Dialer, link string) (dns.Transport, error) {
 			return &platformLocalDNSTransport{
 				iif: transport,
 			}, nil
@@ -69,8 +69,7 @@ func (p *platformLocalDNSTransport) Exchange(ctx context.Context, message *mDNS.
 		context: ctx,
 	}
 	var responseMessage *mDNS.Msg
-	var group task.Group
-	group.Append0(func(ctx context.Context) error {
+	return responseMessage, task.Run(ctx, func() error {
 		err = p.iif.Exchange(response, messageBytes)
 		if err != nil {
 			return err
@@ -81,11 +80,6 @@ func (p *platformLocalDNSTransport) Exchange(ctx context.Context, message *mDNS.
 		responseMessage = &response.message
 		return nil
 	})
-	err = group.Run(ctx)
-	if err != nil {
-		return nil, err
-	}
-	return responseMessage, nil
 }
 
 func (p *platformLocalDNSTransport) Lookup(ctx context.Context, domain string, strategy dns.DomainStrategy) ([]netip.Addr, error) {
@@ -102,8 +96,7 @@ func (p *platformLocalDNSTransport) Lookup(ctx context.Context, domain string, s
 		context: ctx,
 	}
 	var responseAddr []netip.Addr
-	var group task.Group
-	group.Append0(func(ctx context.Context) error {
+	return responseAddr, task.Run(ctx, func() error {
 		err := p.iif.Lookup(response, network, domain)
 		if err != nil {
 			return err
@@ -128,11 +121,6 @@ func (p *platformLocalDNSTransport) Lookup(ctx context.Context, domain string, s
 		}*/
 		return nil
 	})
-	err := group.Run(ctx)
-	if err != nil {
-		return nil, err
-	}
-	return responseAddr, nil
 }
 
 type Func interface {

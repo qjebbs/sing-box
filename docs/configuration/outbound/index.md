@@ -35,7 +35,6 @@
 | `dns`          | [DNS](./dns/)                   |
 | `selector`     | [Selector](./selector/)         |
 | `urltest`      | [URLTest](./urltest/)           |
-| `loadbalance`  | [LoadBalance](./loadbalance/)   |
 
 #### tag
 
