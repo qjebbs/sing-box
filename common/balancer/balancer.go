@@ -43,6 +43,7 @@ type Balancer struct {
 // sampling numbers, etc.
 func New(
 	ctx context.Context,
+	router adapter.Router,
 	outbound adapter.OutboundManager,
 	providers []adapter.Provider,
 	options *option.LoadBalanceOutboundOptions, logger log.ContextLogger,
@@ -102,7 +103,7 @@ func New(
 	}
 	// healthcheck.New() may apply default values to options, e.g. the `sampling` which
 	// is used to calculate the maxFailRate.
-	hc := healthcheck.New(ctx, outbound, providers, &options.Check, logger)
+	hc := healthcheck.New(ctx, router, outbound, providers, &options.Check, logger)
 
 	return &Balancer{
 		options:     options,

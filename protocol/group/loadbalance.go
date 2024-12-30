@@ -34,6 +34,7 @@ type LoadBalance struct {
 	*balancer.Balancer
 
 	ctx        context.Context
+	router     adapter.Router
 	logger     log.ContextLogger
 	outbound   adapter.OutboundManager
 	provider   adapter.ProviderManager
@@ -46,6 +47,7 @@ func NewLoadBalance(ctx context.Context, router adapter.Router, logger log.Conte
 	return &LoadBalance{
 		GroupAdapter: outbound.NewGroupAdapter(C.TypeLoadBalance, tag, []string{N.NetworkTCP, N.NetworkUDP}, router, options.ProviderGroupCommonOption),
 		ctx:          ctx,
+		router:       router,
 		logger:       logger,
 		outbound:     service.FromContext[adapter.OutboundManager](ctx),
 		provider:     service.FromContext[adapter.ProviderManager](ctx),
@@ -159,7 +161,7 @@ func (s *LoadBalance) Start() error {
 	if err := s.InitProviders(s.outbound, s.provider); err != nil {
 		return err
 	}
-	b, err := balancer.New(s.ctx, s.outbound, s.Providers(), &s.options, s.logger)
+	b, err := balancer.New(s.ctx, s.router, s.outbound, s.Providers(), &s.options, s.logger)
 	if err != nil {
 		return err
 	}

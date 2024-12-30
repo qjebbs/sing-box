@@ -10,6 +10,7 @@ import (
 	C "github.com/sagernet/sing-box/constant"
 	"github.com/sagernet/sing-box/log"
 	"github.com/sagernet/sing-box/option"
+	"github.com/sagernet/sing/common"
 	"github.com/sagernet/sing/common/batch"
 	E "github.com/sagernet/sing/common/exceptions"
 	"github.com/sagernet/sing/common/json/badoption"
@@ -26,10 +27,11 @@ var (
 type HealthCheck struct {
 	Storage *Storages
 
-	pauseManager pause.Manager
-
+	ctx            context.Context
+	router         adapter.Router
 	om             adapter.OutboundManager
 	logger         log.Logger
+	pauseManager   pause.Manager
 	globalHistory  *urltest.HistoryStorage
 	providers      []adapter.Provider
 	providersByTag map[string]adapter.Provider
@@ -48,6 +50,7 @@ type HealthCheck struct {
 // sampling numbers, etc.
 func New(
 	ctx context.Context,
+	router adapter.Router,
 	outbound adapter.OutboundManager,
 	providers []adapter.Provider,
 	options *option.HealthCheckOptions, logger log.Logger,
@@ -76,6 +79,7 @@ func New(
 		history = urltest.NewHistoryStorage()
 	}
 	return &HealthCheck{
+		ctx:            ctx,
 		om:             outbound,
 		logger:         logger,
 		globalHistory:  history,
@@ -96,12 +100,19 @@ func (h *HealthCheck) Start() error {
 		return nil
 	}
 	if len(h.options.DetourOf) > 0 {
-		for _, tag := range h.options.DetourOf {
-			outbound, ok := h.om.Outbound(tag)
-			if !ok {
-				return E.New("detour_of: outbound not found: ", tag)
+		if h.om == nil {
+			return E.New("missing outbound manager")
+		}
+		detour := dialer.NewDetourVar()
+		h.detourOf = make([]adapter.Outbound, len(h.options.DetourOf))
+		for i := len(h.options.DetourOf) - 1; i >= 0; i-- {
+			tag := h.options.DetourOf[i]
+			outbound, err := h.om.DupOverrideDetour(h.ctx, h.router, tag, detour)
+			if err != nil {
+				return E.Cause(err, "detour_of: create detour outbound: ", tag)
 			}
-			h.detourOf = append(h.detourOf, outbound)
+			h.detourOf[i] = outbound
+			detour = outbound
 		}
 	}
 	ctx, cancel := context.WithCancel(context.Background())
@@ -122,6 +133,9 @@ func (h *HealthCheck) Close() error {
 	if h.cancel != nil {
 		h.cancel()
 		h.cancel = nil
+	}
+	for _, detour := range h.detourOf {
+		common.Close(detour)
 	}
 	return nil
 }
@@ -266,11 +280,11 @@ func (h *HealthCheck) checkOutbound(ctx context.Context, outbound adapter.Outbou
 	tag := outbound.Tag()
 	testCtx, cancel := context.WithTimeout(ctx, C.TCPTimeout)
 	defer cancel()
+	testCtx = log.ContextWithOverrideLevel(testCtx, log.LevelDebug)
 	if len(h.detourOf) > 0 {
-		testCtx = dialer.WithChainRedirects(testCtx, makeOutboundChain(h.detourOf, outbound))
+		testCtx = dialer.ContextWithDetourVar(testCtx, outbound)
 		outbound = h.detourOf[0]
 	}
-	testCtx = log.ContextWithOverrideLevel(testCtx, log.LevelDebug)
 	t, err := urltest.URLTest(testCtx, h.options.Destination, outbound)
 	if err != nil {
 		h.logger.Debug("outbound ", tag, " unavailable: ", err)
@@ -307,7 +321,7 @@ func (h *HealthCheck) waitProcessResult(batch *batch.Batch[uint16], meta *MetaDa
 }
 
 func (h *HealthCheck) cleanupLoop(ctx context.Context, interval time.Duration) {
-	ticker := time.NewTicker(time.Duration(h.options.Interval))
+	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 	for {
 		h.pauseManager.WaitActive()

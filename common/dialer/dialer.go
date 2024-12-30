@@ -20,6 +20,17 @@ func New(ctx context.Context, options option.DialerOptions) (N.Dialer, error) {
 	if options.IsWireGuardListener {
 		return NewDefault(ctx, options)
 	}
+	detour := DetourOverrideFromContext(ctx)
+	if detour != nil {
+		return detour, nil
+	}
+	return new(ctx, options)
+}
+
+func new(ctx context.Context, options option.DialerOptions) (N.Dialer, error) {
+	if options.IsWireGuardListener {
+		return NewDefault(ctx, options)
+	}
 	var (
 		dialer N.Dialer
 		err    error

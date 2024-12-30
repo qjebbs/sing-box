@@ -35,6 +35,7 @@ type URLTestProvider struct {
 	*healthcheck.HealthCheck
 
 	ctx        context.Context
+	router     adapter.Router
 	logger     log.ContextLogger
 	outbound   adapter.OutboundManager
 	provider   adapter.ProviderManager
@@ -60,6 +61,7 @@ func NewURLTestProvider(ctx context.Context, router adapter.Router, logger log.C
 	outbound := &URLTestProvider{
 		GroupAdapter: outbound.NewGroupAdapter(C.TypeURLTest, tag, []string{N.NetworkTCP, N.NetworkUDP}, router, options.ProviderGroupCommonOption),
 		ctx:          ctx,
+		router:       router,
 		logger:       logger,
 		outbound:     service.FromContext[adapter.OutboundManager](ctx),
 		connection:   service.FromContext[adapter.ConnectionManager](ctx),
@@ -78,7 +80,7 @@ func (s *URLTestProvider) Start() error {
 	if err := s.InitProviders(s.outbound, s.provider); err != nil {
 		return err
 	}
-	s.HealthCheck = healthcheck.New(s.ctx, s.outbound, s.Providers(), &s.options, s.logger)
+	s.HealthCheck = healthcheck.New(s.ctx, s.router, s.outbound, s.Providers(), &s.options, s.logger)
 	return s.HealthCheck.Start()
 }
 

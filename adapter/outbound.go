@@ -30,4 +30,8 @@ type OutboundManager interface {
 	Default() Outbound
 	Remove(tag string) error
 	Create(ctx context.Context, router Router, logger log.ContextLogger, tag string, outboundType string, options any) error
+	// DupOverrideDetour duplicates the outbound with the specified tag and sets the override and detour for the duplicated outbound.
+	// The original outbound is not affected.
+	// The duplicated outbound is not managed by the manager, you should close it manually.
+	DupOverrideDetour(ctx context.Context, router Router, tag string, detour N.Dialer) (Outbound, error)
 }
