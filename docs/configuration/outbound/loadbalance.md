@@ -87,19 +87,35 @@ The destination URL for health check. Default is `http://www.gstatic.com/generat
 
 Let's say you have an outbound chain:
 
+```json
+{
+  "tag": "chain",
+  "type": "chain",
+  "outbounds": ["A", "B"]
+}
+```
+The actual chain is:
 
 ```
-                 (detour="B")                 (detour="C")
-Shadowsocks (A) -------------> ShadowTLS (B) --------------> LoadBalance (C)
+Shadowsocks (A) ---> LoadBalance (B)
 ```
 
-And you want the chain of the health check of each node to be exactly the same as above, just set the configuration of `C` to `detour_of: ["A", "B"]`, the check chain will be:
+And you want the health check of each node of `B` to be exactly the same as above, just configurate
+
+```json
+"detour_of": ["A"]
+```
+
+The check chain will be:
 
 ```
-Shadowsocks (A) ---> ShadowTLS (B) ---> [Node]
+Shadowsocks (A) ---> Trojan [B.Node]
 ```
 
-> If not, it would be almost impossible to detect such nodes, which are fine to use directly, but not when they're used as an upstream, due to audit rules and other reasons.
+If not, it would be almost impossible to detect such nodes, which are fine to use directly, but not when they're used as an upstream, due to audit rules and other reasons.
+Configuring this item can also avoid the server from hijacking the test request, and improve the accuracy of the health check.
+
+Restrictions: This configuration does not support adding outbound groups, such as `selector`, `loadbalance`, `chain`.
 
 ### Pick Fields
 

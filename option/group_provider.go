@@ -19,6 +19,11 @@ type ProviderURLTestOptions struct {
 	Tolerance uint16             `json:"tolerance,omitempty"`
 }
 
+// ChainOptions is the chain of outbounds
+type ChainOptions struct {
+	Outbounds []string `json:"outbounds"`
+}
+
 // ProviderGroupCommonOption is the common options for group outbounds with providers support
 type ProviderGroupCommonOption struct {
 	Outbounds []string `json:"outbounds"`

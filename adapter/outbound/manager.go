@@ -313,10 +313,13 @@ func (m *Manager) DupOverrideDetour(ctx context.Context, router adapter.Router, 
 		return nil, os.ErrInvalid
 	}
 	// It's hacky here, works only if all outbound creations invoke dialer.New()
-	ctx = dialer.ContextWithDetourOverride(ctx, detour)
+	ctx, used := dialer.ContextWithDetourOverride(ctx, detour)
 	outbound, err := m.registry.CreateOutbound(ctx, router, m.logger, tag, conf.typ, conf.options)
 	if err != nil {
 		return nil, err
+	}
+	if !used() {
+		return nil, E.New("[" + tag + "] detour not overridable")
 	}
 	for _, stage := range adapter.ListStartStages {
 		err = adapter.LegacyStart(outbound, stage)

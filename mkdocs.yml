@@ -154,6 +154,7 @@ nav:
           - Selector: configuration/outbound/selector.md
           - URLTest: configuration/outbound/urltest.md
           - LoadBalance: configuration/outbound/loadbalance.md
+          - Chain: configuration/outbound/chain.md
       - Provider:
           - configuration/provider/index.md
 markdown_extensions:
