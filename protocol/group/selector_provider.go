@@ -108,10 +108,10 @@ func (s *SelectorProvider) SelectOutbound(tag string) bool {
 	if s.selected.Swap(detour) == detour {
 		return true
 	}
-	if tag := s.Tag(); tag != "" {
+	if me := s.Tag(); me != "" {
 		cacheFile := service.FromContext[adapter.CacheFile](s.ctx)
 		if cacheFile != nil {
-			err := cacheFile.StoreSelected(tag, tag)
+			err := cacheFile.StoreSelected(me, tag)
 			if err != nil {
 				s.logger.Error("store selected: ", err)
 			}

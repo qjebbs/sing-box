@@ -14,9 +14,9 @@ type ProviderOptionsRegistry interface {
 	CreateOptions(providerType string) (any, bool)
 }
 type _Provider struct {
-	Tag     string `json:"tag"`
 	Type    string `json:"type"`
-	Options any    `json:"options"`
+	Tag     string `json:"tag"`
+	Options any    `json:"-"`
 }
 
 type Provider _Provider

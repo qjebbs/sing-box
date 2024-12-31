@@ -198,7 +198,7 @@ func getProxyDelay(server *Server) func(w http.ResponseWriter, r *http.Request) 
 		if group, isGroup := proxy.(adapter.OutboundGroup); isGroup {
 			outbound, err := adapter.RealOutbound(group)
 			if err != nil {
-				render.Status(r, http.StatusServiceUnavailable)
+				render.Status(r, http.StatusInternalServerError)
 				render.JSON(w, r, newError(err.Error()))
 				return
 			}
@@ -210,6 +210,8 @@ func getProxyDelay(server *Server) func(w http.ResponseWriter, r *http.Request) 
 			delay   uint16
 			checked bool
 		)
+		// if the target proxy is in any check group, we will check it
+		// by the check group
 		for _, proxy := range server.outbound.Outbounds() {
 			c, ok := proxy.(adapter.OutboundCheckGroup)
 			if !ok {
@@ -222,7 +224,7 @@ func getProxyDelay(server *Server) func(w http.ResponseWriter, r *http.Request) 
 			b.Go(proxyName, func() (any, error) {
 				d, err := c.CheckOutbound(r.Context(), proxyName)
 				if err == nil {
-					// last delay from all tests from groups
+					// last delay from all tests across groups
 					delay = d
 				}
 				return nil, nil
@@ -230,18 +232,13 @@ func getProxyDelay(server *Server) func(w http.ResponseWriter, r *http.Request) 
 		}
 		if checked {
 			b.Wait()
-			if delay == 0 {
-				render.Status(r, http.StatusServiceUnavailable)
-				render.JSON(w, r, newError("An error occurred in the delay test"))
-				return
-			}
 			render.JSON(w, r, render.M{
 				"delay": delay,
 			})
 			return
 		}
 
-		// the proxy is not used by any outbound group
+		// the proxy is not in by any outbound check group
 		query := r.URL.Query()
 		url := query.Get("url")
 		if strings.HasPrefix(url, "http://") {

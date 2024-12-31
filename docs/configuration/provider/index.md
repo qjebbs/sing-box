@@ -8,8 +8,8 @@ List of subscription providers.
 {
   "providers": [
     {
-      "type": "remote",
       "tag": "provider",
+      "type": "remote",
       "url": "https://url.to/provider.txt",
       "interval": "24h",
       "exclude": "",

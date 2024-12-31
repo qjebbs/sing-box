@@ -165,6 +165,7 @@ func (m *Manager) Close() error {
 	m.started = false
 	outbounds := m.outbounds
 	m.outbounds = nil
+	m.outboundByTag = make(map[string]adapter.Outbound)
 	m.access.Unlock()
 	var err error
 	for _, outbound := range outbounds {

@@ -81,10 +81,10 @@ func getGroupDelay(server *Server) func(w http.ResponseWriter, r *http.Request) 
 		defer cancel()
 
 		var result map[string]uint16
-		if group, isGroup := outboundGroup.(adapter.OutboundCheckGroup); isGroup {
+		if checkGroup, isGroup := outboundGroup.(adapter.OutboundCheckGroup); isGroup {
 			// url parameter is applied as a default value for non-OutboundCheckGroup,
 			// it's ignored here
-			result, err = group.CheckAll(ctx)
+			result, err = checkGroup.CheckAll(ctx)
 		} else {
 			// outbounds := common.FilterNotNil(common.Map(outboundGroup.All(), func(it string) adapter.Outbound {
 			// 	itOutbound, _ := server.outbound.Outbound(it)
@@ -94,7 +94,7 @@ func getGroupDelay(server *Server) func(w http.ResponseWriter, r *http.Request) 
 			checked := make(map[string]bool)
 			result = make(map[string]uint16)
 			var resultAccess sync.Mutex
-			for _, detour := range group.Outbounds() {
+			for _, detour := range outboundGroup.Outbounds() {
 				tag := detour.Tag()
 				realOutbound, err := adapter.RealOutbound(detour)
 				if err != nil {
@@ -114,7 +114,7 @@ func getGroupDelay(server *Server) func(w http.ResponseWriter, r *http.Request) 
 				b.Go(realTag, func() (any, error) {
 					ctx, cancel := context.WithTimeout(r.Context(), time.Millisecond*time.Duration(timeout))
 					defer cancel()
-					t, err := urltest.URLTest(ctx, url, detour)
+					t, err := urltest.URLTest(ctx, url, realOutbound)
 					if err != nil {
 						server.logger.Debug("outbound ", tag, " unavailable: ", err)
 						server.urlTestHistory.DeleteURLTestHistory(realTag)

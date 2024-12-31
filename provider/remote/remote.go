@@ -40,13 +40,6 @@ func init() {
 
 // Remote is a remote outbounds provider.
 type Remote struct {
-	sync.Mutex
-	*adapter.ProviderInfo
-
-	chReady chan struct{}
-	ctx     context.Context
-	cancel  context.CancelFunc
-
 	parentCtx  context.Context
 	router     adapter.Router
 	outbound   adapter.OutboundManager
@@ -63,6 +56,11 @@ type Remote struct {
 	userAgent      string
 	disableUA      bool
 
+	sync.Mutex
+	*adapter.ProviderInfo
+	chReady        chan struct{}
+	ctx            context.Context
+	cancel         context.CancelFunc
 	detour         adapter.Outbound
 	loadedHash     string
 	updatedAt      time.Time
@@ -155,7 +153,7 @@ func (s *Remote) Start() error {
 		s.detour = s.outbound.Default()
 	}
 
-	_, s.cancel = context.WithCancel(s.ctx)
+	s.ctx, s.cancel = context.WithCancel(s.ctx)
 	go s.refreshLoop()
 	return nil
 }
@@ -165,7 +163,19 @@ func (s *Remote) Close() error {
 	if s.cancel != nil {
 		s.cancel()
 	}
-	return nil
+	s.Lock()
+	defer s.Unlock()
+	var err error
+	for _, ob := range s.outbounds {
+		if err2 := s.outbound.Remove(ob.Tag()); err2 != nil {
+			err = E.Append(err, err2, func(err error) error {
+				return E.Cause(err, "close outbound [", ob.Tag(), "]")
+			})
+		}
+	}
+	s.outbounds = nil
+	s.outboundsByTag = nil
+	return err
 }
 
 // Wait implements adapter.Provider
@@ -210,6 +220,9 @@ func (s *Remote) Outbounds() []adapter.Outbound {
 func (s *Remote) Outbound(tag string) (adapter.Outbound, bool) {
 	s.Lock()
 	defer s.Unlock()
+	if s.outboundsByTag == nil {
+		return nil, false
+	}
 	detour, ok := s.outboundsByTag[tag]
 	return detour, ok
 }
@@ -260,7 +273,7 @@ func (s *Remote) updateOutbounds(opts []*option.Outbound) {
 	outbounds := make([]adapter.Outbound, 0, len(opts))
 	outboundsByTag := make(map[string]adapter.Outbound)
 	for _, opt := range opts {
-		tag := opt.Tag
+		tag := s.tag + "/" + opt.Tag
 		err := s.outbound.Create(
 			s.parentCtx,
 			s.router,

@@ -33,7 +33,12 @@ func getProviders(server *Server) func(w http.ResponseWriter, r *http.Request) {
 		for _, provider := range server.provider.Providers() {
 			providersMap.Put(provider.Tag(), providerInfo(server, provider))
 		}
-		responseMap.Put("providers", &providersMap)
+		if providersMap.IsEmpty() {
+			// fix Yacd-meta
+			responseMap.Put("providers", []string{})
+		} else {
+			responseMap.Put("providers", &providersMap)
+		}
 		response, err := responseMap.MarshalJSON()
 		if err != nil {
 			render.Status(r, http.StatusInternalServerError)

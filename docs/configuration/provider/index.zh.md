@@ -9,6 +9,7 @@
   "providers": [
     {
       "tag": "provider",
+      "type": "remote",
       "url": "https://url.to/provider.txt",
       "interval": "24h",
       "exclude": "",
