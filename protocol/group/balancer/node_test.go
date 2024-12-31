@@ -3,8 +3,8 @@ package balancer_test
 import (
 	"testing"
 
-	"github.com/sagernet/sing-box/common/balancer"
-	"github.com/sagernet/sing-box/common/healthcheck"
+	"github.com/sagernet/sing-box/protocol/group/balancer"
+	"github.com/sagernet/sing-box/protocol/group/healthcheck"
 )
 
 func TestNodeStatus(t *testing.T) {

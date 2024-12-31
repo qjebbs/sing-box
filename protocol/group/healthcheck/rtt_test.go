@@ -3,7 +3,7 @@ package healthcheck_test
 import (
 	"testing"
 
-	"github.com/sagernet/sing-box/common/healthcheck"
+	"github.com/sagernet/sing-box/protocol/group/healthcheck"
 )
 
 func TestDuration(t *testing.T) {

@@ -8,10 +8,10 @@ import (
 	"time"
 
 	"github.com/sagernet/sing-box/adapter"
-	"github.com/sagernet/sing-box/common/balancer"
-	"github.com/sagernet/sing-box/common/healthcheck"
 	"github.com/sagernet/sing-box/option"
 	"github.com/sagernet/sing-box/protocol/block"
+	"github.com/sagernet/sing-box/protocol/group/balancer"
+	"github.com/sagernet/sing-box/protocol/group/healthcheck"
 )
 
 var (

@@ -312,6 +312,7 @@ func (m *Manager) DupOverrideDetour(ctx context.Context, router adapter.Router, 
 	if !found {
 		return nil, os.ErrInvalid
 	}
+	// It's hacky here, works only if all outbound creations invoke dialer.New()
 	ctx = dialer.ContextWithDetourOverride(ctx, detour)
 	outbound, err := m.registry.CreateOutbound(ctx, router, m.logger, tag, conf.typ, conf.options)
 	if err != nil {

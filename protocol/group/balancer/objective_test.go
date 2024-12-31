@@ -3,7 +3,7 @@ package balancer_test
 import (
 	"testing"
 
-	"github.com/sagernet/sing-box/common/balancer"
+	"github.com/sagernet/sing-box/protocol/group/balancer"
 )
 
 func BenchmarkAlive32(b *testing.B) {

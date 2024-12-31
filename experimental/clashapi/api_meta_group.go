@@ -77,11 +77,14 @@ func getGroupDelay(server *Server) func(w http.ResponseWriter, r *http.Request) 
 			return
 		}
 
+		ctx, cancel := context.WithTimeout(r.Context(), time.Millisecond*time.Duration(timeout))
+		defer cancel()
+
 		var result map[string]uint16
 		if group, isGroup := outboundGroup.(adapter.OutboundCheckGroup); isGroup {
 			// url parameter is applied as a default value for non-OutboundCheckGroup,
 			// it's ignored here
-			result, err = group.CheckAll(r.Context())
+			result, err = group.CheckAll(ctx)
 		} else {
 			// outbounds := common.FilterNotNil(common.Map(outboundGroup.All(), func(it string) adapter.Outbound {
 			// 	itOutbound, _ := server.outbound.Outbound(it)

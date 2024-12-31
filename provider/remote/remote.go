@@ -332,16 +332,16 @@ func (s *Remote) downloadWithCache() (*fileContent, error) {
 		}
 		return fc, nil
 	}
-	err = E.Cause(err, "fetch provider")
+	errfetch := E.Cause(err, "fetch provider")
 	if s.loadedHash != "" {
-		return nil, err
+		return nil, errfetch
 	}
 	if s.cacheFile == "" {
 		return nil, err
 	}
 	fc, err = loadCache(s.cacheFile)
 	if err == nil {
-		s.logger.Info("cache file loaded due to: ", err)
+		s.logger.Info("cache file loaded due to: ", errfetch)
 		return fc, nil
 	}
 	s.logger.Error(E.Cause(err, "load cache file"))

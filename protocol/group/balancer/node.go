@@ -4,7 +4,7 @@ import (
 	"fmt"
 
 	"github.com/sagernet/sing-box/adapter"
-	"github.com/sagernet/sing-box/common/healthcheck"
+	"github.com/sagernet/sing-box/protocol/group/healthcheck"
 )
 
 // Status is the status of a node

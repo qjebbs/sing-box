@@ -187,7 +187,6 @@ func New(options Options) (*Box, error) {
 			return nil, E.Cause(err, "initialize inbound[", i, "]")
 		}
 	}
-	providers := make([]adapter.Provider, 0, len(options.Providers))
 	for i, inboundOptions := range options.Inbounds {
 		var tag string
 		if inboundOptions.Tag != "" {
@@ -243,7 +242,6 @@ func New(options Options) (*Box, error) {
 	))
 
 	for i, opt := range options.Providers {
-		var p adapter.Provider
 		var tag string
 		if opt.Tag != "" {
 			tag = opt.Tag
@@ -261,7 +259,6 @@ func New(options Options) (*Box, error) {
 		if err != nil {
 			return nil, E.Cause(err, "initialize provider[", i, "]")
 		}
-		providers = append(providers, p)
 	}
 	if platformInterface != nil {
 		err = platformInterface.Initialize(networkManager)

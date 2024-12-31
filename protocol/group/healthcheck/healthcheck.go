@@ -109,7 +109,7 @@ func (h *HealthCheck) Start() error {
 			tag := h.options.DetourOf[i]
 			outbound, err := h.om.DupOverrideDetour(h.ctx, h.router, tag, detour)
 			if err != nil {
-				return E.Cause(err, "detour_of: create detour outbound: ", tag)
+				return E.Cause(err, "detour_of")
 			}
 			h.detourOf[i] = outbound
 			detour = outbound
