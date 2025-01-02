@@ -35,7 +35,7 @@ func getProviders(server *Server) func(w http.ResponseWriter, r *http.Request) {
 		}
 		if providersMap.IsEmpty() {
 			// fix Yacd-meta
-			responseMap.Put("providers", []string{})
+			responseMap.Put("providers", render.M{})
 		} else {
 			responseMap.Put("providers", &providersMap)
 		}
@@ -52,7 +52,6 @@ func getProviders(server *Server) func(w http.ResponseWriter, r *http.Request) {
 func getProvider(w http.ResponseWriter, r *http.Request) {
 	provider := r.Context().Value(CtxKeyProvider).(adapter.Provider)
 	render.JSON(w, r, provider)
-	render.NoContent(w, r)
 }
 
 func providerInfo(server *Server, p adapter.Provider) *badjson.JSONObject {
@@ -84,39 +83,7 @@ func updateProvider(w http.ResponseWriter, r *http.Request) {
 
 func checkProvider(server *Server) func(w http.ResponseWriter, r *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
-		b, _ := batch.New(context.Background(), batch.WithConcurrencyNum[map[string]uint16](10))
-		providerName := r.Context().Value(CtxKeyProviderName).(string)
-		providerChecked := false
-		for _, proxy := range server.outbound.Outbounds() {
-			c, ok := proxy.(adapter.OutboundCheckGroup)
-			if !ok {
-				continue
-			}
-			tag := proxy.Tag()
-			if _, ok := c.Provider(providerName); ok {
-				providerChecked = true
-				b.Go(tag, func() (map[string]uint16, error) {
-					return c.CheckProvider(r.Context(), providerName)
-				})
-			}
-		}
-
 		checked := make(map[string]bool)
-		if providerChecked {
-			result, err := b.WaitAndGetResult()
-			if err != nil {
-				render.Status(r, http.StatusServiceUnavailable)
-				render.JSON(w, r, newError(err.Error()))
-				return
-			}
-			for _, r := range result {
-				for k := range r.Value {
-					checked[k] = true
-				}
-			}
-		}
-
-		// some outbounds may not be used by any group
 		provider := r.Context().Value(CtxKeyProvider).(adapter.Provider)
 		b2, _ := batch.New(context.Background(), batch.WithConcurrencyNum[any](10))
 		for _, proxy := range provider.Outbounds() {
@@ -130,7 +97,7 @@ func checkProvider(server *Server) func(w http.ResponseWriter, r *http.Request) 
 				continue
 			}
 			b2.Go(real.Tag(), func() (any, error) {
-				delay, err := urltest.URLTest(r.Context(), "", proxy)
+				delay, err := urltest.URLTest(r.Context(), "", real)
 				tag := real.Tag()
 				if err != nil {
 					server.urlTestHistory.StoreURLTestHistory(tag, &urltest.History{

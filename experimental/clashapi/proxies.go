@@ -13,7 +13,6 @@ import (
 	C "github.com/sagernet/sing-box/constant"
 	"github.com/sagernet/sing-box/protocol/group"
 	"github.com/sagernet/sing/common"
-	"github.com/sagernet/sing/common/batch"
 	F "github.com/sagernet/sing/common/format"
 	"github.com/sagernet/sing/common/json/badjson"
 	N "github.com/sagernet/sing/common/network"
@@ -192,7 +191,6 @@ func updateProxy(w http.ResponseWriter, r *http.Request) {
 
 func getProxyDelay(server *Server) func(w http.ResponseWriter, r *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
-		proxyName := r.Context().Value(CtxKeyProxyName).(string)
 		proxy := r.Context().Value(CtxKeyProxy).(adapter.Outbound)
 		// yacd may request the delay of a group
 		if group, isGroup := proxy.(adapter.OutboundGroup); isGroup {
@@ -203,42 +201,7 @@ func getProxyDelay(server *Server) func(w http.ResponseWriter, r *http.Request) 
 				return
 			}
 			proxy = outbound
-			proxyName = outbound.Tag()
 		}
-		b, _ := batch.New(context.Background(), batch.WithConcurrencyNum[any](10))
-		var (
-			delay   uint16
-			checked bool
-		)
-		// if the target proxy is in any check group, we will check it
-		// by the check group
-		for _, proxy := range server.outbound.Outbounds() {
-			c, ok := proxy.(adapter.OutboundCheckGroup)
-			if !ok {
-				continue
-			}
-			if _, ok := c.Outbound(proxyName); !ok {
-				continue
-			}
-			checked = true
-			b.Go(proxyName, func() (any, error) {
-				d, err := c.CheckOutbound(r.Context(), proxyName)
-				if err == nil {
-					// last delay from all tests across groups
-					delay = d
-				}
-				return nil, nil
-			})
-		}
-		if checked {
-			b.Wait()
-			render.JSON(w, r, render.M{
-				"delay": delay,
-			})
-			return
-		}
-
-		// the proxy is not in by any outbound check group
 		query := r.URL.Query()
 		url := query.Get("url")
 		if strings.HasPrefix(url, "http://") {
@@ -254,7 +217,7 @@ func getProxyDelay(server *Server) func(w http.ResponseWriter, r *http.Request) 
 		ctx, cancel := context.WithTimeout(context.Background(), time.Millisecond*time.Duration(timeout))
 		defer cancel()
 
-		delay, err = urltest.URLTest(ctx, url, proxy)
+		delay, err := urltest.URLTest(ctx, url, proxy)
 		defer func() {
 			real, err := adapter.RealOutbound(proxy)
 			if err != nil {
