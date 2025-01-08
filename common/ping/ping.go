@@ -22,7 +22,7 @@ type Client struct {
 
 // Ping pings the destination
 func (c *Client) Ping(ctx context.Context, destination string) (*Statistics, error) {
-	instance, detour, err := newInstance(c.Outbound)
+	instance, detour, err := newInstance(ctx, c.Outbound)
 	if err != nil {
 		return nil, err
 	}
@@ -72,7 +72,7 @@ L:
 	return getStatistics(startAt, round, rtts), nil
 }
 
-func newInstance(outbound *option.Outbound) (*box.Box, adapter.Outbound, error) {
+func newInstance(ctx context.Context, outbound *option.Outbound) (*box.Box, adapter.Outbound, error) {
 	options := option.Options{
 		Log: &option.LogOptions{
 			Level: log.FormatLevel(log.LevelPanic),
@@ -80,6 +80,7 @@ func newInstance(outbound *option.Outbound) (*box.Box, adapter.Outbound, error) 
 		Outbounds: []option.Outbound{*outbound},
 	}
 	instance, err := box.New(box.Options{
+		Context: ctx,
 		Options: options,
 	})
 	if err != nil {

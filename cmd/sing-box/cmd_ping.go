@@ -2,13 +2,14 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"net/url"
 	"os"
 	"os/signal"
 	"syscall"
 	"time"
+
+	"github.com/sagernet/sing/common/json"
 
 	"github.com/sagernet/sing-box/common/link"
 	"github.com/sagernet/sing-box/common/ping"
@@ -34,7 +35,7 @@ var (
 
 func init() {
 	commandPing.Flags().SortFlags = false
-	commandPing.Flags().StringVarP(&commandPingFlagDest, "dest", "d", "http://www.google.com/gen_204", "destination")
+	commandPing.Flags().StringVarP(&commandPingFlagDest, "dest", "d", "https://www.gstatic.com/generate_204", "destination")
 	commandPing.Flags().DurationVarP(&commandPingFlagInteval, "interval", "i", time.Second, "request interval")
 	commandPing.Flags().UintVarP(&commandPingFlagCount, "number", "n", 9999, "number of requests to make")
 	commandPing.Run = func(cmd *cobra.Command, args []string) {
@@ -90,7 +91,7 @@ func runPing() (*ping.Statistics, error) {
 	encoder.Encode(outbound)
 	os.Stdout.WriteString("\n")
 
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(globalCtx)
 	go func() {
 		osSignals := make(chan os.Signal, 1)
 		signal.Notify(osSignals, os.Interrupt, syscall.SIGTERM)
