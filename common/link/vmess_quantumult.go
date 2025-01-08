@@ -52,7 +52,7 @@ func ParseVMessQuantumult(u *url.URL) (*VMessQuantumult, error) {
 		return nil, E.Cause(err, "invalid port")
 	}
 	link.Server = params[1]
-	link.ServerPort = uint16(port)
+	link.Port = uint16(port)
 	link.Security = params[3]
 	link.UUID = strings.Trim(params[4], "\"")
 	link.AlterID = 0
@@ -89,7 +89,7 @@ func ParseVMessQuantumult(u *url.URL) (*VMessQuantumult, error) {
 				if len(kvp) != 2 {
 					return nil, ErrBadFormat
 				}
-				link.TransportPath = strings.Trim(kvp[1], "\"")
+				link.Path = strings.Trim(kvp[1], "\"")
 			case "obfs-header":
 				if len(kvp) != 2 {
 					return nil, ErrBadFormat
@@ -97,7 +97,7 @@ func ParseVMessQuantumult(u *url.URL) (*VMessQuantumult, error) {
 				hd := strings.Trim(kvp[1], "\"")
 				for _, hl := range strings.Split(hd, "[Rr][Nn]") {
 					if strings.HasPrefix(hl, "Host:") {
-						link.TransportHost = hl[5:]
+						link.Host = hl[5:]
 						break
 					}
 				}
@@ -107,9 +107,9 @@ func ParseVMessQuantumult(u *url.URL) (*VMessQuantumult, error) {
 				}
 				switch kvp[1] {
 				case "0":
-					link.TLSAllowInsecure = true
+					link.AllowInsecure = true
 				default:
-					link.TLSAllowInsecure = false
+					link.AllowInsecure = false
 				}
 			default:
 				return nil, fmt.Errorf("unsupported parameter: %s", param)

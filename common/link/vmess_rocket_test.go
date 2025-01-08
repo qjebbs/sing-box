@@ -1,8 +1,6 @@
 package link_test
 
 import (
-	"net/url"
-	"reflect"
 	"testing"
 
 	"github.com/sagernet/sing-box/common/link"
@@ -10,38 +8,24 @@ import (
 )
 
 func TestVMessRocket(t *testing.T) {
-	t.Parallel()
-	testCases := []link.VMessRocket{{
-		Vmess: link.Vmess{
-			Tag:              "remarks",
-			Server:           "192.168.100.1",
-			ServerPort:       443,
-			UUID:             "uuid",
-			AlterID:          0,
-			Security:         "auto",
-			TransportHost:    "host",
-			Transport:        C.V2RayTransportTypeWebsocket,
-			TransportPath:    "/path",
-			TLS:              true,
-			TLSAllowInsecure: false,
+	runTests(t, link.ParseVMessRocket, TestCases[*link.VMessRocket]{
+		{
+			Link: "vmess://YXV0bzp1dWlkQDE5Mi4xNjguMTAwLjE6NDQz?tls=tls&obfs=ws&obfsParam=host&path=%2Fpath&remarks=%E5%90%8D%E7%A7%B0",
+			Want: &link.VMessRocket{
+				Vmess: link.Vmess{
+					Tag:           "名称",
+					Server:        "192.168.100.1",
+					Port:          443,
+					UUID:          "uuid",
+					AlterID:       0,
+					Security:      "auto",
+					Host:          "host",
+					Transport:     C.V2RayTransportTypeWebsocket,
+					Path:          "/path",
+					TLS:           true,
+					AllowInsecure: false,
+				},
+			},
 		},
-	}}
-	for _, tc := range testCases {
-		uri, err := tc.URL()
-		if err != nil {
-			t.Fatal(err)
-		}
-		u, err := url.Parse(uri)
-		if err != nil {
-			t.Fatal(err)
-		}
-		link, err := link.ParseVMessRocket(u)
-		if err != nil {
-			t.Error(err)
-			return
-		}
-		if !reflect.DeepEqual(link.Vmess, tc.Vmess) {
-			t.Errorf("want %#v, got %#v", tc, link.Vmess)
-		}
-	}
+	})
 }

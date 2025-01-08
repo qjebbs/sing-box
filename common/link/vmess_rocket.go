@@ -57,7 +57,7 @@ func ParseVMessRocket(u *url.URL) (*VMessRocket, error) {
 	if err != nil {
 		return nil, E.Cause(err, "invalid port ", hostURL.Port())
 	}
-	link.ServerPort = uint16(port)
+	link.Port = uint16(port)
 	link.AlterID = 0
 
 	for key, values := range u.Query() {
@@ -65,7 +65,7 @@ func ParseVMessRocket(u *url.URL) (*VMessRocket, error) {
 		case "remarks":
 			link.Tag = firstValueOf(values)
 		case "path":
-			link.TransportPath = firstValueOf(values)
+			link.Path = firstValueOf(values)
 		case "tls":
 			link.TLS = firstValueOf(values) == "tls"
 		case "obfs":
@@ -77,7 +77,7 @@ func ParseVMessRocket(u *url.URL) (*VMessRocket, error) {
 				link.Transport = C.V2RayTransportTypeHTTP
 			}
 		case "obfsParam":
-			link.TransportHost = firstValueOf(values)
+			link.Host = firstValueOf(values)
 		}
 	}
 	return link, nil
@@ -89,7 +89,7 @@ func (v *VMessRocket) URL() (string, error) {
 	if security == "" {
 		security = "auto"
 	}
-	host := fmt.Sprintf("%s:%s@%s:%d", security, v.UUID, v.Server, v.ServerPort)
+	host := fmt.Sprintf("%s:%s@%s:%d", security, v.UUID, v.Server, v.Port)
 	host = base64Encode([]byte(host))
 	var uri url.URL
 	uri.Scheme = "vmess"
@@ -98,8 +98,8 @@ func (v *VMessRocket) URL() (string, error) {
 	if v.Tag != "" {
 		query.Set("remarks", v.Tag)
 	}
-	if v.TransportPath != "" {
-		query.Set("path", v.TransportPath)
+	if v.Path != "" {
+		query.Set("path", v.Path)
 	}
 	if v.TLS {
 		query.Set("tls", "tls")
@@ -110,8 +110,8 @@ func (v *VMessRocket) URL() (string, error) {
 	case C.V2RayTransportTypeHTTP:
 		query.Set("obfs", "http")
 	}
-	if v.TransportHost != "" {
-		query.Set("obfsParam", v.TransportHost)
+	if v.Host != "" {
+		query.Set("obfsParam", v.Host)
 	}
 	uri.RawQuery = query.Encode()
 	return uri.String(), nil

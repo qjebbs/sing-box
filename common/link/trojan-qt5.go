@@ -26,27 +26,27 @@ func init() {
 
 // TrojanQt5 represents a parsed Trojan-Qt5 link
 type TrojanQt5 struct {
-	Remarks       string
-	Host          string
-	Port          uint16
-	Password      string
-	AllowInsecure bool
-	SNI           string
-	TFO           bool
+	Remarks       string `json:"remarks,omitempty"`
+	Server        string `json:"server"`
+	Port          uint16 `json:"port"`
+	Password      string `json:"password"`
+	AllowInsecure bool   `json:"allowInsecure,omitempty"`
+	SNI           string `json:"sni,omitempty"`
+	TFO           bool   `json:"tfo,omitempty"`
 }
 
 // Outbound implements Link
 func (l *TrojanQt5) Outbound() (*option.Outbound, error) {
 	sni := l.SNI
 	if sni == "" {
-		sni = l.Host
+		sni = l.Server
 	}
 	return &option.Outbound{
 		Type: C.TypeTrojan,
 		Tag:  l.Remarks,
 		Options: &option.TrojanOutboundOptions{
 			ServerOptions: option.ServerOptions{
-				Server:     l.Host,
+				Server:     l.Server,
 				ServerPort: l.Port,
 			},
 			Password: l.Password,
@@ -76,15 +76,11 @@ func ParseTrojanQt5(u *url.URL) (*TrojanQt5, error) {
 		return nil, E.Cause(err, "invalid port")
 	}
 	link := &TrojanQt5{}
-	link.Host = u.Hostname()
+	link.Server = u.Hostname()
 	link.Port = uint16(port)
 	link.Remarks = u.Fragment
 	if uname := u.User.Username(); uname != "" {
-		password, err := url.QueryUnescape(uname)
-		if err != nil {
-			return nil, err
-		}
-		link.Password = password
+		link.Password = uname
 	}
 	queries := u.Query()
 	for key, values := range queries {
@@ -114,14 +110,14 @@ func ParseTrojanQt5(u *url.URL) (*TrojanQt5, error) {
 func (l *TrojanQt5) URL() (string, error) {
 	var uri url.URL
 	uri.Scheme = "trojan"
-	uri.Host = fmt.Sprintf("%s:%d", l.Host, l.Port)
-	uri.User = url.User(url.QueryEscape(l.Password))
+	uri.Host = fmt.Sprintf("%s:%d", l.Server, l.Port)
+	uri.User = url.User(l.Password)
 	uri.Fragment = l.Remarks
 	query := uri.Query()
 	if l.AllowInsecure {
 		query.Set("allowInsecure", "1")
 	}
-	if l.SNI != "" && l.SNI != l.Host {
+	if l.SNI != "" && l.SNI != l.Server {
 		query.Set("sni", l.SNI)
 	}
 	if l.TFO {

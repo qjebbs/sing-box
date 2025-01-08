@@ -60,22 +60,10 @@ func ParseHysteria2(u *url.URL) (*Hysteria2, error) {
 
 	if uname := u.User.Username(); uname != "" {
 		if pass, ok := u.User.Password(); ok {
-			user, err := url.QueryUnescape(uname)
-			if err != nil {
-				return nil, err
-			}
-			password, err := url.QueryUnescape(pass)
-			if err != nil {
-				return nil, err
-			}
-			link.User = user
-			link.Auth = password
+			link.User = uname
+			link.Auth = pass
 		} else {
-			auth, err := url.QueryUnescape(uname)
-			if err != nil {
-				return nil, E.Cause(err, "invalid auth")
-			}
-			link.Auth = auth
+			link.Auth = uname
 		}
 	}
 
@@ -145,9 +133,9 @@ func (l *Hysteria2) URL() (string, error) {
 	uri.Fragment = l.Remarks
 	switch {
 	case l.User != "" && l.Auth != "":
-		uri.User = url.UserPassword(url.QueryEscape(l.User), url.QueryEscape(l.Auth))
+		uri.User = url.UserPassword(l.User, l.Auth)
 	case l.Auth != "":
-		uri.User = url.User(url.QueryEscape(l.Auth))
+		uri.User = url.User(l.Auth)
 	}
 
 	query := uri.Query()

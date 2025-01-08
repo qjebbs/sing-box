@@ -1,9 +1,6 @@
 package link_test
 
 import (
-	"fmt"
-	"net/url"
-	"reflect"
 	"testing"
 
 	"github.com/sagernet/sing-box/common/link"
@@ -11,48 +8,28 @@ import (
 )
 
 func TestVMessV2RayNG(t *testing.T) {
-	t.Parallel()
-	testCases := []link.VMessV2RayNG{
+	runTests(t, link.ParseVMessV2RayNG, TestCases[*link.VMessV2RayNG]{
 		{
-			Vmess: link.Vmess{
-				Tag:        "ps",
-				Server:     "192.168.1.1",
-				ServerPort: 443,
-				UUID:       "uuid",
-				AlterID:    4,
-				Security:   "",
+			Link: "vmess://eyJ2IjoyLCJwcyI6InBzIiwiYWRkIjoiMTkyLjE2OC4xLjEiLCJwb3J0Ijo0NDMsImlkIjoidXVpZCIsImFpZCI6NCwibmV0Ijoid3MiLCJob3N0IjoiaG9zdCIsInBhdGgiOiIvcGF0aCIsInRscyI6InRscyIsInNuaSI6InNuaSIsImFscG4iOiJoMixodHRwLzEuMSIsImZwIjoiY2hyb21lIn0=",
+			Want: &link.VMessV2RayNG{
+				Vmess: link.Vmess{
+					Tag:      "ps",
+					Server:   "192.168.1.1",
+					Port:     443,
+					UUID:     "uuid",
+					AlterID:  4,
+					Security: "",
 
-				Transport:     C.V2RayTransportTypeWebsocket,
-				TransportHost: "host",
-				TransportPath: "/path",
+					Transport: C.V2RayTransportTypeWebsocket,
+					Host:      "host",
+					Path:      "/path",
 
-				TLS:         true,
-				SNI:         "sni",
-				ALPN:        []string{"h2", "http/1.1"},
-				Fingerprint: "chrome",
+					TLS:         true,
+					SNI:         "sni",
+					ALPN:        []string{"h2", "http/1.1"},
+					Fingerprint: "chrome",
+				},
 			},
 		},
-	}
-	for i, tc := range testCases {
-		tc := tc
-		t.Run(fmt.Sprint("#", i), func(t *testing.T) {
-			t.Parallel()
-			uri, err := tc.URL()
-			if err != nil {
-				t.Fatal(err)
-			}
-			u, err := url.Parse(uri)
-			if err != nil {
-				t.Fatal(err)
-			}
-			link, err := link.ParseVMessV2RayNG(u)
-			if err != nil {
-				t.Error(err)
-				return
-			}
-			if !reflect.DeepEqual(link.Vmess, tc.Vmess) {
-				t.Errorf("want %#v, got %#v", tc, link)
-			}
-		})
-	}
+	})
 }

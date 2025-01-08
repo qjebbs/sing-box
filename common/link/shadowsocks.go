@@ -63,16 +63,8 @@ func ParseShadowSocks(u *url.URL) (*ShadowSocks, error) {
 	}
 	if uname := u.User.Username(); uname != "" {
 		if pass, ok := u.User.Password(); ok {
-			method, err := url.QueryUnescape(uname)
-			if err != nil {
-				return nil, err
-			}
-			password, err := url.QueryUnescape(pass)
-			if err != nil {
-				return nil, err
-			}
-			link.Method = method
-			link.Password = password
+			link.Method = uname
+			link.Password = pass
 		} else {
 			dec, err := base64Decode(uname)
 			if err != nil {
@@ -112,7 +104,7 @@ func (l *ShadowSocks) URL() (string, error) {
 	uri.Scheme = "ss"
 	uri.Host = fmt.Sprintf("%s:%d", l.Address, l.Port)
 	uri.Fragment = l.Ps
-	uri.User = url.UserPassword(url.QueryEscape(l.Method), url.QueryEscape(l.Password))
+	uri.User = url.UserPassword(l.Method, l.Password)
 	query := uri.Query()
 	if l.Plugin != "" {
 		query.Set("plugin", strings.Join([]string{l.Plugin, l.PluginOpts}, ";"))

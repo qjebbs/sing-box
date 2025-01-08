@@ -8,22 +8,22 @@ import (
 
 // Vmess is the base struct of vmess link
 type Vmess struct {
-	Tag        string
-	Server     string
-	ServerPort uint16
-	UUID       string
-	AlterID    int
-	Security   string
+	Tag      string `json:"tag,omitempty"`
+	Server   string `json:"server,omitempty"`
+	Port     uint16 `json:"port,omitempty"`
+	UUID     string `json:"uuid,omitempty"`
+	AlterID  int    `json:"alterId,omitempty"`
+	Security string `json:"security,omitempty"`
 
-	Transport     string
-	TransportHost string
-	TransportPath string
+	Transport string `json:"transport,omitempty"`
+	Host      string `json:"host,omitempty"`
+	Path      string `json:"path,omitempty"`
 
-	TLS              bool
-	SNI              string
-	ALPN             []string
-	TLSAllowInsecure bool
-	Fingerprint      string
+	TLS           bool     `json:"tls,omitempty"`
+	SNI           string   `json:"sni,omitempty"`
+	ALPN          []string `json:"alpn,omitempty"`
+	AllowInsecure bool     `json:"allowInsecure,omitempty"`
+	Fingerprint   string   `json:"fingerprint,omitempty"`
 }
 
 // Outbound implements Link
@@ -31,7 +31,7 @@ func (v *Vmess) Outbound() (*option.Outbound, error) {
 	opt := &option.VMessOutboundOptions{
 		ServerOptions: option.ServerOptions{
 			Server:     v.Server,
-			ServerPort: v.ServerPort,
+			ServerPort: v.Port,
 		},
 		UUID:     v.UUID,
 		AlterId:  v.AlterID,
@@ -41,7 +41,7 @@ func (v *Vmess) Outbound() (*option.Outbound, error) {
 	if v.TLS {
 		opt.TLS = &option.OutboundTLSOptions{
 			Enabled:    true,
-			Insecure:   v.TLSAllowInsecure,
+			Insecure:   v.AllowInsecure,
 			ServerName: v.SNI,
 			ALPN:       v.ALPN,
 		}
@@ -61,20 +61,20 @@ func (v *Vmess) Outbound() (*option.Outbound, error) {
 	case "":
 		topt = nil
 	case C.V2RayTransportTypeHTTP:
-		topt.HTTPOptions.Path = v.TransportPath
-		if v.TransportHost != "" {
-			topt.HTTPOptions.Host = []string{v.TransportHost}
-			topt.HTTPOptions.Headers["Host"] = []string{v.TransportHost}
+		topt.HTTPOptions.Path = v.Path
+		if v.Host != "" {
+			topt.HTTPOptions.Host = []string{v.Host}
+			topt.HTTPOptions.Headers["Host"] = []string{v.Host}
 		}
 	case C.V2RayTransportTypeWebsocket:
-		topt.WebsocketOptions.Path = v.TransportPath
+		topt.WebsocketOptions.Path = v.Path
 		topt.WebsocketOptions.Headers = map[string]badoption.Listable[string]{
-			"Host": {v.TransportHost},
+			"Host": {v.Host},
 		}
 	case C.V2RayTransportTypeQUIC:
 		// do nothing
 	case C.V2RayTransportTypeGRPC:
-		topt.GRPCOptions.ServiceName = v.TransportHost
+		topt.GRPCOptions.ServiceName = v.Host
 	}
 
 	opt.Transport = topt
