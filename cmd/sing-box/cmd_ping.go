@@ -22,7 +22,7 @@ import (
 
 var commandPing = &cobra.Command{
 	Use:   "ping [flags] [link]",
-	Short: "link prober",
+	Short: "Link prober",
 	Long:  `sing-box link prober`,
 	Args:  cobra.MaximumNArgs(1),
 }
