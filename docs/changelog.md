@@ -2,6 +2,34 @@
 icon: material/alert-decagram
 ---
 
+#### 1.11.0-beta.23
+
+* Fixes and improvements
+
+### 1.10.7
+
+* Fixes and improvements
+
+#### 1.11.0-beta.20
+
+* Hysteria2 `ignore_client_bandwidth` behavior update **1**
+* Fixes and improvements
+
+**1**:
+
+When `up_mbps` and `down_mbps` are set, `ignore_client_bandwidth` instead denies clients from using BBR CC.
+
+See [Hysteria2](/configuration/inbound/hysteria2/#ignore_client_bandwidth).
+
+#### 1.11.0-beta.17
+
+* Add port hopping support for Hysteria2 **1**
+* Fixes and improvements
+
+**1**:
+
+See [Hysteria2](/configuration/outbound/hysteria2/).
+
 #### 1.11.0-beta.14
 
 * Allow adding route (exclude) address sets to routes **1**
@@ -22,10 +50,6 @@ See [route_address_set](/configuration/inbound/tun/#route_address_set) and
 #### 1.11.0-beta.12
 
 * Add `rule-set merge` command
-* Fixes and improvements
-
-### 1.10.5
-
 * Fixes and improvements
 
 #### 1.11.0-beta.3

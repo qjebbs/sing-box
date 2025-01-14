@@ -174,6 +174,7 @@ type realityConnWrapper struct {
 
 func (c *realityConnWrapper) ConnectionState() ConnectionState {
 	state := c.Conn.ConnectionState()
+	//nolint:staticcheck
 	return tls.ConnectionState{
 		Version:                     state.Version,
 		HandshakeComplete:           state.HandshakeComplete,
@@ -192,4 +193,10 @@ func (c *realityConnWrapper) ConnectionState() ConnectionState {
 
 func (c *realityConnWrapper) Upstream() any {
 	return c.Conn
+}
+
+// Due to low implementation quality, the reality server intercepted half close and caused memory leaks.
+// We fixed it by calling Close() directly.
+func (c *realityConnWrapper) CloseWrite() error {
+	return c.Close()
 }

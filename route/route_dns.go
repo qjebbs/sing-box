@@ -45,28 +45,22 @@ func (r *Router) matchDNS(ctx context.Context, allowFakeIP bool, ruleIndex int, 
 		panic("no context")
 	}
 	var options dns.QueryOptions
-	var (
-		currentRuleIndex int
-		currentRule      adapter.DNSRule
-	)
+	var currentRuleIndex int
 	if ruleIndex != -1 {
 		currentRuleIndex = ruleIndex + 1
 	}
-	for currentRuleIndex, currentRule = range r.dnsRules[currentRuleIndex:] {
+	for ; currentRuleIndex < len(r.dnsRules); currentRuleIndex++ {
+		currentRule := r.dnsRules[currentRuleIndex]
 		if currentRule.WithAddressLimit() && !isAddressQuery {
 			continue
 		}
 		metadata.ResetRuleCache()
 		if currentRule.Match(metadata) {
-			displayRuleIndex := currentRuleIndex
-			if ruleIndex != -1 {
-				displayRuleIndex += ruleIndex + 1
-			}
 			ruleDescription := currentRule.String()
 			if ruleDescription != "" {
-				r.logger.DebugContext(ctx, "match[", displayRuleIndex, "] ", currentRule, " => ", currentRule.Action())
+				r.logger.DebugContext(ctx, "match[", currentRuleIndex, "] ", currentRule, " => ", currentRule.Action())
 			} else {
-				r.logger.DebugContext(ctx, "match[", displayRuleIndex, "] => ", currentRule.Action())
+				r.logger.DebugContext(ctx, "match[", currentRuleIndex, "] => ", currentRule.Action())
 			}
 			switch action := currentRule.Action().(type) {
 			case *R.RuleActionDNSRoute:
@@ -93,7 +87,7 @@ func (r *Router) matchDNS(ctx context.Context, allowFakeIP bool, ruleIndex int, 
 				} else {
 					options.Strategy = r.defaultDomainStrategy
 				}
-				r.logger.DebugContext(ctx, "match[", displayRuleIndex, "] => ", currentRule.Action())
+				r.logger.DebugContext(ctx, "match[", currentRuleIndex, "] => ", currentRule.Action())
 				return transport, options, currentRule, currentRuleIndex
 			case *R.RuleActionDNSRouteOptions:
 				if action.DisableCache {
@@ -105,9 +99,9 @@ func (r *Router) matchDNS(ctx context.Context, allowFakeIP bool, ruleIndex int, 
 				if action.ClientSubnet.IsValid() {
 					options.ClientSubnet = action.ClientSubnet
 				}
-				r.logger.DebugContext(ctx, "match[", displayRuleIndex, "] => ", currentRule.Action())
+				r.logger.DebugContext(ctx, "match[", currentRuleIndex, "] => ", currentRule.Action())
 			case *R.RuleActionReject:
-				r.logger.DebugContext(ctx, "match[", displayRuleIndex, "] => ", currentRule.Action())
+				r.logger.DebugContext(ctx, "match[", currentRuleIndex, "] => ", currentRule.Action())
 				return nil, options, currentRule, currentRuleIndex
 			}
 		}
@@ -133,7 +127,6 @@ func (r *Router) Exchange(ctx context.Context, message *mDNS.Msg) (*mDNS.Msg, er
 		}
 		return &responseMessage, nil
 	}
-	r.dnsLogger.DebugContext(ctx, "exchange ", formatQuestion(message.Question[0].String()))
 	var (
 		response  *mDNS.Msg
 		cached    bool
@@ -174,14 +167,11 @@ func (r *Router) Exchange(ctx context.Context, message *mDNS.Msg) (*mDNS.Msg, er
 					}
 				}
 			}
+			r.dnsLogger.DebugContext(ctx, "exchange ", formatQuestion(message.Question[0].String()), " via ", transport.Name())
 			if rule != nil && rule.WithAddressLimit() {
 				addressLimit = true
-				response, err = r.dnsClient.ExchangeWithResponseCheck(dnsCtx, transport, message, options, func(response *mDNS.Msg) bool {
-					addresses, addrErr := dns.MessageToAddresses(response)
-					if addrErr != nil {
-						return false
-					}
-					metadata.DestinationAddresses = addresses
+				response, err = r.dnsClient.ExchangeWithResponseCheck(dnsCtx, transport, message, options, func(responseAddrs []netip.Addr) bool {
+					metadata.DestinationAddresses = responseAddrs
 					return rule.MatchAddressLimit(metadata)
 				})
 			} else {

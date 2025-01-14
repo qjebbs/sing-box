@@ -74,6 +74,7 @@ func (m *Hysteria2Masquerade) UnmarshalJSON(bytes []byte) error {
 		default:
 			return E.New("unknown masquerade URL scheme: ", masqueradeURL.Scheme)
 		}
+		return nil
 	}
 	err = json.Unmarshal(bytes, (*_Hysteria2Masquerade)(m))
 	if err != nil {
@@ -111,11 +112,13 @@ type Hysteria2MasqueradeString struct {
 type Hysteria2OutboundOptions struct {
 	DialerOptions
 	ServerOptions
-	UpMbps   int            `json:"up_mbps,omitempty"`
-	DownMbps int            `json:"down_mbps,omitempty"`
-	Obfs     *Hysteria2Obfs `json:"obfs,omitempty"`
-	Password string         `json:"password,omitempty"`
-	Network  NetworkList    `json:"network,omitempty"`
+	ServerPorts badoption.Listable[string] `json:"server_ports,omitempty"`
+	HopInterval badoption.Duration         `json:"hop_interval,omitempty"`
+	UpMbps      int                        `json:"up_mbps,omitempty"`
+	DownMbps    int                        `json:"down_mbps,omitempty"`
+	Obfs        *Hysteria2Obfs             `json:"obfs,omitempty"`
+	Password    string                     `json:"password,omitempty"`
+	Network     NetworkList                `json:"network,omitempty"`
 	OutboundTLSOptionsContainer
 	BrutalDebug bool `json:"brutal_debug,omitempty"`
 }
