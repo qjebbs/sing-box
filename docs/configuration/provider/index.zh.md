@@ -9,7 +9,7 @@
   "providers": [
     {
       "tag": "provider",
-      "type": "remote",
+      "type": "http",
       "url": "https://url.to/provider.txt",
       "interval": "24h",
       "exclude": "",
@@ -40,7 +40,7 @@
 
 ==必填==
 
-订阅源的类型。目前仅支持 `remote`。
+订阅源的类型。目前仅支持 `http`。
 
 #### tag
 

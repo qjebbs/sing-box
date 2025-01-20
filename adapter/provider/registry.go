@@ -59,7 +59,7 @@ func (r *Registry) CreateProvider(ctx context.Context, router adapter.Router, lo
 	defer r.access.Unlock()
 	constructor, loaded := r.constructors[providerType]
 	if !loaded {
-		return nil, E.New("provider type not found: " + providerType)
+		return nil, E.New("provider type not found: '" + providerType + "'")
 	}
 	return constructor(ctx, router, logFactory, tag, options)
 }

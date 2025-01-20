@@ -10,6 +10,7 @@ import (
 
 type Provider interface {
 	Service
+	Type() string
 	Tag() string
 	Update() error
 	UpdatedAt() time.Time

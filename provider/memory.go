@@ -4,6 +4,7 @@ import (
 	"time"
 
 	"github.com/sagernet/sing-box/adapter"
+	C "github.com/sagernet/sing-box/constant"
 )
 
 var _ adapter.Provider = (*Memory)(nil)
@@ -35,6 +36,11 @@ func (s *Memory) Outbounds() []adapter.Outbound {
 func (s *Memory) Outbound(tag string) (adapter.Outbound, bool) {
 	detour, ok := s.outboundsByTag[tag]
 	return detour, ok
+}
+
+// Type returns the type of the provider.
+func (s *Memory) Type() string {
+	return C.ProviderCompatible
 }
 
 // Tag returns the tag of the provider.

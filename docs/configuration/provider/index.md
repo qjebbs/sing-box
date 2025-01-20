@@ -9,7 +9,7 @@ List of subscription providers.
   "providers": [
     {
       "tag": "provider",
-      "type": "remote",
+      "type": "http",
       "url": "https://url.to/provider.txt",
       "interval": "24h",
       "exclude": "",
@@ -41,7 +41,7 @@ List of subscription providers.
 
 ==Required==
 
-Type of the provider. Only `remote` is supported now.
+Type of the provider. Only `http` is supported now.
 
 #### tag
 

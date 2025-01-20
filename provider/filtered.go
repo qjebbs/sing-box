@@ -64,6 +64,11 @@ func (s *Filtered) Outbound(tag string) (adapter.Outbound, bool) {
 	return detour, ok
 }
 
+// Type returns the type of the provider.
+func (s *Filtered) Type() string {
+	return s.upstream.Type()
+}
+
 // Tag returns the tag of the provider.
 func (s *Filtered) Tag() string {
 	return s.upstream.Tag()

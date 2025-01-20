@@ -25,7 +25,7 @@ import (
 
 // RegisterRemote registers the remote provider.
 func RegisterRemote(registry *provider.Registry) {
-	provider.Register[option.RemoteProviderOptions](registry, C.ProviderRemote, NewRemote)
+	provider.Register[option.RemoteProviderOptions](registry, C.ProviderHTTP, NewRemote)
 }
 
 var _ adapter.Provider = (*Remote)(nil)
@@ -123,6 +123,11 @@ func NewRemote(ctx context.Context, router adapter.Router, logFactory log.Factor
 		ctx:     ctx,
 		chReady: make(chan struct{}),
 	}, nil
+}
+
+// Type returns the type of the provider.
+func (s *Remote) Type() string {
+	return C.ProviderHTTP
 }
 
 // Tag returns the tag of the provider.

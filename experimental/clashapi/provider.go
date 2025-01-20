@@ -7,6 +7,7 @@ import (
 
 	"github.com/sagernet/sing-box/adapter"
 	"github.com/sagernet/sing-box/common/urltest"
+	C "github.com/sagernet/sing-box/constant"
 	"github.com/sagernet/sing/common/batch"
 	"github.com/sagernet/sing/common/json/badjson"
 
@@ -60,8 +61,8 @@ func providerInfo(server *Server, p adapter.Provider) *badjson.JSONObject {
 	for _, detour := range p.Outbounds() {
 		proxies = append(proxies, proxyInfo(server, detour))
 	}
-	info.Put("type", "Proxy")       // Proxy, Rule
-	info.Put("vehicleType", "HTTP") // HTTP, File, Compatible
+	info.Put("type", "Proxy")                                // Proxy, Rule
+	info.Put("vehicleType", C.ProviderDisplayName(p.Type())) // HTTP, File, Compatible
 	info.Put("name", p.Tag())
 	info.Put("proxies", proxies)
 	info.Put("updatedAt", p.UpdatedAt())
