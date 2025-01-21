@@ -48,16 +48,6 @@ func (s *Memory) Tag() string {
 	return ""
 }
 
-// Start starts the provider.
-func (s *Memory) Start() error {
-	return nil
-}
-
-// Close closes the service.
-func (s *Memory) Close() error {
-	return nil
-}
-
 // Update closes the service.
 func (s *Memory) Update() error {
 	return nil

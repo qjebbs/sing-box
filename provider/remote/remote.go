@@ -30,6 +30,7 @@ func RegisterRemote(registry *provider.Registry) {
 
 var _ adapter.Provider = (*Remote)(nil)
 var _ adapter.ProviderInfoer = (*Remote)(nil)
+var _ adapter.Service = (*Remote)(nil)
 
 // closedchan is a reusable closed channel.
 var closedchan = make(chan struct{})

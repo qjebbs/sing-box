@@ -74,16 +74,6 @@ func (s *Filtered) Tag() string {
 	return s.upstream.Tag()
 }
 
-// Start starts the provider.
-func (s *Filtered) Start() error {
-	return s.upstream.Start()
-}
-
-// Close closes the service.
-func (s *Filtered) Close() error {
-	return s.upstream.Close()
-}
-
 // Update updates the provider.
 func (s *Filtered) Update() error {
 	s.Lock()
