@@ -36,6 +36,7 @@
 | `selector`     | [Selector](./selector/)         |
 | `urltest`      | [URLTest](./urltest/)           |
 | `loadbalance`  | [LoadBalance](./loadbalance/)   |
+| `chain`  | [Chain](./chain/)   |
 
 #### tag
 
