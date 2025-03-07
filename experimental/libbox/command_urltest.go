@@ -1,6 +1,7 @@
 package libbox
 
 import (
+	"context"
 	"encoding/binary"
 	"net"
 	"time"
@@ -49,9 +50,9 @@ func (s *CommandServer) handleURLTest(conn net.Conn) error {
 	if !isOutboundGroup {
 		return writeError(conn, E.New("outbound is not a group: ", groupTag))
 	}
-	urlTest, isURLTest := abstractOutboundGroup.(*group.URLTest)
+	urlTest, isURLTest := abstractOutboundGroup.(*group.URLTestProvider)
 	if isURLTest {
-		go urlTest.CheckOutbounds()
+		go urlTest.CheckAll(context.Background())
 	} else {
 		historyStorage := service.PtrFromContext[urltest.HistoryStorage](serviceNow.ctx)
 		outbounds := common.Filter(common.Map(outboundGroup.All(), func(it string) adapter.Outbound {

@@ -8,12 +8,14 @@ import (
 	"sync"
 
 	"github.com/sagernet/sing-box/adapter"
+	"github.com/sagernet/sing-box/common/dialer"
 	"github.com/sagernet/sing-box/common/taskmonitor"
 	C "github.com/sagernet/sing-box/constant"
 	"github.com/sagernet/sing-box/log"
 	"github.com/sagernet/sing/common"
 	E "github.com/sagernet/sing/common/exceptions"
 	"github.com/sagernet/sing/common/logger"
+	N "github.com/sagernet/sing/common/network"
 )
 
 var _ adapter.OutboundManager = (*Manager)(nil)
@@ -31,6 +33,13 @@ type Manager struct {
 	dependByTag             map[string][]string
 	defaultOutbound         adapter.Outbound
 	defaultOutboundFallback adapter.Outbound
+
+	confByTag map[string]*confItem
+}
+
+type confItem struct {
+	typ     string
+	options any
 }
 
 func NewManager(logger logger.ContextLogger, registry adapter.OutboundRegistry, endpoint adapter.EndpointManager, defaultTag string) *Manager {
@@ -41,6 +50,8 @@ func NewManager(logger logger.ContextLogger, registry adapter.OutboundRegistry, 
 		defaultTag:    defaultTag,
 		outboundByTag: make(map[string]adapter.Outbound),
 		dependByTag:   make(map[string][]string),
+
+		confByTag: make(map[string]*confItem),
 	}
 }
 
@@ -154,6 +165,7 @@ func (m *Manager) Close() error {
 	m.started = false
 	outbounds := m.outbounds
 	m.outbounds = nil
+	m.outboundByTag = make(map[string]adapter.Outbound)
 	m.access.Unlock()
 	var err error
 	for _, outbound := range outbounds {
@@ -239,11 +251,11 @@ func (m *Manager) Remove(tag string) error {
 	return nil
 }
 
-func (m *Manager) Create(ctx context.Context, router adapter.Router, logger log.ContextLogger, tag string, inboundType string, options any) error {
+func (m *Manager) Create(ctx context.Context, router adapter.Router, logger log.ContextLogger, tag string, outboundType string, options any) error {
 	if tag == "" {
 		return os.ErrInvalid
 	}
-	outbound, err := m.registry.CreateOutbound(ctx, router, logger, tag, inboundType, options)
+	outbound, err := m.registry.CreateOutbound(ctx, router, logger, tag, outboundType, options)
 	if err != nil {
 		return err
 	}
@@ -284,5 +296,37 @@ func (m *Manager) Create(ctx context.Context, router adapter.Router, logger log.
 			m.logger.Info("updated default outbound to ", outbound.Tag())
 		}
 	}
+	m.confByTag[tag] = &confItem{
+		typ:     outboundType,
+		options: options,
+	}
 	return nil
+}
+
+// DupOverrideDetour duplicates the outbound with the specified tag and sets the override and detour for the duplicated outbound.
+// The original outbound is not affected.
+// The duplicated outbound is not managed by the manager, you should close it manually.
+func (m *Manager) DupOverrideDetour(ctx context.Context, router adapter.Router, tag string, detour N.Dialer) (adapter.Outbound, error) {
+	m.access.Lock()
+	defer m.access.Unlock()
+	conf, found := m.confByTag[tag]
+	if !found {
+		return nil, os.ErrInvalid
+	}
+	// It's hacky here, works only if all outbound creations invoke dialer.New()
+	ctx, used := dialer.ContextWithDetourOverride(ctx, detour)
+	outbound, err := m.registry.CreateOutbound(ctx, router, m.logger, tag, conf.typ, conf.options)
+	if err != nil {
+		return nil, err
+	}
+	if !used() {
+		return nil, E.New("[" + tag + "] detour not overridable")
+	}
+	for _, stage := range adapter.ListStartStages {
+		err = adapter.LegacyStart(outbound, stage)
+		if err != nil {
+			return nil, E.Cause(err, stage, " outbound/", outbound.Type(), "[", outbound.Tag(), "]")
+		}
+	}
+	return outbound, nil
 }

@@ -7,7 +7,7 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/sagernet/sing-box"
+	box "github.com/sagernet/sing-box"
 	"github.com/sagernet/sing-box/experimental/deprecated"
 	"github.com/sagernet/sing-box/include"
 	"github.com/sagernet/sing-box/log"
@@ -23,6 +23,8 @@ var (
 	configDirectories []string
 	workingDir        string
 	disableColor      bool
+
+	configMergeExtended bool
 )
 
 var mainCommand = &cobra.Command{
@@ -35,6 +37,7 @@ func init() {
 	mainCommand.PersistentFlags().StringArrayVarP(&configDirectories, "config-directory", "C", nil, "set configuration directory path")
 	mainCommand.PersistentFlags().StringVarP(&workingDir, "directory", "D", "", "set working directory")
 	mainCommand.PersistentFlags().BoolVarP(&disableColor, "disable-color", "", false, "disable color output")
+	mainCommand.PersistentFlags().BoolVarP(&configMergeExtended, "extended-merge", "E", false, "enable extended configuration merging")
 }
 
 func preRun(cmd *cobra.Command, args []string) {
@@ -69,5 +72,5 @@ func preRun(cmd *cobra.Command, args []string) {
 		configPaths = append(configPaths, "config.json")
 	}
 	globalCtx = service.ContextWith(globalCtx, deprecated.NewStderrManager(log.StdLogger()))
-	globalCtx = box.Context(globalCtx, include.InboundRegistry(), include.OutboundRegistry(), include.EndpointRegistry())
+	globalCtx = box.Context(globalCtx, include.InboundRegistry(), include.OutboundRegistry(), include.ProviderRegistry(), include.EndpointRegistry())
 }

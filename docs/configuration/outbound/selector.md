@@ -10,6 +10,12 @@
     "proxy-b",
     "proxy-c"
   ],
+  "providers": [
+    "provider-a",
+    "provider-b",
+  ],
+  "exclude": "",
+  "include": "",
   "default": "proxy-c",
   "interrupt_exist_connections": false
 }
@@ -23,9 +29,19 @@
 
 #### outbounds
 
-==Required==
-
 List of outbound tags to select.
+
+#### providers
+
+List of [Provider](/configuration/provider) tags to select.
+
+#### exclude
+
+Exclude regular expression to filter `providers` nodes. The priority of the exclude expression is higher than the include expression.
+
+#### include
+
+Include regular expression to filter `providers` nodes.
 
 #### default
 

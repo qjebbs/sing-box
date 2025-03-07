@@ -1,3 +1,7 @@
+// !!! DO NOT USE THIS FILE !!!
+// This file is kept for avoiding code conflicts with the upstream project.
+// It is not used in this project.
+
 package group
 
 import (
@@ -28,7 +32,7 @@ func RegisterURLTest(registry *outbound.Registry) {
 }
 
 var (
-	_ adapter.OutboundGroup           = (*URLTest)(nil)
+	// _ adapter.OutboundGroup           = (*URLTest)(nil)
 	_ adapter.InterfaceUpdateListener = (*URLTest)(nil)
 )
 

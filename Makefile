@@ -14,6 +14,8 @@ MAIN_PARAMS = $(PARAMS) -tags $(TAGS)
 MAIN = ./cmd/sing-box
 PREFIX ?= $(shell go env GOPATH)
 
+DIST = ./dist
+
 .PHONY: test release docs build
 
 build:
@@ -29,6 +31,21 @@ ci_build:
 
 generate_completions:
 	go run -v --tags $(TAGS),generate,generate_completions $(MAIN)
+
+linux-amd64:
+	GOOS=linux GOARCH=amd64 go build $(MAIN_PARAMS) -o $(DIST)/$(NAME)-linux-amd64 $(MAIN)
+
+linux-arm64:
+	GOOS=linux GOARCH=arm64 go build $(MAIN_PARAMS) -o $(DIST)/$(NAME)-linux-arm64 $(MAIN)
+
+darwin-amd64:
+	GOOS=darwin GOARCH=amd64 go build $(MAIN_PARAMS) -o $(DIST)/$(NAME)-darwin-amd64 $(MAIN)
+
+darwin-arm64:
+	GOOS=darwin GOARCH=arm64 go build $(MAIN_PARAMS) -o $(DIST)/$(NAME)-darwin-arm64 $(MAIN)
+
+windows-amd64:
+	GOOS=windows GOARCH=amd64 go build $(MAIN_PARAMS) -o $(DIST)/$(NAME)-windows-amd64.exe $(MAIN)
 
 install:
 	go build -o $(PREFIX)/bin/$(NAME) $(MAIN_PARAMS) $(MAIN)

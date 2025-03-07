@@ -7,6 +7,7 @@ import (
 	"github.com/sagernet/sing-box/adapter/endpoint"
 	"github.com/sagernet/sing-box/adapter/inbound"
 	"github.com/sagernet/sing-box/adapter/outbound"
+	"github.com/sagernet/sing-box/adapter/provider"
 	C "github.com/sagernet/sing-box/constant"
 	"github.com/sagernet/sing-box/log"
 	"github.com/sagernet/sing-box/option"
@@ -27,6 +28,7 @@ import (
 	"github.com/sagernet/sing-box/protocol/tun"
 	"github.com/sagernet/sing-box/protocol/vless"
 	"github.com/sagernet/sing-box/protocol/vmess"
+	"github.com/sagernet/sing-box/provider/remote"
 	E "github.com/sagernet/sing/common/exceptions"
 )
 
@@ -54,6 +56,13 @@ func InboundRegistry() *inbound.Registry {
 
 	return registry
 }
+func ProviderRegistry() *provider.Registry {
+	registry := provider.NewRegistry()
+
+	remote.RegisterRemote(registry)
+
+	return registry
+}
 
 func OutboundRegistry() *outbound.Registry {
 	registry := outbound.NewRegistry()
@@ -63,8 +72,10 @@ func OutboundRegistry() *outbound.Registry {
 	block.RegisterOutbound(registry)
 	dns.RegisterOutbound(registry)
 
-	group.RegisterSelector(registry)
-	group.RegisterURLTest(registry)
+	group.RegisterSelectorProvider(registry)
+	group.RegisterURLTestProvider(registry)
+	group.RegisterLoadBalance(registry)
+	group.RegisterChain(registry)
 
 	socks.RegisterOutbound(registry)
 	http.RegisterOutbound(registry)

@@ -1,3 +1,7 @@
+// !!! DO NOT USE THIS FILE !!!
+// This file is kept for avoiding code conflicts with the upstream project.
+// It is not used in this project.
+
 package group
 
 import (
@@ -23,7 +27,7 @@ func RegisterSelector(registry *outbound.Registry) {
 }
 
 var (
-	_ adapter.OutboundGroup             = (*Selector)(nil)
+	// _ adapter.OutboundGroup             = (*Selector)(nil)
 	_ adapter.ConnectionHandlerEx       = (*Selector)(nil)
 	_ adapter.PacketConnectionHandlerEx = (*Selector)(nil)
 )

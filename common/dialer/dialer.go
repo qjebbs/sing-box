@@ -9,7 +9,7 @@ import (
 	"github.com/sagernet/sing-box/adapter"
 	C "github.com/sagernet/sing-box/constant"
 	"github.com/sagernet/sing-box/option"
-	"github.com/sagernet/sing-dns"
+	dns "github.com/sagernet/sing-dns"
 	E "github.com/sagernet/sing/common/exceptions"
 	M "github.com/sagernet/sing/common/metadata"
 	N "github.com/sagernet/sing/common/network"
@@ -17,6 +17,17 @@ import (
 )
 
 func New(ctx context.Context, options option.DialerOptions) (N.Dialer, error) {
+	if options.IsWireGuardListener {
+		return NewDefault(ctx, options)
+	}
+	detour := DetourOverrideFromContext(ctx)
+	if detour != nil {
+		return detour, nil
+	}
+	return new(ctx, options)
+}
+
+func new(ctx context.Context, options option.DialerOptions) (N.Dialer, error) {
 	if options.IsWireGuardListener {
 		return NewDefault(ctx, options)
 	}

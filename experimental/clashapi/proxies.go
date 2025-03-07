@@ -70,11 +70,16 @@ func proxyInfo(server *Server, detour adapter.Outbound) *badjson.JSONObject {
 	info.Put("type", clashType)
 	info.Put("name", detour.Tag())
 	info.Put("udp", common.Contains(detour.Network(), N.NetworkUDP))
-	delayHistory := server.urlTestHistory.LoadURLTestHistory(adapter.OutboundTag(detour))
-	if delayHistory != nil {
-		info.Put("history", []*urltest.History{delayHistory})
-	} else {
+	real, err := adapter.RealOutbound(detour)
+	if err != nil {
 		info.Put("history", []*urltest.History{})
+	} else {
+		delayHistory := server.urlTestHistory.LoadURLTestHistory(real.Tag())
+		if delayHistory != nil {
+			info.Put("history", []*urltest.History{delayHistory})
+		} else {
+			info.Put("history", []*urltest.History{})
+		}
 	}
 	if group, isGroup := detour.(adapter.OutboundGroup); isGroup {
 		info.Put("now", group.Now())
@@ -168,7 +173,7 @@ func updateProxy(w http.ResponseWriter, r *http.Request) {
 	}
 
 	proxy := r.Context().Value(CtxKeyProxy).(adapter.Outbound)
-	selector, ok := proxy.(*group.Selector)
+	selector, ok := proxy.(*group.SelectorProvider)
 	if !ok {
 		render.Status(r, http.StatusBadRequest)
 		render.JSON(w, r, newError("Must be a Selector"))
@@ -186,6 +191,17 @@ func updateProxy(w http.ResponseWriter, r *http.Request) {
 
 func getProxyDelay(server *Server) func(w http.ResponseWriter, r *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
+		proxy := r.Context().Value(CtxKeyProxy).(adapter.Outbound)
+		// yacd may request the delay of a group
+		if group, isGroup := proxy.(adapter.OutboundGroup); isGroup {
+			outbound, err := adapter.RealOutbound(group)
+			if err != nil {
+				render.Status(r, http.StatusInternalServerError)
+				render.JSON(w, r, newError(err.Error()))
+				return
+			}
+			proxy = outbound
+		}
 		query := r.URL.Query()
 		url := query.Get("url")
 		if strings.HasPrefix(url, "http://") {
@@ -198,17 +214,19 @@ func getProxyDelay(server *Server) func(w http.ResponseWriter, r *http.Request) 
 			return
 		}
 
-		proxy := r.Context().Value(CtxKeyProxy).(adapter.Outbound)
 		ctx, cancel := context.WithTimeout(context.Background(), time.Millisecond*time.Duration(timeout))
 		defer cancel()
 
 		delay, err := urltest.URLTest(ctx, url, proxy)
 		defer func() {
-			realTag := group.RealTag(proxy)
+			real, err := adapter.RealOutbound(proxy)
 			if err != nil {
-				server.urlTestHistory.DeleteURLTestHistory(realTag)
+				server.urlTestHistory.StoreURLTestHistory(proxy.Tag(), &urltest.History{
+					Time:  time.Now(),
+					Delay: 0,
+				})
 			} else {
-				server.urlTestHistory.StoreURLTestHistory(realTag, &urltest.History{
+				server.urlTestHistory.StoreURLTestHistory(real.Tag(), &urltest.History{
 					Time:  time.Now(),
 					Delay: delay,
 				})

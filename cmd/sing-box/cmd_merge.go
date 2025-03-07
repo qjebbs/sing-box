@@ -18,15 +18,19 @@ import (
 )
 
 var commandMerge = &cobra.Command{
-	Use:   "merge <output-path>",
+	Use:   "merge [output-path]",
 	Short: "Merge configurations",
 	Run: func(cmd *cobra.Command, args []string) {
-		err := merge(args[0])
+		outputPath := ""
+		if len(args) > 0 {
+			outputPath = args[0]
+		}
+		err := merge(outputPath)
 		if err != nil {
 			log.Fatal(err)
 		}
 	},
-	Args: cobra.ExactArgs(1),
+	Args: cobra.MaximumNArgs(1),
 }
 
 func init() {
@@ -48,6 +52,10 @@ func merge(outputPath string) error {
 	err = encoder.Encode(mergedOptions)
 	if err != nil {
 		return E.Cause(err, "encode config")
+	}
+	if outputPath == "" {
+		os.Stdout.WriteString(buffer.String() + "\n")
+		return nil
 	}
 	if existsContent, err := os.ReadFile(outputPath); err != nil {
 		if string(existsContent) == buffer.String() {

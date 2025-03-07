@@ -21,7 +21,7 @@ import (
 	"github.com/sagernet/sing-box/option"
 	R "github.com/sagernet/sing-box/route/rule"
 	"github.com/sagernet/sing-box/transport/fakeip"
-	"github.com/sagernet/sing-dns"
+	dns "github.com/sagernet/sing-dns"
 	"github.com/sagernet/sing/common"
 	E "github.com/sagernet/sing/common/exceptions"
 	F "github.com/sagernet/sing/common/format"
@@ -40,6 +40,7 @@ type Router struct {
 	dnsLogger               log.ContextLogger
 	inbound                 adapter.InboundManager
 	outbound                adapter.OutboundManager
+	provider                adapter.ProviderManager
 	connection              adapter.ConnectionManager
 	network                 adapter.NetworkManager
 	rules                   []adapter.Rule
@@ -77,6 +78,7 @@ func NewRouter(ctx context.Context, logFactory log.Factory, options option.Route
 		dnsLogger:             logFactory.NewLogger("dns"),
 		inbound:               service.FromContext[adapter.InboundManager](ctx),
 		outbound:              service.FromContext[adapter.OutboundManager](ctx),
+		provider:              service.FromContext[adapter.ProviderManager](ctx),
 		connection:            service.FromContext[adapter.ConnectionManager](ctx),
 		network:               service.FromContext[adapter.NetworkManager](ctx),
 		rules:                 make([]adapter.Rule, 0, len(options.Rules)),
