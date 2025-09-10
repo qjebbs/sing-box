@@ -478,11 +478,11 @@ func (s *Box) preStart() error {
 	if err != nil {
 		return err
 	}
-	err = adapter.Start(adapter.StartStateInitialize, s.network, s.dnsTransport, s.dnsRouter, s.connection, s.router, s.provider, s.outbound, s.inbound, s.endpoint, s.service)
+	err = adapter.Start(adapter.StartStateInitialize, s.network, s.dnsTransport, s.dnsRouter, s.connection, s.router, s.outbound, s.provider, s.inbound, s.endpoint, s.service)
 	if err != nil {
 		return err
 	}
-	err = adapter.Start(adapter.StartStateStart, s.provider, s.outbound, s.dnsTransport, s.dnsRouter, s.network, s.connection, s.router)
+	err = adapter.Start(adapter.StartStateStart, s.outbound, s.provider, s.dnsTransport, s.dnsRouter, s.network, s.connection, s.router)
 	if err != nil {
 		return err
 	}
@@ -502,7 +502,7 @@ func (s *Box) start() error {
 	if err != nil {
 		return err
 	}
-	err = adapter.Start(adapter.StartStatePostStart, s.provider, s.outbound, s.network, s.dnsTransport, s.dnsRouter, s.connection, s.router, s.inbound, s.endpoint, s.service)
+	err = adapter.Start(adapter.StartStatePostStart, s.outbound, s.provider, s.network, s.dnsTransport, s.dnsRouter, s.connection, s.router, s.inbound, s.endpoint, s.service)
 	if err != nil {
 		return err
 	}
@@ -510,7 +510,7 @@ func (s *Box) start() error {
 	if err != nil {
 		return err
 	}
-	err = adapter.Start(adapter.StartStateStarted, s.network, s.dnsTransport, s.dnsRouter, s.connection, s.router, s.provider, s.outbound, s.inbound, s.endpoint, s.service)
+	err = adapter.Start(adapter.StartStateStarted, s.network, s.dnsTransport, s.dnsRouter, s.connection, s.router, s.outbound, s.provider, s.inbound, s.endpoint, s.service)
 	if err != nil {
 		return err
 	}
@@ -529,7 +529,7 @@ func (s *Box) Close() error {
 		close(s.done)
 	}
 	err := common.Close(
-		s.service, s.endpoint, s.inbound, s.outbound, s.provider, s.router, s.connection, s.dnsRouter, s.dnsTransport, s.network,
+		s.service, s.endpoint, s.inbound, s.provider, s.outbound, s.router, s.connection, s.dnsRouter, s.dnsTransport, s.network,
 	)
 	for _, lifecycleService := range s.internalService {
 		err = E.Append(err, lifecycleService.Close(), func(err error) error {
