@@ -7,14 +7,13 @@ import (
 	"path/filepath"
 	"sort"
 
+	"github.com/goccy/go-yaml"
 	"github.com/pelletier/go-toml"
 	"github.com/sagernet/sing/common"
 	E "github.com/sagernet/sing/common/exceptions"
 	myjson "github.com/sagernet/sing/common/json"
-	"gopkg.in/yaml.v3"
 
 	"github.com/qjebbs/go-jsons"
-	"github.com/qjebbs/go-jsons/rule"
 )
 
 // Formats and extensions.
@@ -48,29 +47,30 @@ func Extensions() []string {
 // NewMerger creates a new json files Merger.
 func init() {
 	merger = jsons.NewMerger(
-		rule.MergeBy("tag"),
-		rule.MergeByAndRemove("_tag"),
-		rule.OrderByAndRemove("_order"),
+		jsons.WithMergeBy("tag"),
+		jsons.WithMergeByAndRemove("_tag"),
+		jsons.WithOrderByAndRemove("_order"),
+		jsons.WithIndent("", "  "),
 	)
-	merger.RegisterLoader(
+	merger.RegisterOrderedLoader(
 		formatJSON,
 		extJSON,
-		func(b []byte) (map[string]interface{}, error) {
-			m := make(map[string]interface{})
+		func(b []byte) (*jsons.OrderedMap, error) {
+			m := jsons.NewOrderedMap()
 			decoder := json.NewDecoder(myjson.NewCommentFilter(bytes.NewReader(b)))
-			err := decoder.Decode(&m)
+			err := decoder.Decode(m)
 			if err != nil {
 				return nil, err
 			}
 			return m, nil
 		},
 	)
-	merger.RegisterLoader(
+	merger.RegisterOrderedLoader(
 		formatYAML,
 		extYAML,
-		func(b []byte) (map[string]interface{}, error) {
-			m := make(map[string]interface{})
-			err := yaml.Unmarshal(b, &m)
+		func(b []byte) (*jsons.OrderedMap, error) {
+			m := jsons.NewOrderedMap()
+			err := yaml.UnmarshalWithOptions(b, m, yaml.UseJSONUnmarshaler())
 			if err != nil {
 				return nil, err
 			}
