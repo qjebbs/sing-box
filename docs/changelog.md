@@ -1,6 +1,5 @@
 ---
 icon: material/alert-decagram
-ok
 ---
 
 #### 1.12.8
