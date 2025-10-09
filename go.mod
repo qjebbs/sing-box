@@ -3,7 +3,7 @@ module github.com/sagernet/sing-box
 go 1.23.1
 
 require (
-	github.com/anytls/sing-anytls v0.0.8
+	github.com/anytls/sing-anytls v0.0.11
 	github.com/caddyserver/certmagic v0.23.0
 	github.com/coder/websocket v1.8.13
 	github.com/cretz/bine v0.2.0
@@ -30,8 +30,8 @@ require (
 	github.com/sagernet/fswatch v0.1.1
 	github.com/sagernet/gomobile v0.1.8
 	github.com/sagernet/gvisor v0.0.0-20250325023245-7a9c0f5725fb
-	github.com/sagernet/quic-go v0.52.0-beta.1
-	github.com/sagernet/sing v0.7.10
+	github.com/sagernet/quic-go v0.52.0-sing-box-mod.2
+	github.com/sagernet/sing v0.7.12
 	github.com/sagernet/sing-mux v0.3.3
 	github.com/sagernet/sing-quic v0.5.2-0.20250909083218-00a55617c0fb
 	github.com/sagernet/sing-shadowsocks v0.2.8
