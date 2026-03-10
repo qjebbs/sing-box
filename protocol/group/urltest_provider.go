@@ -4,6 +4,7 @@ import (
 	"context"
 	"net"
 	"sort"
+	"time"
 
 	"github.com/sagernet/sing-box/adapter"
 	"github.com/sagernet/sing-box/adapter/outbound"
@@ -12,6 +13,7 @@ import (
 	"github.com/sagernet/sing-box/log"
 	"github.com/sagernet/sing-box/option"
 	"github.com/sagernet/sing-box/protocol/group/healthcheck"
+	tun "github.com/sagernet/sing-tun"
 	"github.com/sagernet/sing/common"
 	E "github.com/sagernet/sing/common/exceptions"
 	"github.com/sagernet/sing/common/json/badoption"
@@ -28,6 +30,7 @@ var (
 	_ adapter.Outbound                = (*URLTestProvider)(nil)
 	_ adapter.OutboundCheckGroup      = (*URLTestProvider)(nil)
 	_ adapter.InterfaceUpdateListener = (*URLTestProvider)(nil)
+	_ adapter.DirectRouteOutbound     = (*URLTestProvider)(nil)
 )
 
 type URLTestProvider struct {
@@ -153,6 +156,24 @@ func (s *URLTestProvider) NewConnectionEx(ctx context.Context, conn net.Conn, me
 func (s *URLTestProvider) NewPacketConnectionEx(ctx context.Context, conn N.PacketConn, metadata adapter.InboundContext, onClose N.CloseHandlerFunc) {
 	ctx = interrupt.ContextWithIsExternalConnection(ctx)
 	s.connection.NewPacketConnection(ctx, s, conn, metadata, onClose)
+}
+
+// NewDirectRouteConnection implements adapter.DirectRouteOutbound
+func (s *URLTestProvider) NewDirectRouteConnection(metadata adapter.InboundContext, routeContext tun.DirectRouteContext, timeout time.Duration) (tun.DirectRouteDestination, error) {
+	selected, err := s.Select(metadata.Network)
+	if err != nil {
+		return nil, err
+	}
+	// may select the first available outbound for default,
+	// need to check if the network is supported
+	if !common.Contains(selected.Network(), metadata.Network) {
+		return nil, E.New(metadata.Network, " is not supported by outbound: ", selected.Tag())
+	}
+	dro, ok := selected.(adapter.DirectRouteOutbound)
+	if !ok {
+		return nil, E.New("outbound does not support direct route: ", selected.Tag())
+	}
+	return dro.NewDirectRouteConnection(metadata, routeContext, timeout)
 }
 
 func (s *URLTestProvider) Select(network string) (adapter.Outbound, error) {

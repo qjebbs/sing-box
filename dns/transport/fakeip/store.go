@@ -3,6 +3,7 @@ package fakeip
 import (
 	"context"
 	"net/netip"
+	"sync"
 
 	"github.com/sagernet/sing-box/adapter"
 	E "github.com/sagernet/sing/common/exceptions"
@@ -13,22 +14,49 @@ import (
 var _ adapter.FakeIPStore = (*Store)(nil)
 
 type Store struct {
-	ctx          context.Context
-	logger       logger.Logger
-	inet4Range   netip.Prefix
-	inet6Range   netip.Prefix
-	storage      adapter.FakeIPStorage
-	inet4Current netip.Addr
-	inet6Current netip.Addr
+	ctx        context.Context
+	logger     logger.Logger
+	inet4Range netip.Prefix
+	inet6Range netip.Prefix
+	inet4Last  netip.Addr
+	inet6Last  netip.Addr
+	storage    adapter.FakeIPStorage
+
+	addressAccess sync.Mutex
+	inet4Current  netip.Addr
+	inet6Current  netip.Addr
 }
 
 func NewStore(ctx context.Context, logger logger.Logger, inet4Range netip.Prefix, inet6Range netip.Prefix) *Store {
-	return &Store{
+	store := &Store{
 		ctx:        ctx,
 		logger:     logger,
 		inet4Range: inet4Range,
 		inet6Range: inet6Range,
 	}
+	if inet4Range.IsValid() {
+		store.inet4Last = broadcastAddress(inet4Range)
+	}
+	if inet6Range.IsValid() {
+		store.inet6Last = broadcastAddress(inet6Range)
+	}
+	return store
+}
+
+func broadcastAddress(prefix netip.Prefix) netip.Addr {
+	addr := prefix.Addr()
+	raw := addr.As16()
+	bits := prefix.Bits()
+	if addr.Is4() {
+		bits += 96
+	}
+	for i := bits; i < 128; i++ {
+		raw[i/8] |= 1 << (7 - i%8)
+	}
+	if addr.Is4() {
+		return netip.AddrFrom4([4]byte(raw[12:]))
+	}
+	return netip.AddrFrom16(raw)
 }
 
 func (s *Store) Start() error {
@@ -46,10 +74,10 @@ func (s *Store) Start() error {
 		s.inet6Current = metadata.Inet6Current
 	} else {
 		if s.inet4Range.IsValid() {
-			s.inet4Current = s.inet4Range.Addr().Next().Next()
+			s.inet4Current = s.inet4Range.Addr().Next()
 		}
 		if s.inet6Range.IsValid() {
-			s.inet6Current = s.inet6Range.Addr().Next().Next()
+			s.inet6Current = s.inet6Range.Addr().Next()
 		}
 		_ = storage.FakeIPReset()
 	}
@@ -65,25 +93,37 @@ func (s *Store) Close() error {
 	if s.storage == nil {
 		return nil
 	}
-	return s.storage.FakeIPSaveMetadata(&adapter.FakeIPMetadata{
+	s.addressAccess.Lock()
+	metadata := &adapter.FakeIPMetadata{
 		Inet4Range:   s.inet4Range,
 		Inet6Range:   s.inet6Range,
 		Inet4Current: s.inet4Current,
 		Inet6Current: s.inet6Current,
-	})
+	}
+	s.addressAccess.Unlock()
+	return s.storage.FakeIPSaveMetadata(metadata)
 }
 
 func (s *Store) Create(domain string, isIPv6 bool) (netip.Addr, error) {
 	if address, loaded := s.storage.FakeIPLoadDomain(domain, isIPv6); loaded {
 		return address, nil
 	}
+
+	s.addressAccess.Lock()
+	defer s.addressAccess.Unlock()
+
+	// Double-check after acquiring lock
+	if address, loaded := s.storage.FakeIPLoadDomain(domain, isIPv6); loaded {
+		return address, nil
+	}
+
 	var address netip.Addr
 	if !isIPv6 {
 		if !s.inet4Current.IsValid() {
 			return netip.Addr{}, E.New("missing IPv4 fakeip address range")
 		}
 		nextAddress := s.inet4Current.Next()
-		if !s.inet4Range.Contains(nextAddress) {
+		if nextAddress == s.inet4Last || !s.inet4Range.Contains(nextAddress) {
 			nextAddress = s.inet4Range.Addr().Next().Next()
 		}
 		s.inet4Current = nextAddress
@@ -93,13 +133,16 @@ func (s *Store) Create(domain string, isIPv6 bool) (netip.Addr, error) {
 			return netip.Addr{}, E.New("missing IPv6 fakeip address range")
 		}
 		nextAddress := s.inet6Current.Next()
-		if !s.inet6Range.Contains(nextAddress) {
+		if nextAddress == s.inet6Last || !s.inet6Range.Contains(nextAddress) {
 			nextAddress = s.inet6Range.Addr().Next().Next()
 		}
 		s.inet6Current = nextAddress
 		address = nextAddress
 	}
-	s.storage.FakeIPStoreAsync(address, domain, s.logger)
+	err := s.storage.FakeIPStore(address, domain)
+	if err != nil {
+		s.logger.Warn("save FakeIP cache: ", err)
+	}
 	s.storage.FakeIPSaveMetadataAsync(&adapter.FakeIPMetadata{
 		Inet4Range:   s.inet4Range,
 		Inet6Range:   s.inet6Range,

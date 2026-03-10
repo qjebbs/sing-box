@@ -144,7 +144,11 @@ func (c *Client) Exchange(ctx context.Context, transport adapter.DNSTransport, m
 		if c.cache != nil {
 			cond, loaded := c.cacheLock.LoadOrStore(question, make(chan struct{}))
 			if loaded {
-				<-cond
+				select {
+				case <-cond:
+				case <-ctx.Done():
+					return nil, ctx.Err()
+				}
 			} else {
 				defer func() {
 					c.cacheLock.Delete(question)
@@ -154,7 +158,11 @@ func (c *Client) Exchange(ctx context.Context, transport adapter.DNSTransport, m
 		} else if c.transportCache != nil {
 			cond, loaded := c.transportCacheLock.LoadOrStore(question, make(chan struct{}))
 			if loaded {
-				<-cond
+				select {
+				case <-cond:
+				case <-ctx.Done():
+					return nil, ctx.Err()
+				}
 			} else {
 				defer func() {
 					c.transportCacheLock.Delete(question)
@@ -232,8 +240,10 @@ func (c *Client) Exchange(ctx context.Context, transport adapter.DNSTransport, m
 	if responseChecker != nil {
 		var rejected bool
 		// TODO: add accept_any rule and support to check response instead of addresses
-		if response.Rcode != dns.RcodeSuccess || len(response.Answer) == 0 {
+		if response.Rcode != dns.RcodeSuccess && response.Rcode != dns.RcodeNameError {
 			rejected = true
+		} else if len(response.Answer) == 0 {
+			rejected = !responseChecker(nil)
 		} else {
 			rejected = !responseChecker(MessageToAddresses(response))
 		}

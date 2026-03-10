@@ -1,6 +1,6 @@
 version: "2"
 run:
-  go: "1.24"
+  go: "1.25"
   build-tags:
     - with_gvisor
     - with_quic
@@ -9,6 +9,11 @@ run:
     - with_utls
     - with_acme
     - with_clash_api
+    - with_tailscale
+    - with_ccm
+    - with_ocm
+    - badlinkname
+    - tfogo_checklinkname0
 linters:
   default: none
   enable:

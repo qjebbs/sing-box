@@ -68,7 +68,16 @@ func NewInbound(ctx context.Context, router adapter.Router, logger log.ContextLo
 	}))
 	inbound.service = service
 	if options.TLS != nil {
-		inbound.tlsConfig, err = tls.NewServer(ctx, logger, common.PtrValueOrDefault(options.TLS))
+		inbound.tlsConfig, err = tls.NewServerWithOptions(tls.ServerOptions{
+			Context: ctx,
+			Logger:  logger,
+			Options: common.PtrValueOrDefault(options.TLS),
+			KTLSCompatible: common.PtrValueOrDefault(options.Transport).Type == "" &&
+				!common.PtrValueOrDefault(options.Multiplex).Enabled &&
+				common.All(options.Users, func(it option.VLESSUser) bool {
+					return it.Flow == ""
+				}),
+		})
 		if err != nil {
 			return nil, err
 		}
@@ -208,7 +217,6 @@ func (h *inboundTransportHandler) NewConnectionEx(ctx context.Context, conn net.
 	//nolint:staticcheck
 	metadata.InboundDetour = h.listener.ListenOptions().Detour
 	//nolint:staticcheck
-	metadata.InboundOptions = h.listener.ListenOptions().InboundOptions
 	h.logger.InfoContext(ctx, "inbound connection from ", metadata.Source)
 	(*Inbound)(h).NewConnectionEx(ctx, conn, metadata, onClose)
 }

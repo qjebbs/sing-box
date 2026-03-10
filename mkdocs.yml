@@ -1,4 +1,5 @@
 site_name: sing-box
+site_url: https://sing-box.sagernet.org/
 site_author: nekohasekai
 repo_url: https://github.com/SagerNet/sing-box
 repo_name: SagerNet/sing-box
@@ -122,10 +123,12 @@ nav:
           - Dial Fields: configuration/shared/dial.md
           - TLS: configuration/shared/tls.md
           - DNS01 Challenge Fields: configuration/shared/dns01_challenge.md
+          - Pre-match: configuration/shared/pre-match.md
           - Multiplex: configuration/shared/multiplex.md
           - V2Ray Transport: configuration/shared/v2ray-transport.md
           - UDP over TCP: configuration/shared/udp-over-tcp.md
           - TCP Brutal: configuration/shared/tcp-brutal.md
+          - Wi-Fi State: configuration/shared/wifi-state.md
       - Endpoint:
           - configuration/endpoint/index.md
           - WireGuard: configuration/endpoint/wireguard.md
@@ -158,6 +161,7 @@ nav:
           - Shadowsocks: configuration/outbound/shadowsocks.md
           - VMess: configuration/outbound/vmess.md
           - Trojan: configuration/outbound/trojan.md
+          - Naive: configuration/outbound/naive.md
           - WireGuard: configuration/outbound/wireguard.md
           - Hysteria: configuration/outbound/hysteria.md
           - ShadowTLS: configuration/outbound/shadowtls.md
@@ -179,6 +183,8 @@ nav:
           - DERP: configuration/service/derp.md
           - Resolved: configuration/service/resolved.md
           - SSM API: configuration/service/ssm-api.md
+          - CCM: configuration/service/ccm.md
+          - OCM: configuration/service/ocm.md
 markdown_extensions:
   - pymdownx.inlinehilite
   - pymdownx.snippets
@@ -269,6 +275,7 @@ plugins:
             DNS01 Challenge Fields: DNS01 验证字段
             Multiplex: 多路复用
             V2Ray Transport: V2Ray 传输层
+            Wi-Fi State: Wi-Fi 状态
 
             Endpoint: 端点
             Inbound: 入站

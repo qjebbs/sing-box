@@ -55,7 +55,6 @@ type InboundOptions struct {
 	SniffTimeout              badoption.Duration `json:"sniff_timeout,omitempty"`
 	DomainStrategy            DomainStrategy     `json:"domain_strategy,omitempty"`
 	UDPDisableDomainUnmapping bool               `json:"udp_disable_domain_unmapping,omitempty"`
-	Detour                    string             `json:"detour,omitempty"`
 }
 
 type ListenOptions struct {
@@ -65,6 +64,7 @@ type ListenOptions struct {
 	RoutingMark          FwMark             `json:"routing_mark,omitempty"`
 	ReuseAddr            bool               `json:"reuse_addr,omitempty"`
 	NetNs                string             `json:"netns,omitempty"`
+	DisableTCPKeepAlive  bool               `json:"disable_tcp_keep_alive,omitempty"`
 	TCPKeepAlive         badoption.Duration `json:"tcp_keep_alive,omitempty"`
 	TCPKeepAliveInterval badoption.Duration `json:"tcp_keep_alive_interval,omitempty"`
 	TCPFastOpen          bool               `json:"tcp_fast_open,omitempty"`
@@ -72,6 +72,7 @@ type ListenOptions struct {
 	UDPFragment          *bool              `json:"udp_fragment,omitempty"`
 	UDPFragmentDefault   bool               `json:"-"`
 	UDPTimeout           UDPTimeoutCompat   `json:"udp_timeout,omitempty"`
+	Detour               string             `json:"detour,omitempty"`
 
 	// Deprecated: removed
 	ProxyProtocol bool `json:"proxy_protocol,omitempty"`

@@ -14,6 +14,7 @@ import (
 	"github.com/sagernet/sing/common/logger"
 
 	"github.com/caddyserver/certmagic"
+	"github.com/libdns/acmedns"
 	"github.com/libdns/alidns"
 	"github.com/libdns/cloudflare"
 	"github.com/mholt/acmez/v3/acme"
@@ -114,13 +115,24 @@ func startACME(ctx context.Context, logger logger.Logger, options option.Inbound
 		switch dnsOptions.Provider {
 		case C.DNSProviderAliDNS:
 			solver.DNSProvider = &alidns.Provider{
-				AccKeyID:     dnsOptions.AliDNSOptions.AccessKeyID,
-				AccKeySecret: dnsOptions.AliDNSOptions.AccessKeySecret,
-				RegionID:     dnsOptions.AliDNSOptions.RegionID,
+				CredentialInfo: alidns.CredentialInfo{
+					AccessKeyID:     dnsOptions.AliDNSOptions.AccessKeyID,
+					AccessKeySecret: dnsOptions.AliDNSOptions.AccessKeySecret,
+					RegionID:        dnsOptions.AliDNSOptions.RegionID,
+					SecurityToken:   dnsOptions.AliDNSOptions.SecurityToken,
+				},
 			}
 		case C.DNSProviderCloudflare:
 			solver.DNSProvider = &cloudflare.Provider{
-				APIToken: dnsOptions.CloudflareOptions.APIToken,
+				APIToken:  dnsOptions.CloudflareOptions.APIToken,
+				ZoneToken: dnsOptions.CloudflareOptions.ZoneToken,
+			}
+		case C.DNSProviderACMEDNS:
+			solver.DNSProvider = &acmedns.Provider{
+				Username:  dnsOptions.ACMEDNSOptions.Username,
+				Password:  dnsOptions.ACMEDNSOptions.Password,
+				Subdomain: dnsOptions.ACMEDNSOptions.Subdomain,
+				ServerURL: dnsOptions.ACMEDNSOptions.ServerURL,
 			}
 		default:
 			return nil, nil, E.New("unsupported ACME DNS01 provider type: " + dnsOptions.Provider)

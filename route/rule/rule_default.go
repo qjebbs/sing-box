@@ -5,7 +5,6 @@ import (
 
 	"github.com/sagernet/sing-box/adapter"
 	C "github.com/sagernet/sing-box/constant"
-	"github.com/sagernet/sing-box/experimental/deprecated"
 	"github.com/sagernet/sing-box/log"
 	"github.com/sagernet/sing-box/option"
 	"github.com/sagernet/sing/common"
@@ -117,7 +116,7 @@ func NewDefaultRule(ctx context.Context, logger log.ContextLogger, options optio
 	if len(options.DomainRegex) > 0 {
 		item, err := NewDomainRegexItem(options.DomainRegex)
 		if err != nil {
-			return nil, E.Cause(err, "domain_regex")
+			return nil, err
 		}
 		rule.destinationAddressItems = append(rule.destinationAddressItems, item)
 		rule.allItems = append(rule.allItems, item)
@@ -246,15 +245,34 @@ func NewDefaultRule(ctx context.Context, logger log.ContextLogger, options optio
 		rule.items = append(rule.items, item)
 		rule.allItems = append(rule.allItems, item)
 	}
+	if options.InterfaceAddress != nil && options.InterfaceAddress.Size() > 0 {
+		item := NewInterfaceAddressItem(networkManager, options.InterfaceAddress)
+		rule.items = append(rule.items, item)
+		rule.allItems = append(rule.allItems, item)
+	}
+	if options.NetworkInterfaceAddress != nil && options.NetworkInterfaceAddress.Size() > 0 {
+		item := NewNetworkInterfaceAddressItem(networkManager, options.NetworkInterfaceAddress)
+		rule.items = append(rule.items, item)
+		rule.allItems = append(rule.allItems, item)
+	}
+	if len(options.DefaultInterfaceAddress) > 0 {
+		item := NewDefaultInterfaceAddressItem(networkManager, options.DefaultInterfaceAddress)
+		rule.items = append(rule.items, item)
+		rule.allItems = append(rule.allItems, item)
+	}
+	if len(options.PreferredBy) > 0 {
+		item := NewPreferredByItem(ctx, options.PreferredBy)
+		rule.items = append(rule.items, item)
+		rule.allItems = append(rule.allItems, item)
+	}
 	if len(options.RuleSet) > 0 {
+		//nolint:staticcheck
+		if options.Deprecated_RulesetIPCIDRMatchSource {
+			return nil, E.New("rule_set_ipcidr_match_source is deprecated in sing-box 1.10.0 and removed in sing-box 1.11.0")
+		}
 		var matchSource bool
 		if options.RuleSetIPCIDRMatchSource {
 			matchSource = true
-		} else
-		//nolint:staticcheck
-		if options.Deprecated_RulesetIPCIDRMatchSource {
-			matchSource = true
-			deprecated.Report(ctx, deprecated.OptionBadMatchSource)
 		}
 		item := NewRuleSetItem(router, options.RuleSet, matchSource, false)
 		rule.items = append(rule.items, item)

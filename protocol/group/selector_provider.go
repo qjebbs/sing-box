@@ -3,6 +3,7 @@ package group
 import (
 	"context"
 	"net"
+	"time"
 
 	"github.com/sagernet/sing-box/adapter"
 	"github.com/sagernet/sing-box/adapter/outbound"
@@ -10,6 +11,8 @@ import (
 	C "github.com/sagernet/sing-box/constant"
 	"github.com/sagernet/sing-box/log"
 	"github.com/sagernet/sing-box/option"
+	tun "github.com/sagernet/sing-tun"
+	"github.com/sagernet/sing/common"
 	"github.com/sagernet/sing/common/atomic"
 	E "github.com/sagernet/sing/common/exceptions"
 	M "github.com/sagernet/sing/common/metadata"
@@ -22,8 +25,9 @@ func RegisterSelectorProvider(registry *outbound.Registry) {
 }
 
 var (
-	_ adapter.Outbound      = (*SelectorProvider)(nil)
-	_ adapter.OutboundGroup = (*SelectorProvider)(nil)
+	_ adapter.Outbound            = (*SelectorProvider)(nil)
+	_ adapter.OutboundGroup       = (*SelectorProvider)(nil)
+	_ adapter.DirectRouteOutbound = (*SelectorProvider)(nil)
 )
 
 type SelectorProvider struct {
@@ -169,6 +173,25 @@ func (s *SelectorProvider) NewPacketConnectionEx(ctx context.Context, conn N.Pac
 	} else {
 		s.connection.NewPacketConnection(ctx, selected, conn, metadata, onClose)
 	}
+}
+
+// NewDirectRouteConnection implements adapter.DirectRouteOutbound
+func (s *SelectorProvider) NewDirectRouteConnection(metadata adapter.InboundContext, routeContext tun.DirectRouteContext, timeout time.Duration) (tun.DirectRouteDestination, error) {
+	if err := s.ensureSelected(); err != nil {
+		return nil, err
+	}
+	selected := s.selected.Load()
+	if selected == nil {
+		return nil, E.New("no outbound available")
+	}
+	if !common.Contains(selected.Network(), metadata.Network) {
+		return nil, E.New(metadata.Network, " is not supported by outbound: ", selected.Tag())
+	}
+	dro, ok := selected.(adapter.DirectRouteOutbound)
+	if !ok {
+		return nil, E.New("outbound does not support direct route: ", selected.Tag())
+	}
+	return dro.NewDirectRouteConnection(metadata, routeContext, timeout)
 }
 
 func (s *SelectorProvider) ensureSelected() error {

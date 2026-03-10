@@ -2,6 +2,11 @@
 icon: material/new-box
 ---
 
+!!! quote "sing-box 1.13.0 中的更改"
+
+    :material-plus: [bypass](#bypass)  
+    :material-alert: [reject](#reject)
+
 !!! quote "sing-box 1.12.0 中的更改"
 
     :material-plus: [tls_fragment](#tls_fragment)  
@@ -36,7 +41,42 @@ icon: material/new-box
 
 参阅下方的 `route-options` 字段。
 
+### bypass
+
+!!! question "自 sing-box 1.13.0 起"
+
+!!! quote ""
+
+    仅支持 Linux，且需要启用 `auto_redirect`。
+
+```json
+{
+  "action": "bypass",
+  "outbound": "",
+
+  ... // route-options 字段
+}
+```
+
+`bypass` 在预匹配中为 auto redirect 连接在内核层面绕过 sing-box。
+
+对于非 auto redirect 连接和已建立的连接，如果指定了 `outbound`，行为与 `route` 相同；否则规则将被跳过。
+
+#### outbound
+
+目标出站的标签。
+
+如果未指定，规则仅在来自 auto redirect 的[预匹配](/configuration/shared/pre-match/)中匹配，在其他场景中将被跳过。
+
+#### route-options 字段
+
+参阅下方的 `route-options` 字段。
+
 ### reject
+
+!!! quote "sing-box 1.13.0 中的更改"
+
+    自 sing-box 1.13.0 起，您可以通过 `reject` 动作拒绝（或直接回复）ICMP 回显（ping）请求。
 
 ```json
 {
@@ -54,8 +94,16 @@ icon: material/new-box
 
 #### method
 
+对于 TCP 和 UDP 连接：
+
 - `default`: 对于 TCP 连接回复 RST，对于 UDP 包回复 ICMP 端口不可达。
 - `drop`: 丢弃数据包。
+
+对于 ICMP 回显请求：
+
+- `default`: 回复 ICMP 主机不可达。
+- `drop`: 丢弃数据包。
+- `reply`: 回复以 ICMP 回显应答。
 
 #### no_drop
 

@@ -2,6 +2,11 @@
 icon: material/new-box
 ---
 
+!!! quote "Changes in sing-box 1.13.0"
+
+    :material-plus: [bypass](#bypass)  
+    :material-alert: [reject](#reject)
+
 !!! quote "Changes in sing-box 1.12.0"
 
     :material-plus: [tls_fragment](#tls_fragment)  
@@ -40,7 +45,45 @@ Tag of target outbound.
 
 See `route-options` fields below.
 
+### bypass
+
+!!! question "Since sing-box 1.13.0"
+
+!!! quote ""
+
+    Only supported on Linux with `auto_redirect` enabled.
+
+```json
+{
+  "action": "bypass",
+  "outbound": "",
+
+  ... // route-options Fields
+}
+```
+
+`bypass` bypasses sing-box at the kernel level for auto redirect connections in pre-match.
+
+For non-auto-redirect connections and already established connections,
+if `outbound` is specified, the behavior is the same as `route`;
+otherwise, the rule will be skipped.
+
+#### outbound
+
+Tag of target outbound.
+
+If not specified, the rule only matches in [pre-match](/configuration/shared/pre-match/)
+from auto redirect, and will be skipped in other contexts.
+
+#### route-options Fields
+
+See `route-options` fields below.
+
 ### reject
+
+!!! quote "Changes in sing-box 1.13.0"
+
+    Since sing-box 1.13.0, you can reject (or directly reply to) ICMP echo (ping) requests using `reject` action.
 
 ```json
 {
@@ -58,8 +101,16 @@ For non-tun connections and already established connections, will just be closed
 
 #### method
 
+For TCP and UDP connections:
+
 - `default`: Reply with TCP RST for TCP connections, and ICMP port unreachable for UDP packets.
 - `drop`: Drop packets.
+
+For ICMP echo requests:
+
+- `default`: Reply with ICMP host unreachable.
+- `drop`: Drop packets.
+- `reply`: Reply with ICMP echo reply.
 
 #### no_drop
 

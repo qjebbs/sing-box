@@ -2,6 +2,13 @@
 icon: material/new-box
 ---
 
+!!! quote "Changes in sing-box 1.13.0"
+
+    :material-plus: [disable_tcp_keep_alive](#disable_tcp_keep_alive)  
+    :material-plus: [tcp_keep_alive](#tcp_keep_alive)  
+    :material-plus: [tcp_keep_alive_interval](#tcp_keep_alive_interval)  
+    :material-plus: [bind_address_no_port](#bind_address_no_port)
+
 !!! quote "Changes in sing-box 1.12.0"
 
     :material-plus: [domain_resolver](#domain_resolver)  
@@ -23,14 +30,18 @@ icon: material/new-box
   "bind_interface": "",
   "inet4_bind_address": "",
   "inet6_bind_address": "",
+  "bind_address_no_port": false,
   "routing_mark": 0,
   "reuse_addr": false,
   "netns": "",
   "connect_timeout": "",
   "tcp_fast_open": false,
   "tcp_multi_path": false,
+  "disable_tcp_keep_alive": false,
+  "tcp_keep_alive": "",
+  "tcp_keep_alive_interval": "",
   "udp_fragment": false,
-  
+
   "domain_resolver": "", // or {}
   "network_strategy": "",
   "network_type": [],
@@ -66,6 +77,18 @@ The IPv4 address to bind to.
 #### inet6_bind_address
 
 The IPv6 address to bind to.
+
+#### bind_address_no_port
+
+!!! question "Since sing-box 1.13.0"
+
+!!! quote ""
+
+    Only supported on Linux.
+
+Do not reserve a port when binding to a source address.
+
+This allows reusing the same source port for multiple connections if the full 4-tuple (source IP, source port, destination IP, destination port) remains unique.
 
 #### routing_mark
 
@@ -111,6 +134,30 @@ Enable TCP Fast Open.
     Go 1.21 required.
 
 Enable TCP Multi Path.
+
+#### disable_tcp_keep_alive
+
+!!! question "Since sing-box 1.13.0"
+
+Disable TCP keep alive.
+
+#### tcp_keep_alive
+
+!!! question "Since sing-box 1.13.0"
+
+    Default value changed from `10m` to `5m`.
+
+TCP keep alive initial period.
+
+`5m` will be used by default.
+
+#### tcp_keep_alive_interval
+
+!!! question "Since sing-box 1.13.0"
+
+TCP keep alive interval.
+
+`75s` will be used by default.
 
 #### udp_fragment
 

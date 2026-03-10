@@ -4,7 +4,6 @@ import (
 	"context"
 
 	C "github.com/sagernet/sing-box/constant"
-	"github.com/sagernet/sing-box/experimental/deprecated"
 	E "github.com/sagernet/sing/common/exceptions"
 	"github.com/sagernet/sing/common/json"
 	"github.com/sagernet/sing/common/json/badjson"
@@ -40,7 +39,7 @@ func (h *Outbound) UnmarshalJSONContext(ctx context.Context, content []byte) err
 	}
 	switch h.Type {
 	case C.TypeDNS:
-		deprecated.Report(ctx, deprecated.OptionSpecialOutbounds)
+		return E.New("dns outbound is deprecated in sing-box 1.11.0 and removed in sing-box 1.13.0, use rule actions instead")
 	}
 	options, loaded := registry.CreateOptions(h.Type)
 	if !loaded {
@@ -51,8 +50,9 @@ func (h *Outbound) UnmarshalJSONContext(ctx context.Context, content []byte) err
 		return err
 	}
 	if listenWrapper, isListen := options.(ListenOptionsWrapper); isListen {
+		//nolint:staticcheck
 		if listenWrapper.TakeListenOptions().InboundOptions != (InboundOptions{}) {
-			deprecated.Report(ctx, deprecated.OptionInboundOptions)
+			return E.New("legacy inbound fields are deprecated in sing-box 1.11.0 and removed in sing-box 1.13.0, use rule actions instead")
 		}
 	}
 	h.Options = options
@@ -65,24 +65,28 @@ type DialerOptionsWrapper interface {
 }
 
 type DialerOptions struct {
-	Detour              string                            `json:"detour,omitempty"`
-	BindInterface       string                            `json:"bind_interface,omitempty"`
-	Inet4BindAddress    *badoption.Addr                   `json:"inet4_bind_address,omitempty"`
-	Inet6BindAddress    *badoption.Addr                   `json:"inet6_bind_address,omitempty"`
-	ProtectPath         string                            `json:"protect_path,omitempty"`
-	RoutingMark         FwMark                            `json:"routing_mark,omitempty"`
-	ReuseAddr           bool                              `json:"reuse_addr,omitempty"`
-	NetNs               string                            `json:"netns,omitempty"`
-	ConnectTimeout      badoption.Duration                `json:"connect_timeout,omitempty"`
-	TCPFastOpen         bool                              `json:"tcp_fast_open,omitempty"`
-	TCPMultiPath        bool                              `json:"tcp_multi_path,omitempty"`
-	UDPFragment         *bool                             `json:"udp_fragment,omitempty"`
-	UDPFragmentDefault  bool                              `json:"-"`
-	DomainResolver      *DomainResolveOptions             `json:"domain_resolver,omitempty"`
-	NetworkStrategy     *NetworkStrategy                  `json:"network_strategy,omitempty"`
-	NetworkType         badoption.Listable[InterfaceType] `json:"network_type,omitempty"`
-	FallbackNetworkType badoption.Listable[InterfaceType] `json:"fallback_network_type,omitempty"`
-	FallbackDelay       badoption.Duration                `json:"fallback_delay,omitempty"`
+	Detour               string                            `json:"detour,omitempty"`
+	BindInterface        string                            `json:"bind_interface,omitempty"`
+	Inet4BindAddress     *badoption.Addr                   `json:"inet4_bind_address,omitempty"`
+	Inet6BindAddress     *badoption.Addr                   `json:"inet6_bind_address,omitempty"`
+	BindAddressNoPort    bool                              `json:"bind_address_no_port,omitempty"`
+	ProtectPath          string                            `json:"protect_path,omitempty"`
+	RoutingMark          FwMark                            `json:"routing_mark,omitempty"`
+	ReuseAddr            bool                              `json:"reuse_addr,omitempty"`
+	NetNs                string                            `json:"netns,omitempty"`
+	ConnectTimeout       badoption.Duration                `json:"connect_timeout,omitempty"`
+	TCPFastOpen          bool                              `json:"tcp_fast_open,omitempty"`
+	TCPMultiPath         bool                              `json:"tcp_multi_path,omitempty"`
+	DisableTCPKeepAlive  bool                              `json:"disable_tcp_keep_alive,omitempty"`
+	TCPKeepAlive         badoption.Duration                `json:"tcp_keep_alive,omitempty"`
+	TCPKeepAliveInterval badoption.Duration                `json:"tcp_keep_alive_interval,omitempty"`
+	UDPFragment          *bool                             `json:"udp_fragment,omitempty"`
+	UDPFragmentDefault   bool                              `json:"-"`
+	DomainResolver       *DomainResolveOptions             `json:"domain_resolver,omitempty"`
+	NetworkStrategy      *NetworkStrategy                  `json:"network_strategy,omitempty"`
+	NetworkType          badoption.Listable[InterfaceType] `json:"network_type,omitempty"`
+	FallbackNetworkType  badoption.Listable[InterfaceType] `json:"fallback_network_type,omitempty"`
+	FallbackDelay        badoption.Duration                `json:"fallback_delay,omitempty"`
 
 	// Deprecated: migrated to domain resolver
 	DomainStrategy DomainStrategy `json:"domain_strategy,omitempty"`

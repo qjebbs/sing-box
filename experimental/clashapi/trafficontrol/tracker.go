@@ -45,15 +45,15 @@ func (t TrackerMetadata) MarshalJSON() ([]byte, error) {
 	if t.Metadata.ProcessInfo != nil {
 		if t.Metadata.ProcessInfo.ProcessPath != "" {
 			processPath = t.Metadata.ProcessInfo.ProcessPath
-		} else if t.Metadata.ProcessInfo.PackageName != "" {
-			processPath = t.Metadata.ProcessInfo.PackageName
+		} else if t.Metadata.ProcessInfo.AndroidPackageName != "" {
+			processPath = t.Metadata.ProcessInfo.AndroidPackageName
 		}
 		if processPath == "" {
 			if t.Metadata.ProcessInfo.UserId != -1 {
 				processPath = F.ToString(t.Metadata.ProcessInfo.UserId)
 			}
-		} else if t.Metadata.ProcessInfo.User != "" {
-			processPath = F.ToString(processPath, " (", t.Metadata.ProcessInfo.User, ")")
+		} else if t.Metadata.ProcessInfo.UserName != "" {
+			processPath = F.ToString(processPath, " (", t.Metadata.ProcessInfo.UserName, ")")
 		} else if t.Metadata.ProcessInfo.UserId != -1 {
 			processPath = F.ToString(processPath, " (", t.Metadata.ProcessInfo.UserId, ")")
 		}
@@ -87,7 +87,7 @@ func (t TrackerMetadata) MarshalJSON() ([]byte, error) {
 }
 
 type Tracker interface {
-	Metadata() TrackerMetadata
+	Metadata() *TrackerMetadata
 	Close() error
 }
 
@@ -97,8 +97,8 @@ type TCPConn struct {
 	manager  *Manager
 }
 
-func (tt *TCPConn) Metadata() TrackerMetadata {
-	return tt.metadata
+func (tt *TCPConn) Metadata() *TrackerMetadata {
+	return &tt.metadata
 }
 
 func (tt *TCPConn) Close() error {
@@ -178,8 +178,8 @@ type UDPConn struct {
 	manager      *Manager
 }
 
-func (ut *UDPConn) Metadata() TrackerMetadata {
-	return ut.metadata
+func (ut *UDPConn) Metadata() *TrackerMetadata {
+	return &ut.metadata
 }
 
 func (ut *UDPConn) Close() error {

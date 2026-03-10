@@ -13,7 +13,9 @@ import (
 	C "github.com/sagernet/sing-box/constant"
 	"github.com/sagernet/sing-box/log"
 	"github.com/sagernet/sing-box/option"
-	"github.com/sagernet/sing/common/bufio"
+	"github.com/sagernet/sing-tun"
+	"github.com/sagernet/sing-tun/ping"
+	"github.com/sagernet/sing/common"
 	E "github.com/sagernet/sing/common/exceptions"
 	"github.com/sagernet/sing/common/logger"
 	M "github.com/sagernet/sing/common/metadata"
@@ -28,17 +30,17 @@ var (
 	_ N.ParallelDialer             = (*Outbound)(nil)
 	_ dialer.ParallelNetworkDialer = (*Outbound)(nil)
 	_ dialer.DirectDialer          = (*Outbound)(nil)
+	_ adapter.DirectRouteOutbound  = (*Outbound)(nil)
 )
 
 type Outbound struct {
 	outbound.Adapter
-	logger              logger.ContextLogger
-	dialer              dialer.ParallelInterfaceDialer
-	domainStrategy      C.DomainStrategy
-	fallbackDelay       time.Duration
-	overrideOption      int
-	overrideDestination M.Socksaddr
-	isEmpty             bool
+	ctx            context.Context
+	logger         logger.ContextLogger
+	dialer         dialer.ParallelInterfaceDialer
+	domainStrategy C.DomainStrategy
+	fallbackDelay  time.Duration
+	isEmpty        bool
 	// loopBack *loopBackDetector
 }
 
@@ -57,30 +59,19 @@ func NewOutbound(ctx context.Context, router adapter.Router, logger log.ContextL
 		return nil, err
 	}
 	outbound := &Outbound{
-		Adapter: outbound.NewAdapterWithDialerOptions(C.TypeDirect, tag, []string{N.NetworkTCP, N.NetworkUDP}, options.DialerOptions),
+		Adapter: outbound.NewAdapterWithDialerOptions(C.TypeDirect, tag, []string{N.NetworkTCP, N.NetworkUDP, N.NetworkICMP}, options.DialerOptions),
+		ctx:     ctx,
 		logger:  logger,
 		//nolint:staticcheck
 		domainStrategy: C.DomainStrategy(options.DomainStrategy),
 		fallbackDelay:  time.Duration(options.FallbackDelay),
 		dialer:         outboundDialer.(dialer.ParallelInterfaceDialer),
-		//nolint:staticcheck
-		isEmpty: reflect.DeepEqual(options.DialerOptions, option.DialerOptions{UDPFragmentDefault: true}) && options.OverrideAddress == "" && options.OverridePort == 0,
+		isEmpty:        reflect.DeepEqual(options.DialerOptions, option.DialerOptions{UDPFragmentDefault: true}),
 		// loopBack:       newLoopBackDetector(router),
 	}
 	//nolint:staticcheck
 	if options.ProxyProtocol != 0 {
 		return nil, E.New("Proxy Protocol is deprecated and removed in sing-box 1.6.0")
-	}
-	//nolint:staticcheck
-	if options.OverrideAddress != "" && options.OverridePort != 0 {
-		outbound.overrideOption = 1
-		outbound.overrideDestination = M.ParseSocksaddrHostPort(options.OverrideAddress, options.OverridePort)
-	} else if options.OverrideAddress != "" {
-		outbound.overrideOption = 2
-		outbound.overrideDestination = M.ParseSocksaddrHostPort(options.OverrideAddress, options.OverridePort)
-	} else if options.OverridePort != 0 {
-		outbound.overrideOption = 3
-		outbound.overrideDestination = M.Socksaddr{Port: options.OverridePort}
 	}
 	return outbound, nil
 }
@@ -89,16 +80,6 @@ func (h *Outbound) DialContext(ctx context.Context, network string, destination 
 	ctx, metadata := adapter.ExtendContext(ctx)
 	metadata.Outbound = h.Tag()
 	metadata.Destination = destination
-	switch h.overrideOption {
-	case 1:
-		destination = h.overrideDestination
-	case 2:
-		newDestination := h.overrideDestination
-		newDestination.Port = destination.Port
-		destination = newDestination
-	case 3:
-		destination.Port = h.overrideDestination.Port
-	}
 	network = N.NetworkName(network)
 	switch network {
 	case N.NetworkTCP:
@@ -118,44 +99,29 @@ func (h *Outbound) ListenPacket(ctx context.Context, destination M.Socksaddr) (n
 	ctx, metadata := adapter.ExtendContext(ctx)
 	metadata.Outbound = h.Tag()
 	metadata.Destination = destination
-	originDestination := destination
-	switch h.overrideOption {
-	case 1:
-		destination = h.overrideDestination
-	case 2:
-		newDestination := h.overrideDestination
-		newDestination.Port = destination.Port
-		destination = newDestination
-	case 3:
-		destination.Port = h.overrideDestination.Port
-	}
-	if h.overrideOption == 0 {
-		h.logger.InfoContext(ctx, "outbound packet connection")
-	} else {
-		h.logger.InfoContext(ctx, "outbound packet connection to ", destination)
-	}
+	h.logger.InfoContext(ctx, "outbound packet connection")
 	conn, err := h.dialer.ListenPacket(ctx, destination)
 	if err != nil {
 		return nil, err
 	}
 	// conn = h.loopBack.NewPacketConn(bufio.NewPacketConn(conn), destination)
-	if originDestination != destination {
-		conn = bufio.NewNATPacketConn(bufio.NewPacketConn(conn), destination, originDestination)
-	}
 	return conn, nil
+}
+
+func (h *Outbound) NewDirectRouteConnection(metadata adapter.InboundContext, routeContext tun.DirectRouteContext, timeout time.Duration) (tun.DirectRouteDestination, error) {
+	ctx := log.ContextWithNewID(h.ctx)
+	destination, err := ping.ConnectDestination(ctx, h.logger, common.MustCast[*dialer.DefaultDialer](h.dialer).DialerForICMPDestination(metadata.Destination.Addr).Control, metadata.Destination.Addr, routeContext, timeout)
+	if err != nil {
+		return nil, err
+	}
+	h.logger.InfoContext(ctx, "linked ", metadata.Network, " connection from ", metadata.Source.AddrString(), " to ", metadata.Destination.AddrString())
+	return destination, nil
 }
 
 func (h *Outbound) DialParallel(ctx context.Context, network string, destination M.Socksaddr, destinationAddresses []netip.Addr) (net.Conn, error) {
 	ctx, metadata := adapter.ExtendContext(ctx)
 	metadata.Outbound = h.Tag()
 	metadata.Destination = destination
-	switch h.overrideOption {
-	case 1, 2:
-		// override address
-		return h.DialContext(ctx, network, destination)
-	case 3:
-		destination.Port = h.overrideDestination.Port
-	}
 	network = N.NetworkName(network)
 	switch network {
 	case N.NetworkTCP:
@@ -170,13 +136,6 @@ func (h *Outbound) DialParallelNetwork(ctx context.Context, network string, dest
 	ctx, metadata := adapter.ExtendContext(ctx)
 	metadata.Outbound = h.Tag()
 	metadata.Destination = destination
-	switch h.overrideOption {
-	case 1, 2:
-		// override address
-		return h.DialContext(ctx, network, destination)
-	case 3:
-		destination.Port = h.overrideDestination.Port
-	}
 	network = N.NetworkName(network)
 	switch network {
 	case N.NetworkTCP:
@@ -191,21 +150,7 @@ func (h *Outbound) ListenSerialNetworkPacket(ctx context.Context, destination M.
 	ctx, metadata := adapter.ExtendContext(ctx)
 	metadata.Outbound = h.Tag()
 	metadata.Destination = destination
-	switch h.overrideOption {
-	case 1:
-		destination = h.overrideDestination
-	case 2:
-		newDestination := h.overrideDestination
-		newDestination.Port = destination.Port
-		destination = newDestination
-	case 3:
-		destination.Port = h.overrideDestination.Port
-	}
-	if h.overrideOption == 0 {
-		h.logger.InfoContext(ctx, "outbound packet connection")
-	} else {
-		h.logger.InfoContext(ctx, "outbound packet connection to ", destination)
-	}
+	h.logger.InfoContext(ctx, "outbound packet connection")
 	conn, newDestination, err := dialer.ListenSerialNetworkPacket(ctx, h.dialer, destination, destinationAddresses, networkStrategy, networkType, fallbackNetworkType, fallbackDelay)
 	if err != nil {
 		return nil, netip.Addr{}, err

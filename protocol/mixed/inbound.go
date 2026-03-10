@@ -4,6 +4,7 @@ import (
 	std_bufio "bufio"
 	"context"
 	"net"
+	"time"
 
 	"github.com/sagernet/sing-box/adapter"
 	"github.com/sagernet/sing-box/adapter/inbound"
@@ -36,17 +37,30 @@ type Inbound struct {
 	listener      *listener.Listener
 	authenticator *auth.Authenticator
 	tlsConfig     tls.ServerConfig
+	udpTimeout    time.Duration
 }
 
 func NewInbound(ctx context.Context, router adapter.Router, logger log.ContextLogger, tag string, options option.HTTPMixedInboundOptions) (adapter.Inbound, error) {
+	var udpTimeout time.Duration
+	if options.UDPTimeout != 0 {
+		udpTimeout = time.Duration(options.UDPTimeout)
+	} else {
+		udpTimeout = C.UDPTimeout
+	}
 	inbound := &Inbound{
 		Adapter:       inbound.NewAdapter(C.TypeMixed, tag),
 		router:        uot.NewRouter(router, logger),
 		logger:        logger,
 		authenticator: auth.NewAuthenticator(options.Users),
+		udpTimeout:    udpTimeout,
 	}
 	if options.TLS != nil {
-		tlsConfig, err := tls.NewServer(ctx, logger, common.PtrValueOrDefault(options.TLS))
+		tlsConfig, err := tls.NewServerWithOptions(tls.ServerOptions{
+			Context:        ctx,
+			Logger:         logger,
+			Options:        common.PtrValueOrDefault(options.TLS),
+			KTLSCompatible: true,
+		})
 		if err != nil {
 			return nil, err
 		}
@@ -111,7 +125,7 @@ func (h *Inbound) newConnection(ctx context.Context, conn net.Conn, metadata ada
 	}
 	switch headerBytes[0] {
 	case socks4.Version, socks5.Version:
-		return socks.HandleConnectionEx(ctx, conn, reader, h.authenticator, adapter.NewUpstreamHandlerEx(metadata, h.newUserConnection, h.streamUserPacketConnection), h.listener, metadata.Source, onClose)
+		return socks.HandleConnectionEx(ctx, conn, reader, h.authenticator, adapter.NewUpstreamHandlerEx(metadata, h.newUserConnection, h.streamUserPacketConnection), h.listener, h.udpTimeout, metadata.Source, onClose)
 	default:
 		return http.HandleConnectionEx(ctx, conn, reader, h.authenticator, adapter.NewUpstreamHandlerEx(metadata, h.newUserConnection, h.streamUserPacketConnection), metadata.Source, onClose)
 	}
