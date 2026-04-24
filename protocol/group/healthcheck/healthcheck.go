@@ -152,6 +152,7 @@ func (h *HealthCheck) InterfaceUpdated() {
 // ReportFailure reports a failure of the node
 func (h *HealthCheck) ReportFailure(outbound adapter.Outbound) {
 	if _, ok := outbound.(adapter.OutboundGroup); ok {
+		// cannot determine which node in the group is failed, so just ignore the report
 		return
 	}
 	tag := outbound.Tag()
