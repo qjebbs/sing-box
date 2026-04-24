@@ -68,6 +68,8 @@ type DNSTransport interface {
 	Type() string
 	Tag() string
 	Dependencies() []string
+	// Reset closes the transport's existing connections so later requests use fresh connections.
+	// Exchanges that are currently using those connections may fail.
 	Reset()
 	Exchange(ctx context.Context, message *dns.Msg) (*dns.Msg, error)
 }

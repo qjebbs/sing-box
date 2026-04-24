@@ -31,14 +31,13 @@ func RegisterTransport(registry *dns.TransportRegistry) {
 }
 
 type Transport struct {
-	*transport.BaseTransport
+	dns.TransportAdapter
 
-	ctx        context.Context
 	dialer     N.Dialer
 	serverAddr M.Socksaddr
 	tlsConfig  tls.Config
 
-	connector *transport.Connector[*quic.Conn]
+	connection *transport.ConnPool[*quic.Conn]
 }
 
 func NewQUIC(ctx context.Context, logger log.ContextLogger, tag string, options option.RemoteTLSDNSServerOptions) (adapter.DNSTransport, error) {
@@ -63,93 +62,76 @@ func NewQUIC(ctx context.Context, logger log.ContextLogger, tag string, options 
 		return nil, E.New("invalid server address: ", serverAddr)
 	}
 
-	t := &Transport{
-		BaseTransport: transport.NewBaseTransport(
-			dns.NewTransportAdapterWithRemoteOptions(C.DNSTypeQUIC, tag, options.RemoteDNSServerOptions),
-			logger,
-		),
-		ctx:        ctx,
-		dialer:     transportDialer,
-		serverAddr: serverAddr,
-		tlsConfig:  tlsConfig,
-	}
-
-	t.connector = transport.NewConnector(t.CloseContext(), t.dial, transport.ConnectorCallbacks[*quic.Conn]{
-		IsClosed: func(connection *quic.Conn) bool {
-			return common.Done(connection.Context())
-		},
-		Close: func(connection *quic.Conn) {
-			connection.CloseWithError(0, "")
-		},
-		Reset: func(connection *quic.Conn) {
-			connection.CloseWithError(0, "")
-		},
-	})
-
-	return t, nil
-}
-
-func (t *Transport) dial(ctx context.Context) (*quic.Conn, error) {
-	conn, err := t.dialer.DialContext(ctx, N.NetworkUDP, t.serverAddr)
-	if err != nil {
-		return nil, E.Cause(err, "dial UDP connection")
-	}
-	earlyConnection, err := sQUIC.DialEarly(
-		ctx,
-		bufio.NewUnbindPacketConn(conn),
-		t.serverAddr.UDPAddr(),
-		t.tlsConfig,
-		nil,
-	)
-	if err != nil {
-		conn.Close()
-		return nil, E.Cause(err, "establish QUIC connection")
-	}
-	return earlyConnection, nil
+	return &Transport{
+		TransportAdapter: dns.NewTransportAdapterWithRemoteOptions(C.DNSTypeQUIC, tag, options.RemoteDNSServerOptions),
+		dialer:           transportDialer,
+		serverAddr:       serverAddr,
+		tlsConfig:        tlsConfig,
+		connection: transport.NewConnPool(transport.ConnPoolOptions[*quic.Conn]{
+			Mode: transport.ConnPoolSingle,
+			IsAlive: func(conn *quic.Conn) bool {
+				return conn != nil && !common.Done(conn.Context())
+			},
+			Close: func(conn *quic.Conn, _ error) {
+				conn.CloseWithError(0, "")
+			},
+		}),
+	}, nil
 }
 
 func (t *Transport) Start(stage adapter.StartStage) error {
 	if stage != adapter.StartStateStart {
 		return nil
 	}
-	err := t.SetStarted()
-	if err != nil {
-		return err
-	}
 	return dialer.InitializeDetour(t.dialer)
 }
 
 func (t *Transport) Close() error {
-	return E.Errors(t.BaseTransport.Close(), t.connector.Close())
+	return t.connection.Close()
 }
 
 func (t *Transport) Reset() {
-	t.connector.Reset()
+	t.connection.Reset()
 }
 
 func (t *Transport) Exchange(ctx context.Context, message *mDNS.Msg) (*mDNS.Msg, error) {
-	if !t.BeginQuery() {
-		return nil, transport.ErrTransportClosed
-	}
-	defer t.EndQuery()
-
 	var (
 		conn     *quic.Conn
 		err      error
 		response *mDNS.Msg
 	)
 	for i := 0; i < 2; i++ {
-		conn, err = t.connector.Get(ctx)
+		conn, _, err = t.connection.Acquire(ctx, func(ctx context.Context) (*quic.Conn, error) {
+			rawConn, err := t.dialer.DialContext(ctx, N.NetworkUDP, t.serverAddr)
+			if err != nil {
+				return nil, E.Cause(err, "dial UDP connection")
+			}
+			earlyConnection, err := sQUIC.DialEarly(
+				ctx,
+				bufio.NewUnbindPacketConn(rawConn),
+				t.serverAddr.UDPAddr(),
+				t.tlsConfig,
+				nil,
+			)
+			if err != nil {
+				rawConn.Close()
+				return nil, E.Cause(err, "establish QUIC connection")
+			}
+			return earlyConnection, nil
+		})
 		if err != nil {
 			return nil, err
 		}
 		response, err = t.exchange(ctx, message, conn)
 		if err == nil {
+			t.connection.Release(conn, true)
 			return response, nil
 		} else if !isQUICRetryError(err) {
+			t.connection.Release(conn, true)
 			return nil, err
 		} else {
-			t.connector.Reset()
+			t.connection.Release(conn, true)
+			t.Reset()
 			continue
 		}
 	}

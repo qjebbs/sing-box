@@ -77,26 +77,38 @@ func getServiceName(service any) string {
 func Start(logger log.ContextLogger, stage StartStage, services ...Lifecycle) error {
 	for _, service := range services {
 		name := getServiceName(service)
-		logger.Trace(stage, " ", name)
-		startTime := time.Now()
+		done := LogElapsed(logger, stage, " ", name)
 		err := service.Start(stage)
+		done()
 		if err != nil {
 			return err
 		}
-		logger.Trace(stage, " ", name, " completed (", F.Seconds(time.Since(startTime).Seconds()), "s)")
 	}
 	return nil
 }
 
 func StartNamed(logger log.ContextLogger, stage StartStage, services []LifecycleService) error {
 	for _, service := range services {
-		logger.Trace(stage, " ", service.Name())
-		startTime := time.Now()
+		done := LogElapsed(logger, stage, " ", service.Name())
 		err := service.Start(stage)
+		done()
 		if err != nil {
 			return E.Cause(err, stage.String(), " ", service.Name())
 		}
-		logger.Trace(stage, " ", service.Name(), " completed (", F.Seconds(time.Since(startTime).Seconds()), "s)")
 	}
 	return nil
+}
+
+func LogElapsed(logger log.ContextLogger, description ...any) func() {
+	prefix := F.ToString(description...)
+	startTime := time.Now()
+	timer := time.AfterFunc(time.Second, func() {
+		logger.Trace(prefix, "...")
+	})
+	return func() {
+		if timer.Stop() {
+			return
+		}
+		logger.Trace(prefix, " completed (", F.Seconds(time.Since(startTime).Seconds()), "s)")
+	}
 }

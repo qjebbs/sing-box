@@ -3,6 +3,7 @@ package libbox
 import (
 	"bytes"
 	"context"
+	"net/netip"
 	"os"
 
 	box "github.com/sagernet/sing-box"
@@ -141,6 +142,10 @@ func (s *platformInterfaceStub) UsePlatformNotification() bool {
 }
 
 func (s *platformInterfaceStub) SendNotification(notification *adapter.Notification) error {
+	return nil
+}
+
+func (s *platformInterfaceStub) MyInterfaceAddress() []netip.Addr {
 	return nil
 }
 
