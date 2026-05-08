@@ -66,9 +66,7 @@ func (m *Manager) startProviders(stage adapter.StartStage, providers []adapter.P
 			if err != nil {
 				return E.Cause(err, "start provider", "[", providerTag, "]")
 			}
-		} else if stage == adapter.StartStatePostStart {
-			// for legacy provider, start it in post start stage, so that outbounds added by the provider
-			// do not interfere with the startup process of existing outbounds
+		} else if stage == adapter.StartStateStart {
 			if starter, isStarter := providerToStart.(interface {
 				Start() error
 			}); isStarter {

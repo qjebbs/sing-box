@@ -153,7 +153,10 @@ func (s *Remote) Start(stage adapter.StartStage) error {
 	defer s.Unlock()
 
 	switch stage {
-	case adapter.StartStateInitialize:
+	case adapter.StartStateStart:
+		if s.cancel != nil {
+			return nil
+		}
 		if s.downloadDetour != "" {
 			outbound, loaded := s.outbound.Outbound(s.downloadDetour)
 			if !loaded {
@@ -162,13 +165,6 @@ func (s *Remote) Start(stage adapter.StartStage) error {
 			s.detour = outbound
 		} else {
 			s.detour = s.outbound.Default()
-		}
-		return nil
-	case adapter.StartStatePostStart:
-		// start in post start stage, so that outbounds added by the provider
-		// do not interfere with the startup process of existing outbounds
-		if s.cancel != nil {
-			return nil
 		}
 		s.ctx, s.cancel = context.WithCancel(s.ctx)
 		go s.refreshLoop()
@@ -418,6 +414,9 @@ func (s *Remote) downloadWithCache() (*fileContent, error) {
 }
 
 func (s *Remote) download() (*fileContent, error) {
+	if s.detour == nil {
+		return nil, E.New("no detour available for download")
+	}
 	client := &http.Client{
 		Timeout: time.Second * 30,
 		Transport: &http.Transport{
