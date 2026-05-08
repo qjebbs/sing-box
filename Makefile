@@ -42,10 +42,10 @@ linux-arm64:
 	GOOS=linux GOARCH=arm64 go build $(MAIN_PARAMS) -o $(DIST)/$(NAME)-linux-arm64 $(MAIN)
 
 tproxy-amd64:
-	GOOS=linux GOARCH=amd64 go build $(PARAMS) -tags "$(TAGS_TPROXY)" -o $(DIST)/$(NAME)-linux-amd64 $(MAIN)
+	GOOS=linux GOARCH=amd64 go build $(PARAMS) -tags "$(TAGS_TPROXY)" -o $(DIST)/$(NAME)-linux-amd64-tproxy $(MAIN)
 
 tproxy-arm64:
-	GOOS=linux GOARCH=arm64 go build $(PARAMS) -tags "$(TAGS_TPROXY)" -o $(DIST)/$(NAME)-linux-arm64 $(MAIN)
+	GOOS=linux GOARCH=arm64 go build $(PARAMS) -tags "$(TAGS_TPROXY)" -o $(DIST)/$(NAME)-linux-arm64-tproxy $(MAIN)
 
 darwin-amd64:
 	GOOS=darwin GOARCH=amd64 go build $(MAIN_PARAMS) -o $(DIST)/$(NAME)-darwin-amd64 $(MAIN)
