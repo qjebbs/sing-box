@@ -40,7 +40,7 @@ require (
 	github.com/sagernet/sing v0.8.12-0.20260625092856-31bbf21d4b12
 	github.com/sagernet/sing-cloudflared v0.1.1
 	github.com/sagernet/sing-mux v0.3.5
-	github.com/sagernet/sing-quic v0.6.2-0.20260520073201-c8655743eb6e
+	github.com/sagernet/sing-quic v0.6.2-0.20260525051024-9467ede27fb7
 	github.com/sagernet/sing-shadowsocks v0.2.8
 	github.com/sagernet/sing-shadowsocks2 v0.2.1
 	github.com/sagernet/sing-shadowtls v0.2.1
