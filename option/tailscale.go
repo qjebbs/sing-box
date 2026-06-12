@@ -111,7 +111,7 @@ func (d DERPSTUNListenOptions) MarshalJSON() ([]byte, error) {
 }
 
 func (d *DERPSTUNListenOptions) UnmarshalJSON(bytes []byte) error {
-	var portValue Port
+	var portValue uint16
 	err := json.Unmarshal(bytes, &portValue)
 	if err == nil {
 		d.Enabled = true

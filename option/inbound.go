@@ -2,7 +2,6 @@ package option
 
 import (
 	"context"
-	"strconv"
 	"time"
 
 	E "github.com/sagernet/sing/common/exceptions"
@@ -66,7 +65,7 @@ type InboundOptions struct {
 
 type ListenOptions struct {
 	Listen               *badoption.Addr    `json:"listen,omitempty"`
-	ListenPort           Port               `json:"listen_port,omitempty"`
+	ListenPort           uint16             `json:"listen_port,omitempty"`
 	BindInterface        string             `json:"bind_interface,omitempty"`
 	RoutingMark          FwMark             `json:"routing_mark,omitempty"`
 	ReuseAddr            bool               `json:"reuse_addr,omitempty"`
@@ -115,44 +114,4 @@ func (o *ListenOptions) TakeListenOptions() ListenOptions {
 
 func (o *ListenOptions) ReplaceListenOptions(options ListenOptions) {
 	*o = options
-}
-
-type Port uint16
-
-func (p Port) Build() uint16 {
-	return uint16(p)
-}
-
-func (p Port) MarshalJSON() ([]byte, error) {
-	if p == 0 {
-		return json.Marshal("")
-	}
-	return json.Marshal(uint16(p))
-}
-
-func (p *Port) UnmarshalJSON(content []byte) error {
-	var value uint16
-	err := json.Unmarshal(content, &value)
-	if err == nil {
-		*p = Port(value)
-		return nil
-	}
-	var valueString string
-	err = json.Unmarshal(content, &valueString)
-	if err != nil {
-		return err
-	}
-	if valueString == "" {
-		*p = 0
-		return nil
-	}
-	valueNumber, err := strconv.ParseUint(valueString, 10, 16)
-	if err != nil {
-		return E.New("invalid port: ", valueString)
-	}
-	if valueNumber > 65535 {
-		return E.New("port number out of range: ", valueString)
-	}
-	*p = Port(valueNumber)
-	return nil
 }
