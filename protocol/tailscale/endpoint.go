@@ -44,6 +44,7 @@ import (
 	"github.com/sagernet/sing/common/ntp"
 	"github.com/sagernet/sing/service"
 	"github.com/sagernet/sing/service/filemanager"
+	tailscaleroot "github.com/sagernet/tailscale"
 	_ "github.com/sagernet/tailscale/feature/relayserver"
 	"github.com/sagernet/tailscale/ipn"
 	tsDNS "github.com/sagernet/tailscale/net/dns"
@@ -70,7 +71,7 @@ var (
 )
 
 func init() {
-	version.SetVersion("sing-box " + C.Version)
+	version.SetVersion(tailscaleroot.VersionDotTxt + " (sing-box " + C.Version + ")")
 }
 
 func RegisterEndpoint(registry *endpoint.Registry) {
@@ -105,12 +106,14 @@ type Endpoint struct {
 	relayServerPort            *uint16
 	relayServerStaticEndpoints []netip.AddrPort
 
-	udpTimeout time.Duration
+	udpTimeout  time.Duration
+	icmpTimeout time.Duration
 
 	systemInterface     bool
 	systemInterfaceName string
 	systemInterfaceMTU  uint32
 	serverStarted       bool
+	started             atomic.Bool
 	systemTun           tun.Tun
 	systemDialer        *dialer.DefaultDialer
 	fallbackTCPCloser   func()
@@ -256,6 +259,7 @@ func NewEndpoint(ctx context.Context, router adapter.Router, logger log.ContextL
 		relayServerPort:            options.RelayServerPort,
 		relayServerStaticEndpoints: options.RelayServerStaticEndpoints,
 		udpTimeout:                 udpTimeout,
+		icmpTimeout:                C.ICMPTimeout,
 		systemInterface:            options.SystemInterface,
 		systemInterfaceName:        options.SystemInterfaceName,
 		systemInterfaceMTU:         options.SystemInterfaceMTU,
@@ -388,7 +392,7 @@ func (t *Endpoint) postStart() error {
 	if gErr != nil {
 		return gonet.TranslateNetstackError(gErr)
 	}
-	icmpForwarder := tun.NewICMPForwarder(t.ctx, ipStack, t, t.udpTimeout)
+	icmpForwarder := tun.NewICMPForwarder(t.ctx, ipStack, t, t.icmpTimeout)
 	ipStack.SetTransportProtocolHandler(icmp.ProtocolNumber4, icmpForwarder.HandlePacket)
 	ipStack.SetTransportProtocolHandler(icmp.ProtocolNumber6, icmpForwarder.HandlePacket)
 	t.stack = ipStack
@@ -422,6 +426,7 @@ func (t *Endpoint) postStart() error {
 	}
 	t.filter = localBackend.ExportFilter()
 	go t.watchState()
+	t.started.Store(true)
 	return nil
 }
 
@@ -485,6 +490,7 @@ func (t *Endpoint) watchState() {
 
 func (t *Endpoint) Close() error {
 	var err error
+	t.started.Store(false)
 	if t.serverStarted {
 		err = common.Close(common.PtrOrNil(t.server))
 		t.serverStarted = false
@@ -508,6 +514,9 @@ func (t *Endpoint) DialContext(ctx context.Context, network string, destination 
 		t.logger.InfoContext(ctx, "outbound connection to ", destination)
 	case N.NetworkUDP:
 		t.logger.InfoContext(ctx, "outbound packet connection to ", destination)
+	}
+	if !t.started.Load() {
+		return nil, E.New("Tailscale is not ready yet")
 	}
 	if destination.IsDomain() {
 		destinationAddresses, err := t.dnsRouter.Lookup(ctx, destination.Fqdn, adapter.DNSQueryOptions{})
@@ -565,6 +574,9 @@ func (t *Endpoint) DialContext(ctx context.Context, network string, destination 
 }
 
 func (t *Endpoint) listenPacketWithAddress(ctx context.Context, destination M.Socksaddr) (net.PacketConn, error) {
+	if !t.started.Load() {
+		return nil, E.New("Tailscale is not ready yet")
+	}
 	if t.systemDialer != nil {
 		return t.systemDialer.ListenPacket(ctx, destination)
 	}
@@ -632,6 +644,9 @@ func (t *Endpoint) ListenPacket(ctx context.Context, destination M.Socksaddr) (n
 }
 
 func (t *Endpoint) PrepareConnection(network string, source M.Socksaddr, destination M.Socksaddr, routeContext tun.DirectRouteContext, timeout time.Duration) (tun.DirectRouteDestination, error) {
+	if !t.started.Load() {
+		return nil, E.New("Tailscale is not ready yet")
+	}
 	tsFilter := t.filter.Load()
 	if tsFilter != nil {
 		var ipProto ipproto.Proto
@@ -725,6 +740,9 @@ func (t *Endpoint) NewPacketConnectionEx(ctx context.Context, conn N.PacketConn,
 }
 
 func (t *Endpoint) NewDirectRouteConnection(metadata adapter.InboundContext, routeContext tun.DirectRouteContext, timeout time.Duration) (tun.DirectRouteDestination, error) {
+	if !t.started.Load() {
+		return nil, E.New("Tailscale is not ready yet")
+	}
 	ctx := log.ContextWithNewID(t.ctx)
 	var destination tun.DirectRouteDestination
 	var err error

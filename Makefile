@@ -60,23 +60,17 @@ install:
 	go build -o $(PREFIX)/bin/$(NAME) $(MAIN_PARAMS) $(MAIN)
 
 fmt:
-	@gofumpt -l -w .
-	@gofmt -s -w .
-	@gci write --custom-order -s standard -s "prefix(github.com/sagernet/)" -s "default" .
+	@golangci-lint fmt
 
 fmt_docs:
 	go run ./cmd/internal/format_docs
-
-fmt_install:
-	go install -v mvdan.cc/gofumpt@latest
-	go install -v github.com/daixiang0/gci@latest
 
 lint:
 	GOOS=linux golangci-lint run ./...
 	GOOS=android golangci-lint run ./...
 	GOOS=windows golangci-lint run ./...
 	GOOS=darwin golangci-lint run ./...
-	GOOS=freebsd golangci-lint run ./...
+#	GOOS=freebsd golangci-lint run ./...
 
 lint_install:
 	go install -v github.com/golangci/golangci-lint/v2/cmd/golangci-lint@latest
@@ -122,10 +116,13 @@ upload_android:
 	mkdir -p dist/release_android
 	cp ../sing-box-for-android/app/build/outputs/apk/other/release/*.apk dist/release_android
 	cp ../sing-box-for-android/app/build/outputs/apk/otherLegacy/release/*.apk dist/release_android
+	VERSION_CODE=$$(grep VERSION_CODE ../sing-box-for-android/version.properties | cut -d= -f2); \
+	VERSION_NAME=$$(grep VERSION_NAME ../sing-box-for-android/version.properties | cut -d= -f2); \
+	printf '{\n  "version_code": %s,\n  "version_name": "%s"\n}\n' "$$VERSION_CODE" "$$VERSION_NAME" > dist/release_android/SFA-version-metadata.json
 	ghr --replace --draft --prerelease -p 5 "v${VERSION}" dist/release_android
 	rm -rf dist/release_android
 
-release_android: lib_android update_android_version build_android upload_android
+release_android: build_android upload_android
 
 publish_android:
 	cd ../sing-box-for-android && ./gradlew :app:publishPlayReleaseBundle && ./gradlew --stop
@@ -198,13 +195,30 @@ upload_macos_pkg:
 	ghr --replace --draft --prerelease "v${VERSION}" "dist/SFM/SFM-${VERSION}-Intel.pkg"
 	ghr --replace --draft --prerelease "v${VERSION}" "dist/SFM/SFM-${VERSION}-Universal.pkg"
 
+replace_macos_pkg:
+	mkdir -p dist/SFM
+	cp ../sing-box-for-apple/build/SFM-Apple.pkg "dist/SFM/SFM-${VERSION}-Apple.pkg"
+	cp ../sing-box-for-apple/build/SFM-Intel.pkg "dist/SFM/SFM-${VERSION}-Intel.pkg"
+	cp ../sing-box-for-apple/build/SFM-Universal.pkg "dist/SFM/SFM-${VERSION}-Universal.pkg"
+	ghr --replace "v${VERSION}" "dist/SFM/SFM-${VERSION}-Apple.pkg"
+	ghr --replace "v${VERSION}" "dist/SFM/SFM-${VERSION}-Intel.pkg"
+	ghr --replace "v${VERSION}" "dist/SFM/SFM-${VERSION}-Universal.pkg"
+
 upload_macos_dsyms:
 	mkdir -p dist/SFM
 	cd ../sing-box-for-apple/build/SFM.System-universal.xcarchive && zip -r SFM.dSYMs.zip dSYMs
 	cp ../sing-box-for-apple/build/SFM.System-universal.xcarchive/SFM.dSYMs.zip "dist/SFM/SFM-${VERSION}.dSYMs.zip"
 	ghr --replace --draft --prerelease "v${VERSION}" "dist/SFM/SFM-${VERSION}.dSYMs.zip"
 
+replace_macos_dsyms:
+	mkdir -p dist/SFM
+	cd ../sing-box-for-apple/build/SFM.System-universal.xcarchive && zip -r SFM.dSYMs.zip dSYMs
+	cp ../sing-box-for-apple/build/SFM.System-universal.xcarchive/SFM.dSYMs.zip "dist/SFM/SFM-${VERSION}.dSYMs.zip"
+	ghr --replace "v${VERSION}" "dist/SFM/SFM-${VERSION}.dSYMs.zip"
+
 release_macos_standalone: build_macos_pkg notarize_macos_pkg upload_macos_pkg upload_macos_dsyms
+
+replace_macos_standalone: build_macos_pkg notarize_macos_pkg upload_macos_pkg upload_macos_dsyms
 
 build_tvos:
 	cd ../sing-box-for-apple && \

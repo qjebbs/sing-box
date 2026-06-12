@@ -45,10 +45,8 @@ package certificate
 
 import "crypto/x509"
 
-var mozillaIncluded *x509.CertPool
-
-func init() {
-	mozillaIncluded = x509.NewCertPool()
+func newMozillaIncluded() *x509.CertPool {
+	pool := x509.NewCertPool()
 `)
 	for {
 		record, err := reader.Read()
@@ -63,14 +61,14 @@ func init() {
 		generated.WriteString("\n	// ")
 		generated.WriteString(record[nameIndex])
 		generated.WriteString("\n")
-		generated.WriteString("	mozillaIncluded.AppendCertsFromPEM([]byte(`")
+		generated.WriteString("	pool.AppendCertsFromPEM([]byte(`")
 		cert := record[certIndex]
 		// Remove single quotes
 		cert = cert[1 : len(cert)-1]
 		generated.WriteString(cert)
 		generated.WriteString("`))\n")
 	}
-	generated.WriteString("}\n")
+	generated.WriteString("\treturn pool\n}\n")
 	return os.WriteFile("common/certificate/mozilla.go", []byte(generated.String()), 0o644)
 }
 
@@ -131,10 +129,8 @@ package certificate
 
 import "crypto/x509"
 
-var chromeIncluded *x509.CertPool
-
-func init() {
-	chromeIncluded = x509.NewCertPool()
+func newChromeIncluded() *x509.CertPool {
+	pool := x509.NewCertPool()
 `)
 	for {
 		record, err := reader.Read()
@@ -152,7 +148,7 @@ func init() {
 		generated.WriteString("\n	// ")
 		generated.WriteString(record[subjectIndex])
 		generated.WriteString("\n")
-		generated.WriteString("	chromeIncluded.AppendCertsFromPEM([]byte(`")
+		generated.WriteString("	pool.AppendCertsFromPEM([]byte(`")
 		cert := record[certIndex]
 		// Remove single quotes if present
 		if len(cert) > 0 && cert[0] == '\'' {
@@ -161,6 +157,6 @@ func init() {
 		generated.WriteString(cert)
 		generated.WriteString("`))\n")
 	}
-	generated.WriteString("}\n")
+	generated.WriteString("\treturn pool\n}\n")
 	return os.WriteFile("common/certificate/chrome.go", []byte(generated.String()), 0o644)
 }

@@ -4,13 +4,11 @@ package certificate
 
 import "crypto/x509"
 
-var chromeIncluded *x509.CertPool
-
-func init() {
-	chromeIncluded = x509.NewCertPool()
+func newChromeIncluded() *x509.CertPool {
+	pool := x509.NewCertPool()
 
 	// CN=Actalis Authentication Root CA; O=Actalis S.p.A./03358520967; L=Milan; C=IT
-	chromeIncluded.AppendCertsFromPEM([]byte(`-----BEGIN CERTIFICATE-----
+	pool.AppendCertsFromPEM([]byte(`-----BEGIN CERTIFICATE-----
 MIIFuzCCA6OgAwIBAgIIVwoRl0LE48wwDQYJKoZIhvcNAQELBQAwazELMAkGA1UE
 BhMCSVQxDjAMBgNVBAcMBU1pbGFuMSMwIQYDVQQKDBpBY3RhbGlzIFMucC5BLi8w
 MzM1ODUyMDk2NzEnMCUGA1UEAwweQWN0YWxpcyBBdXRoZW50aWNhdGlvbiBSb290
@@ -45,7 +43,7 @@ LnPqZih4zR0Uv6CPLy64Lo7yFIrM6bV8+2ydDKXhlg==
 -----END CERTIFICATE-----`))
 
 	// CN=TunTrust Root CA; O=Agence Nationale de Certification Electronique; C=TN
-	chromeIncluded.AppendCertsFromPEM([]byte(`-----BEGIN CERTIFICATE-----
+	pool.AppendCertsFromPEM([]byte(`-----BEGIN CERTIFICATE-----
 MIIFszCCA5ugAwIBAgIUEwLV4kBMkkaGFmddtLu7sms+/BMwDQYJKoZIhvcNAQEL
 BQAwYTELMAkGA1UEBhMCVE4xNzA1BgNVBAoMLkFnZW5jZSBOYXRpb25hbGUgZGUg
 Q2VydGlmaWNhdGlvbiBFbGVjdHJvbmlxdWUxGTAXBgNVBAMMEFR1blRydXN0IFJv
@@ -80,7 +78,7 @@ d9qDRIueVSjAi1jTkD5OGwDxFa2DK5o=
 -----END CERTIFICATE-----`))
 
 	// CN=Amazon Root CA 4; O=Amazon; C=US
-	chromeIncluded.AppendCertsFromPEM([]byte(`-----BEGIN CERTIFICATE-----
+	pool.AppendCertsFromPEM([]byte(`-----BEGIN CERTIFICATE-----
 MIIB8jCCAXigAwIBAgITBmyf18G7EEwpQ+Vxe3ssyBrBDjAKBggqhkjOPQQDAzA5
 MQswCQYDVQQGEwJVUzEPMA0GA1UEChMGQW1hem9uMRkwFwYDVQQDExBBbWF6b24g
 Um9vdCBDQSA0MB4XDTE1MDUyNjAwMDAwMFoXDTQwMDUyNjAwMDAwMFowOTELMAkG
@@ -95,7 +93,7 @@ CkcO8DdZEv8tmZQoTipPNU0zWgIxAOp1AE47xDqUEpHJWEadIRNyp4iciuRMStuW
 -----END CERTIFICATE-----`))
 
 	// CN=Amazon Root CA 1; O=Amazon; C=US
-	chromeIncluded.AppendCertsFromPEM([]byte(`-----BEGIN CERTIFICATE-----
+	pool.AppendCertsFromPEM([]byte(`-----BEGIN CERTIFICATE-----
 MIIDQTCCAimgAwIBAgITBmyfz5m/jAo54vB4ikPmljZbyjANBgkqhkiG9w0BAQsF
 ADA5MQswCQYDVQQGEwJVUzEPMA0GA1UEChMGQW1hem9uMRkwFwYDVQQDExBBbWF6
 b24gUm9vdCBDQSAxMB4XDTE1MDUyNjAwMDAwMFoXDTM4MDExNzAwMDAwMFowOTEL
@@ -117,7 +115,7 @@ rqXRfboQnoZsG4q5WTP468SQvvG5
 -----END CERTIFICATE-----`))
 
 	// CN=Amazon Root CA 2; O=Amazon; C=US
-	chromeIncluded.AppendCertsFromPEM([]byte(`-----BEGIN CERTIFICATE-----
+	pool.AppendCertsFromPEM([]byte(`-----BEGIN CERTIFICATE-----
 MIIFQTCCAymgAwIBAgITBmyf0pY1hp8KD+WGePhbJruKNzANBgkqhkiG9w0BAQwF
 ADA5MQswCQYDVQQGEwJVUzEPMA0GA1UEChMGQW1hem9uMRkwFwYDVQQDExBBbWF6
 b24gUm9vdCBDQSAyMB4XDTE1MDUyNjAwMDAwMFoXDTQwMDUyNjAwMDAwMFowOTEL
@@ -150,7 +148,7 @@ n749sSmvZ6ES8lgQGVMDMBu4Gon2nL2XA46jCfMdiyHxtN/kHNGfZQIG6lzWE7OE
 -----END CERTIFICATE-----`))
 
 	// CN=Amazon Root CA 3; O=Amazon; C=US
-	chromeIncluded.AppendCertsFromPEM([]byte(`-----BEGIN CERTIFICATE-----
+	pool.AppendCertsFromPEM([]byte(`-----BEGIN CERTIFICATE-----
 MIIBtjCCAVugAwIBAgITBmyf1XSXNmY/Owua2eiedgPySjAKBggqhkjOPQQDAjA5
 MQswCQYDVQQGEwJVUzEPMA0GA1UEChMGQW1hem9uMRkwFwYDVQQDExBBbWF6b24g
 Um9vdCBDQSAzMB4XDTE1MDUyNjAwMDAwMFoXDTQwMDUyNjAwMDAwMFowOTELMAkG
@@ -164,7 +162,7 @@ YyRIHN8wfdVoOw==
 -----END CERTIFICATE-----`))
 
 	// CN=Certum Trusted Network CA; OU=Certum Certification Authority; O=Unizeto Technologies S.A.; C=PL
-	chromeIncluded.AppendCertsFromPEM([]byte(`-----BEGIN CERTIFICATE-----
+	pool.AppendCertsFromPEM([]byte(`-----BEGIN CERTIFICATE-----
 MIIDuzCCAqOgAwIBAgIDBETAMA0GCSqGSIb3DQEBBQUAMH4xCzAJBgNVBAYTAlBM
 MSIwIAYDVQQKExlVbml6ZXRvIFRlY2hub2xvZ2llcyBTLkEuMScwJQYDVQQLEx5D
 ZXJ0dW0gQ2VydGlmaWNhdGlvbiBBdXRob3JpdHkxIjAgBgNVBAMTGUNlcnR1bSBU
@@ -188,7 +186,7 @@ VoNzcOSGGtIxQbovvi0TWnZvTuhOgQ4/WwMioBK+ZlgRSssDxLQqKi2WF+A5VLxI
 -----END CERTIFICATE-----`))
 
 	// CN=Certum EC-384 CA; OU=Certum Certification Authority; O=Asseco Data Systems S.A.; C=PL
-	chromeIncluded.AppendCertsFromPEM([]byte(`-----BEGIN CERTIFICATE-----
+	pool.AppendCertsFromPEM([]byte(`-----BEGIN CERTIFICATE-----
 MIICZTCCAeugAwIBAgIQeI8nXIESUiClBNAt3bpz9DAKBggqhkjOPQQDAzB0MQsw
 CQYDVQQGEwJQTDEhMB8GA1UEChMYQXNzZWNvIERhdGEgU3lzdGVtcyBTLkEuMScw
 JQYDVQQLEx5DZXJ0dW0gQ2VydGlmaWNhdGlvbiBBdXRob3JpdHkxGTAXBgNVBAMT
@@ -205,7 +203,7 @@ nvuRlydd3LBbMHHOXjgaatkl5+r3YZJW+OraNsKHZZYuciUvf9/DE8k=
 -----END CERTIFICATE-----`))
 
 	// CN=Certum Trusted Root CA; OU=Certum Certification Authority; O=Asseco Data Systems S.A.; C=PL
-	chromeIncluded.AppendCertsFromPEM([]byte(`-----BEGIN CERTIFICATE-----
+	pool.AppendCertsFromPEM([]byte(`-----BEGIN CERTIFICATE-----
 MIIFwDCCA6igAwIBAgIQHr9ZULjJgDdMBvfrVU+17TANBgkqhkiG9w0BAQ0FADB6
 MQswCQYDVQQGEwJQTDEhMB8GA1UEChMYQXNzZWNvIERhdGEgU3lzdGVtcyBTLkEu
 MScwJQYDVQQLEx5DZXJ0dW0gQ2VydGlmaWNhdGlvbiBBdXRob3JpdHkxHzAdBgNV
@@ -240,7 +238,7 @@ E2Efv4WstK2tBZQIgx51F9NxO5NQI1mg7TyRVJ12AMXDuDjb
 -----END CERTIFICATE-----`))
 
 	// CN=Certum Trusted Network CA 2; OU=Certum Certification Authority; O=Unizeto Technologies S.A.; C=PL
-	chromeIncluded.AppendCertsFromPEM([]byte(`-----BEGIN CERTIFICATE-----
+	pool.AppendCertsFromPEM([]byte(`-----BEGIN CERTIFICATE-----
 MIIF0jCCA7qgAwIBAgIQIdbQSk8lD8kyN/yqXhKN6TANBgkqhkiG9w0BAQ0FADCB
 gDELMAkGA1UEBhMCUEwxIjAgBgNVBAoTGVVuaXpldG8gVGVjaG5vbG9naWVzIFMu
 QS4xJzAlBgNVBAsTHkNlcnR1bSBDZXJ0aWZpY2F0aW9uIEF1dGhvcml0eTEkMCIG
@@ -276,7 +274,7 @@ DrW5viSP
 -----END CERTIFICATE-----`))
 
 	// CN=Autoridad de Certificacion Firmaprofesional CIF A62634068; C=ES
-	chromeIncluded.AppendCertsFromPEM([]byte(`-----BEGIN CERTIFICATE-----
+	pool.AppendCertsFromPEM([]byte(`-----BEGIN CERTIFICATE-----
 MIIGFDCCA/ygAwIBAgIIG3Dp0v+ubHEwDQYJKoZIhvcNAQELBQAwUTELMAkGA1UE
 BhMCRVMxQjBABgNVBAMMOUF1dG9yaWRhZCBkZSBDZXJ0aWZpY2FjaW9uIEZpcm1h
 cHJvZmVzaW9uYWwgQ0lGIEE2MjYzNDA2ODAeFw0xNDA5MjMxNTIyMDdaFw0zNjA1
@@ -313,7 +311,7 @@ GbqEZycPvEJdvSRUDewdcAZfpLz6IHxV
 -----END CERTIFICATE-----`))
 
 	// CN=ANF Secure Server Root CA; OU=ANF CA Raiz; O=ANF Autoridad de Certificacion; C=ES; SerialNumber=G63287510
-	chromeIncluded.AppendCertsFromPEM([]byte(`-----BEGIN CERTIFICATE-----
+	pool.AppendCertsFromPEM([]byte(`-----BEGIN CERTIFICATE-----
 MIIF7zCCA9egAwIBAgIIDdPjvGz5a7EwDQYJKoZIhvcNAQELBQAwgYQxEjAQBgNV
 BAUTCUc2MzI4NzUxMDELMAkGA1UEBhMCRVMxJzAlBgNVBAoTHkFORiBBdXRvcmlk
 YWQgZGUgQ2VydGlmaWNhY2lvbjEUMBIGA1UECxMLQU5GIENBIFJhaXoxIjAgBgNV
@@ -349,7 +347,7 @@ tt7VMVgWglvquxl1AnMaykgaIZOQCo6ThKd9OyMYkomgjaw=
 -----END CERTIFICATE-----`))
 
 	// CN=Buypass Class 2 Root CA; O=Buypass AS-983163327; C=NO
-	chromeIncluded.AppendCertsFromPEM([]byte(`-----BEGIN CERTIFICATE-----
+	pool.AppendCertsFromPEM([]byte(`-----BEGIN CERTIFICATE-----
 MIIFWTCCA0GgAwIBAgIBAjANBgkqhkiG9w0BAQsFADBOMQswCQYDVQQGEwJOTzEd
 MBsGA1UECgwUQnV5cGFzcyBBUy05ODMxNjMzMjcxIDAeBgNVBAMMF0J1eXBhc3Mg
 Q2xhc3MgMiBSb290IENBMB4XDTEwMTAyNjA4MzgwM1oXDTQwMTAyNjA4MzgwM1ow
@@ -382,7 +380,7 @@ Y11aWOIv4x3kqdbQCtCev9eBCfHJxyYNrJgWVqA=
 -----END CERTIFICATE-----`))
 
 	// CN=Buypass Class 3 Root CA; O=Buypass AS-983163327; C=NO
-	chromeIncluded.AppendCertsFromPEM([]byte(`-----BEGIN CERTIFICATE-----
+	pool.AppendCertsFromPEM([]byte(`-----BEGIN CERTIFICATE-----
 MIIFWTCCA0GgAwIBAgIBAjANBgkqhkiG9w0BAQsFADBOMQswCQYDVQQGEwJOTzEd
 MBsGA1UECgwUQnV5cGFzcyBBUy05ODMxNjMzMjcxIDAeBgNVBAMMF0J1eXBhc3Mg
 Q2xhc3MgMyBSb290IENBMB4XDTEwMTAyNjA4Mjg1OFoXDTQwMTAyNjA4Mjg1OFow
@@ -415,7 +413,7 @@ u79leNKGef9JOxqDDPDeeOzI8k1MGt6CKfjBWtrt7uYnXuhF0J0cUahoq0Tj0Itq
 -----END CERTIFICATE-----`))
 
 	// CN=Certainly Root R1; O=Certainly; C=US
-	chromeIncluded.AppendCertsFromPEM([]byte(`-----BEGIN CERTIFICATE-----
+	pool.AppendCertsFromPEM([]byte(`-----BEGIN CERTIFICATE-----
 MIIFRzCCAy+gAwIBAgIRAI4P+UuQcWhlM1T01EQ5t+AwDQYJKoZIhvcNAQELBQAw
 PTELMAkGA1UEBhMCVVMxEjAQBgNVBAoTCUNlcnRhaW5seTEaMBgGA1UEAxMRQ2Vy
 dGFpbmx5IFJvb3QgUjEwHhcNMjEwNDAxMDAwMDAwWhcNNDYwNDAxMDAwMDAwWjA9
@@ -448,7 +446,7 @@ OV+KmalBWQewLK8=
 -----END CERTIFICATE-----`))
 
 	// CN=Certainly Root E1; O=Certainly; C=US
-	chromeIncluded.AppendCertsFromPEM([]byte(`-----BEGIN CERTIFICATE-----
+	pool.AppendCertsFromPEM([]byte(`-----BEGIN CERTIFICATE-----
 MIIB9zCCAX2gAwIBAgIQBiUzsUcDMydc+Y2aub/M+DAKBggqhkjOPQQDAzA9MQsw
 CQYDVQQGEwJVUzESMBAGA1UEChMJQ2VydGFpbmx5MRowGAYDVQQDExFDZXJ0YWlu
 bHkgUm9vdCBFMTAeFw0yMTA0MDEwMDAwMDBaFw00NjA0MDEwMDAwMDBaMD0xCzAJ
@@ -463,7 +461,7 @@ BtjOiQRINzf43TNRnXCve1XYAS59BWQOhriR
 -----END CERTIFICATE-----`))
 
 	// CN=Certigna; O=Dhimyotis; C=FR
-	chromeIncluded.AppendCertsFromPEM([]byte(`-----BEGIN CERTIFICATE-----
+	pool.AppendCertsFromPEM([]byte(`-----BEGIN CERTIFICATE-----
 MIIDqDCCApCgAwIBAgIJAP7c4wEPyUj/MA0GCSqGSIb3DQEBBQUAMDQxCzAJBgNV
 BAYTAkZSMRIwEAYDVQQKDAlEaGlteW90aXMxETAPBgNVBAMMCENlcnRpZ25hMB4X
 DTA3MDYyOTE1MTMwNVoXDTI3MDYyOTE1MTMwNVowNDELMAkGA1UEBhMCRlIxEjAQ
@@ -487,7 +485,7 @@ WyH8EZE0vkHve52Xdf+XlcCWWC/qu0bXu+TZLg==
 -----END CERTIFICATE-----`))
 
 	// CN=Certigna Root CA; OU=0002 48146308100036; O=Dhimyotis; C=FR
-	chromeIncluded.AppendCertsFromPEM([]byte(`-----BEGIN CERTIFICATE-----
+	pool.AppendCertsFromPEM([]byte(`-----BEGIN CERTIFICATE-----
 MIIGWzCCBEOgAwIBAgIRAMrpG4nxVQMNo+ZBbcTjpuEwDQYJKoZIhvcNAQELBQAw
 WjELMAkGA1UEBhMCRlIxEjAQBgNVBAoMCURoaW15b3RpczEcMBoGA1UECwwTMDAw
 MiA0ODE0NjMwODEwMDAzNjEZMBcGA1UEAwwQQ2VydGlnbmEgUm9vdCBDQTAeFw0x
@@ -525,7 +523,7 @@ jWZSaX5LaAzHHjcng6WMxwLkFM1JAbBzs/3GkDpv0mztO+7skb6iQ12LAEpmJURw
 -----END CERTIFICATE-----`))
 
 	// OU=certSIGN ROOT CA; O=certSIGN; C=RO
-	chromeIncluded.AppendCertsFromPEM([]byte(`-----BEGIN CERTIFICATE-----
+	pool.AppendCertsFromPEM([]byte(`-----BEGIN CERTIFICATE-----
 MIIDODCCAiCgAwIBAgIGIAYFFnACMA0GCSqGSIb3DQEBBQUAMDsxCzAJBgNVBAYT
 AlJPMREwDwYDVQQKEwhjZXJ0U0lHTjEZMBcGA1UECxMQY2VydFNJR04gUk9PVCBD
 QTAeFw0wNjA3MDQxNzIwMDRaFw0zMTA3MDQxNzIwMDRaMDsxCzAJBgNVBAYTAlJP
@@ -547,7 +545,7 @@ i/nDhDwTqn6Sm1dTk/pwwpEOMfmbZ13pljheX7NzTogVZ96edhBiIL5VaZVDADlN
 -----END CERTIFICATE-----`))
 
 	// OU=certSIGN ROOT CA G2; O=CERTSIGN SA; C=RO
-	chromeIncluded.AppendCertsFromPEM([]byte(`-----BEGIN CERTIFICATE-----
+	pool.AppendCertsFromPEM([]byte(`-----BEGIN CERTIFICATE-----
 MIIFRzCCAy+gAwIBAgIJEQA0tk7GNi02MA0GCSqGSIb3DQEBCwUAMEExCzAJBgNV
 BAYTAlJPMRQwEgYDVQQKEwtDRVJUU0lHTiBTQTEcMBoGA1UECxMTY2VydFNJR04g
 Uk9PVCBDQSBHMjAeFw0xNzAyMDYwOTI3MzVaFw00MjAyMDYwOTI3MzVaMEExCzAJ
@@ -580,7 +578,7 @@ QRBdJ3NghVdJIgc=
 -----END CERTIFICATE-----`))
 
 	// CN=HiPKI Root CA - G1; O=Chunghwa Telecom Co., Ltd.; C=TW
-	chromeIncluded.AppendCertsFromPEM([]byte(`-----BEGIN CERTIFICATE-----
+	pool.AppendCertsFromPEM([]byte(`-----BEGIN CERTIFICATE-----
 MIIFajCCA1KgAwIBAgIQLd2szmKXlKFD6LDNdmpeYDANBgkqhkiG9w0BAQsFADBP
 MQswCQYDVQQGEwJUVzEjMCEGA1UECgwaQ2h1bmdod2EgVGVsZWNvbSBDby4sIEx0
 ZC4xGzAZBgNVBAMMEkhpUEtJIFJvb3QgQ0EgLSBHMTAeFw0xOTAyMjIwOTQ2MDRa
@@ -613,7 +611,7 @@ YDksswBVLuT1sw5XxJFBAJw/6KXf6vb/yPCtbVKoF6ubYfwSUTXkJf2vqmqGOQ==
 -----END CERTIFICATE-----`))
 
 	// OU=ePKI Root Certification Authority; O=Chunghwa Telecom Co., Ltd.; C=TW
-	chromeIncluded.AppendCertsFromPEM([]byte(`-----BEGIN CERTIFICATE-----
+	pool.AppendCertsFromPEM([]byte(`-----BEGIN CERTIFICATE-----
 MIIFsDCCA5igAwIBAgIQFci9ZUdcr7iXAF7kBtK8nTANBgkqhkiG9w0BAQUFADBe
 MQswCQYDVQQGEwJUVzEjMCEGA1UECgwaQ2h1bmdod2EgVGVsZWNvbSBDby4sIEx0
 ZC4xKjAoBgNVBAsMIWVQS0kgUm9vdCBDZXJ0aWZpY2F0aW9uIEF1dGhvcml0eTAe
@@ -648,7 +646,7 @@ hNQ+IIX3Sj0rnP0qCglN6oH4EZw=
 -----END CERTIFICATE-----`))
 
 	// CN=D-TRUST BR Root CA 1 2020; O=D-Trust GmbH; C=DE
-	chromeIncluded.AppendCertsFromPEM([]byte(`-----BEGIN CERTIFICATE-----
+	pool.AppendCertsFromPEM([]byte(`-----BEGIN CERTIFICATE-----
 MIIC2zCCAmCgAwIBAgIQfMmPK4TX3+oPyWWa00tNljAKBggqhkjOPQQDAzBIMQsw
 CQYDVQQGEwJERTEVMBMGA1UEChMMRC1UcnVzdCBHbWJIMSIwIAYDVQQDExlELVRS
 VVNUIEJSIFJvb3QgQ0EgMSAyMDIwMB4XDTIwMDIxMTA5NDUwMFoXDTM1MDIxMTA5
@@ -668,7 +666,7 @@ dWNbFJWcHwHP2NVypw87
 -----END CERTIFICATE-----`))
 
 	// CN=D-TRUST EV Root CA 1 2020; O=D-Trust GmbH; C=DE
-	chromeIncluded.AppendCertsFromPEM([]byte(`-----BEGIN CERTIFICATE-----
+	pool.AppendCertsFromPEM([]byte(`-----BEGIN CERTIFICATE-----
 MIIC2zCCAmCgAwIBAgIQXwJB13qHfEwDo6yWjfv/0DAKBggqhkjOPQQDAzBIMQsw
 CQYDVQQGEwJERTEVMBMGA1UEChMMRC1UcnVzdCBHbWJIMSIwIAYDVQQDExlELVRS
 VVNUIEVWIFJvb3QgQ0EgMSAyMDIwMB4XDTIwMDIxMTEwMDAwMFoXDTM1MDIxMTA5
@@ -688,7 +686,7 @@ gfM0agPnIjhQW+0ZT0MW
 -----END CERTIFICATE-----`))
 
 	// CN=D-TRUST Root Class 3 CA 2 EV 2009; O=D-Trust GmbH; C=DE
-	chromeIncluded.AppendCertsFromPEM([]byte(`-----BEGIN CERTIFICATE-----
+	pool.AppendCertsFromPEM([]byte(`-----BEGIN CERTIFICATE-----
 MIIEQzCCAyugAwIBAgIDCYP0MA0GCSqGSIb3DQEBCwUAMFAxCzAJBgNVBAYTAkRF
 MRUwEwYDVQQKDAxELVRydXN0IEdtYkgxKjAoBgNVBAMMIUQtVFJVU1QgUm9vdCBD
 bGFzcyAzIENBIDIgRVYgMjAwOTAeFw0wOTExMDUwODUwNDZaFw0yOTExMDUwODUw
@@ -715,7 +713,7 @@ KVwvvoFBuYz/6n1gBp7N1z3TLqMVvKjmJuVvw9y4AyHqnxbxLFS1
 -----END CERTIFICATE-----`))
 
 	// CN=D-TRUST Root Class 3 CA 2 2009; O=D-Trust GmbH; C=DE
-	chromeIncluded.AppendCertsFromPEM([]byte(`-----BEGIN CERTIFICATE-----
+	pool.AppendCertsFromPEM([]byte(`-----BEGIN CERTIFICATE-----
 MIIEMzCCAxugAwIBAgIDCYPzMA0GCSqGSIb3DQEBCwUAME0xCzAJBgNVBAYTAkRF
 MRUwEwYDVQQKDAxELVRydXN0IEdtYkgxJzAlBgNVBAMMHkQtVFJVU1QgUm9vdCBD
 bGFzcyAzIENBIDIgMjAwOTAeFw0wOTExMDUwODM1NThaFw0yOTExMDUwODM1NTha
@@ -742,7 +740,7 @@ Johw1+qRzT65ysCQblrGXnRl11z+o+I=
 -----END CERTIFICATE-----`))
 
 	// CN=T-TeleSec GlobalRoot Class 3; OU=T-Systems Trust Center; O=T-Systems Enterprise Services GmbH; C=DE
-	chromeIncluded.AppendCertsFromPEM([]byte(`-----BEGIN CERTIFICATE-----
+	pool.AppendCertsFromPEM([]byte(`-----BEGIN CERTIFICATE-----
 MIIDwzCCAqugAwIBAgIBATANBgkqhkiG9w0BAQsFADCBgjELMAkGA1UEBhMCREUx
 KzApBgNVBAoMIlQtU3lzdGVtcyBFbnRlcnByaXNlIFNlcnZpY2VzIEdtYkgxHzAd
 BgNVBAsMFlQtU3lzdGVtcyBUcnVzdCBDZW50ZXIxJTAjBgNVBAMMHFQtVGVsZVNl
@@ -767,7 +765,7 @@ TpPDpFQUWw==
 -----END CERTIFICATE-----`))
 
 	// CN=T-TeleSec GlobalRoot Class 2; OU=T-Systems Trust Center; O=T-Systems Enterprise Services GmbH; C=DE
-	chromeIncluded.AppendCertsFromPEM([]byte(`-----BEGIN CERTIFICATE-----
+	pool.AppendCertsFromPEM([]byte(`-----BEGIN CERTIFICATE-----
 MIIDwzCCAqugAwIBAgIBATANBgkqhkiG9w0BAQsFADCBgjELMAkGA1UEBhMCREUx
 KzApBgNVBAoMIlQtU3lzdGVtcyBFbnRlcnByaXNlIFNlcnZpY2VzIEdtYkgxHzAd
 BgNVBAsMFlQtU3lzdGVtcyBUcnVzdCBDZW50ZXIxJTAjBgNVBAMMHFQtVGVsZVNl
@@ -792,7 +790,7 @@ BSeOE6Fuwg==
 -----END CERTIFICATE-----`))
 
 	// CN=DigiCert TLS RSA4096 Root G5; O=DigiCert, Inc.; C=US
-	chromeIncluded.AppendCertsFromPEM([]byte(`-----BEGIN CERTIFICATE-----
+	pool.AppendCertsFromPEM([]byte(`-----BEGIN CERTIFICATE-----
 MIIFZjCCA06gAwIBAgIQCPm0eKj6ftpqMzeJ3nzPijANBgkqhkiG9w0BAQwFADBN
 MQswCQYDVQQGEwJVUzEXMBUGA1UEChMORGlnaUNlcnQsIEluYy4xJTAjBgNVBAMT
 HERpZ2lDZXJ0IFRMUyBSU0E0MDk2IFJvb3QgRzUwHhcNMjEwMTE1MDAwMDAwWhcN
@@ -825,7 +823,7 @@ ovfepEWFJqgejF0pW8hL2JpqA15w8oVPbEtoL8pU9ozaMv7Da4M/OMZ+
 -----END CERTIFICATE-----`))
 
 	// CN=DigiCert TLS ECC P384 Root G5; O=DigiCert, Inc.; C=US
-	chromeIncluded.AppendCertsFromPEM([]byte(`-----BEGIN CERTIFICATE-----
+	pool.AppendCertsFromPEM([]byte(`-----BEGIN CERTIFICATE-----
 MIICGTCCAZ+gAwIBAgIQCeCTZaz32ci5PhwLBCou8zAKBggqhkjOPQQDAzBOMQsw
 CQYDVQQGEwJVUzEXMBUGA1UEChMORGlnaUNlcnQsIEluYy4xJjAkBgNVBAMTHURp
 Z2lDZXJ0IFRMUyBFQ0MgUDM4NCBSb290IEc1MB4XDTIxMDExNTAwMDAwMFoXDTQ2
@@ -841,7 +839,7 @@ DXZDjC5Ty3zfDBeWUA==
 -----END CERTIFICATE-----`))
 
 	// CN=DigiCert Assured ID Root CA; OU=www.digicert.com; O=DigiCert Inc; C=US
-	chromeIncluded.AppendCertsFromPEM([]byte(`-----BEGIN CERTIFICATE-----
+	pool.AppendCertsFromPEM([]byte(`-----BEGIN CERTIFICATE-----
 MIIDtzCCAp+gAwIBAgIQDOfg5RfYRv6P5WD8G/AwOTANBgkqhkiG9w0BAQUFADBl
 MQswCQYDVQQGEwJVUzEVMBMGA1UEChMMRGlnaUNlcnQgSW5jMRkwFwYDVQQLExB3
 d3cuZGlnaWNlcnQuY29tMSQwIgYDVQQDExtEaWdpQ2VydCBBc3N1cmVkIElEIFJv
@@ -865,7 +863,7 @@ H2sMNgcWfzd8qVttevESRmCD1ycEvkvOl77DZypoEd+A5wwzZr8TDRRu838fYxAe
 -----END CERTIFICATE-----`))
 
 	// CN=DigiCert Assured ID Root G2; OU=www.digicert.com; O=DigiCert Inc; C=US
-	chromeIncluded.AppendCertsFromPEM([]byte(`-----BEGIN CERTIFICATE-----
+	pool.AppendCertsFromPEM([]byte(`-----BEGIN CERTIFICATE-----
 MIIDljCCAn6gAwIBAgIQC5McOtY5Z+pnI7/Dr5r0SzANBgkqhkiG9w0BAQsFADBl
 MQswCQYDVQQGEwJVUzEVMBMGA1UEChMMRGlnaUNlcnQgSW5jMRkwFwYDVQQLExB3
 d3cuZGlnaWNlcnQuY29tMSQwIgYDVQQDExtEaWdpQ2VydCBBc3N1cmVkIElEIFJv
@@ -889,7 +887,7 @@ IhNzbM8m9Yop5w==
 -----END CERTIFICATE-----`))
 
 	// CN=DigiCert Assured ID Root G3; OU=www.digicert.com; O=DigiCert Inc; C=US
-	chromeIncluded.AppendCertsFromPEM([]byte(`-----BEGIN CERTIFICATE-----
+	pool.AppendCertsFromPEM([]byte(`-----BEGIN CERTIFICATE-----
 MIICRjCCAc2gAwIBAgIQC6Fa+h3foLVJRK/NJKBs7DAKBggqhkjOPQQDAzBlMQsw
 CQYDVQQGEwJVUzEVMBMGA1UEChMMRGlnaUNlcnQgSW5jMRkwFwYDVQQLExB3d3cu
 ZGlnaWNlcnQuY29tMSQwIgYDVQQDExtEaWdpQ2VydCBBc3N1cmVkIElEIFJvb3Qg
@@ -906,7 +904,7 @@ JjZ91eQ0hjkCMHw2U/Aw5WJjOpnitqM7mzT6HtoQknFekROn3aRukswy1vUhZscv
 -----END CERTIFICATE-----`))
 
 	// CN=DigiCert Global Root CA; OU=www.digicert.com; O=DigiCert Inc; C=US
-	chromeIncluded.AppendCertsFromPEM([]byte(`-----BEGIN CERTIFICATE-----
+	pool.AppendCertsFromPEM([]byte(`-----BEGIN CERTIFICATE-----
 MIIDrzCCApegAwIBAgIQCDvgVpBCRrGhdWrJWZHHSjANBgkqhkiG9w0BAQUFADBh
 MQswCQYDVQQGEwJVUzEVMBMGA1UEChMMRGlnaUNlcnQgSW5jMRkwFwYDVQQLExB3
 d3cuZGlnaWNlcnQuY29tMSAwHgYDVQQDExdEaWdpQ2VydCBHbG9iYWwgUm9vdCBD
@@ -930,7 +928,7 @@ CAUw7C29C79Fv1C5qfPrmAESrciIxpg0X40KPMbp1ZWVbd4=
 -----END CERTIFICATE-----`))
 
 	// CN=DigiCert Global Root G2; OU=www.digicert.com; O=DigiCert Inc; C=US
-	chromeIncluded.AppendCertsFromPEM([]byte(`-----BEGIN CERTIFICATE-----
+	pool.AppendCertsFromPEM([]byte(`-----BEGIN CERTIFICATE-----
 MIIDjjCCAnagAwIBAgIQAzrx5qcRqaC7KGSxHQn65TANBgkqhkiG9w0BAQsFADBh
 MQswCQYDVQQGEwJVUzEVMBMGA1UEChMMRGlnaUNlcnQgSW5jMRkwFwYDVQQLExB3
 d3cuZGlnaWNlcnQuY29tMSAwHgYDVQQDExdEaWdpQ2VydCBHbG9iYWwgUm9vdCBH
@@ -954,7 +952,7 @@ MrY=
 -----END CERTIFICATE-----`))
 
 	// CN=DigiCert Global Root G3; OU=www.digicert.com; O=DigiCert Inc; C=US
-	chromeIncluded.AppendCertsFromPEM([]byte(`-----BEGIN CERTIFICATE-----
+	pool.AppendCertsFromPEM([]byte(`-----BEGIN CERTIFICATE-----
 MIICPzCCAcWgAwIBAgIQBVVWvPJepDU1w6QP1atFcjAKBggqhkjOPQQDAzBhMQsw
 CQYDVQQGEwJVUzEVMBMGA1UEChMMRGlnaUNlcnQgSW5jMRkwFwYDVQQLExB3d3cu
 ZGlnaWNlcnQuY29tMSAwHgYDVQQDExdEaWdpQ2VydCBHbG9iYWwgUm9vdCBHMzAe
@@ -971,7 +969,7 @@ sycX
 -----END CERTIFICATE-----`))
 
 	// CN=DigiCert High Assurance EV Root CA; OU=www.digicert.com; O=DigiCert Inc; C=US
-	chromeIncluded.AppendCertsFromPEM([]byte(`-----BEGIN CERTIFICATE-----
+	pool.AppendCertsFromPEM([]byte(`-----BEGIN CERTIFICATE-----
 MIIDxTCCAq2gAwIBAgIQAqxcJmoLQJuPC3nyrkYldzANBgkqhkiG9w0BAQUFADBs
 MQswCQYDVQQGEwJVUzEVMBMGA1UEChMMRGlnaUNlcnQgSW5jMRkwFwYDVQQLExB3
 d3cuZGlnaWNlcnQuY29tMSswKQYDVQQDEyJEaWdpQ2VydCBIaWdoIEFzc3VyYW5j
@@ -996,7 +994,7 @@ vEsXCS+0yx5DaMkHJ8HSXPfqIbloEpw8nL+e/IBcm2PN7EeqJSdnoDfzAIJ9VNep
 -----END CERTIFICATE-----`))
 
 	// CN=DigiCert Trusted Root G4; OU=www.digicert.com; O=DigiCert Inc; C=US
-	chromeIncluded.AppendCertsFromPEM([]byte(`-----BEGIN CERTIFICATE-----
+	pool.AppendCertsFromPEM([]byte(`-----BEGIN CERTIFICATE-----
 MIIFkDCCA3igAwIBAgIQBZsbV56OITLiOQe9p3d1XDANBgkqhkiG9w0BAQwFADBi
 MQswCQYDVQQGEwJVUzEVMBMGA1UEChMMRGlnaUNlcnQgSW5jMRkwFwYDVQQLExB3
 d3cuZGlnaWNlcnQuY29tMSEwHwYDVQQDExhEaWdpQ2VydCBUcnVzdGVkIFJvb3Qg
@@ -1030,7 +1028,7 @@ gKDWHrO8Dw9TdSmq6hN35N6MgSGtBxBHEa2HPQfRdbzP82Z+
 -----END CERTIFICATE-----`))
 
 	// CN=QuoVadis Root CA 2; O=QuoVadis Limited; C=BM
-	chromeIncluded.AppendCertsFromPEM([]byte(`-----BEGIN CERTIFICATE-----
+	pool.AppendCertsFromPEM([]byte(`-----BEGIN CERTIFICATE-----
 MIIFtzCCA5+gAwIBAgICBQkwDQYJKoZIhvcNAQEFBQAwRTELMAkGA1UEBhMCQk0x
 GTAXBgNVBAoTEFF1b1ZhZGlzIExpbWl0ZWQxGzAZBgNVBAMTElF1b1ZhZGlzIFJv
 b3QgQ0EgMjAeFw0wNjExMjQxODI3MDBaFw0zMTExMjQxODIzMzNaMEUxCzAJBgNV
@@ -1065,7 +1063,7 @@ ohEUGW6yhhtoPkg3Goi3XZZenMfvJ2II4pEZXNLxId26F0KCl3GBUzGpn/Z9Yr9y
 -----END CERTIFICATE-----`))
 
 	// CN=QuoVadis Root CA 2 G3; O=QuoVadis Limited; C=BM
-	chromeIncluded.AppendCertsFromPEM([]byte(`-----BEGIN CERTIFICATE-----
+	pool.AppendCertsFromPEM([]byte(`-----BEGIN CERTIFICATE-----
 MIIFYDCCA0igAwIBAgIURFc0JFuBiZs18s64KztbpybwdSgwDQYJKoZIhvcNAQEL
 BQAwSDELMAkGA1UEBhMCQk0xGTAXBgNVBAoTEFF1b1ZhZGlzIExpbWl0ZWQxHjAc
 BgNVBAMTFVF1b1ZhZGlzIFJvb3QgQ0EgMiBHMzAeFw0xMjAxMTIxODU5MzJaFw00
@@ -1098,7 +1096,7 @@ WSr2Rz0ZiC3oheGe7IUIarFsNMkd7EgrO3jtZsSOeWmD3n+M
 -----END CERTIFICATE-----`))
 
 	// CN=QuoVadis Root CA 3 G3; O=QuoVadis Limited; C=BM
-	chromeIncluded.AppendCertsFromPEM([]byte(`-----BEGIN CERTIFICATE-----
+	pool.AppendCertsFromPEM([]byte(`-----BEGIN CERTIFICATE-----
 MIIFYDCCA0igAwIBAgIULvWbAiin23r/1aOp7r0DoM8Sah0wDQYJKoZIhvcNAQEL
 BQAwSDELMAkGA1UEBhMCQk0xGTAXBgNVBAoTEFF1b1ZhZGlzIExpbWl0ZWQxHjAc
 BgNVBAMTFVF1b1ZhZGlzIFJvb3QgQ0EgMyBHMzAeFw0xMjAxMTIyMDI2MzJaFw00
@@ -1131,7 +1129,7 @@ ywaZWWDYWGWVjUTR939+J399roD1B0y2PpxxVJkES/1Y+Zj0
 -----END CERTIFICATE-----`))
 
 	// CN=CA Disig Root R2; O=Disig a.s.; L=Bratislava; C=SK
-	chromeIncluded.AppendCertsFromPEM([]byte(`-----BEGIN CERTIFICATE-----
+	pool.AppendCertsFromPEM([]byte(`-----BEGIN CERTIFICATE-----
 MIIFaTCCA1GgAwIBAgIJAJK4iNuwisFjMA0GCSqGSIb3DQEBCwUAMFIxCzAJBgNV
 BAYTAlNLMRMwEQYDVQQHEwpCcmF0aXNsYXZhMRMwEQYDVQQKEwpEaXNpZyBhLnMu
 MRkwFwYDVQQDExBDQSBEaXNpZyBSb290IFIyMB4XDTEyMDcxOTA5MTUzMFoXDTQy
@@ -1164,7 +1162,7 @@ L4ysEr3vQCj8KWefshNPZiTEUxnpHikV7+ZtsH8tZ/3zbBt1RqPlShfppNcL
 -----END CERTIFICATE-----`))
 
 	// CN=emSign ECC Root CA - G3; OU=emSign PKI; O=eMudhra Technologies Limited; C=IN
-	chromeIncluded.AppendCertsFromPEM([]byte(`-----BEGIN CERTIFICATE-----
+	pool.AppendCertsFromPEM([]byte(`-----BEGIN CERTIFICATE-----
 MIICTjCCAdOgAwIBAgIKPPYHqWhwDtqLhDAKBggqhkjOPQQDAzBrMQswCQYDVQQG
 EwJJTjETMBEGA1UECxMKZW1TaWduIFBLSTElMCMGA1UEChMcZU11ZGhyYSBUZWNo
 bm9sb2dpZXMgTGltaXRlZDEgMB4GA1UEAxMXZW1TaWduIEVDQyBSb290IENBIC0g
@@ -1181,7 +1179,7 @@ CUfvO6wIBHxcmbHtRwfSAjEAnbpV/KlK6O3t5nYBQnvI+GDZjVGLVTv7jHvrZQnD
 -----END CERTIFICATE-----`))
 
 	// CN=emSign Root CA - G1; OU=emSign PKI; O=eMudhra Technologies Limited; C=IN
-	chromeIncluded.AppendCertsFromPEM([]byte(`-----BEGIN CERTIFICATE-----
+	pool.AppendCertsFromPEM([]byte(`-----BEGIN CERTIFICATE-----
 MIIDlDCCAnygAwIBAgIKMfXkYgxsWO3W2DANBgkqhkiG9w0BAQsFADBnMQswCQYD
 VQQGEwJJTjETMBEGA1UECxMKZW1TaWduIFBLSTElMCMGA1UEChMcZU11ZGhyYSBU
 ZWNobm9sb2dpZXMgTGltaXRlZDEcMBoGA1UEAxMTZW1TaWduIFJvb3QgQ0EgLSBH
@@ -1205,7 +1203,7 @@ iN66zB+Afko=
 -----END CERTIFICATE-----`))
 
 	// CN=AffirmTrust Commercial; O=AffirmTrust; C=US
-	chromeIncluded.AppendCertsFromPEM([]byte(`-----BEGIN CERTIFICATE-----
+	pool.AppendCertsFromPEM([]byte(`-----BEGIN CERTIFICATE-----
 MIIDTDCCAjSgAwIBAgIId3cGJyapsXwwDQYJKoZIhvcNAQELBQAwRDELMAkGA1UE
 BhMCVVMxFDASBgNVBAoMC0FmZmlybVRydXN0MR8wHQYDVQQDDBZBZmZpcm1UcnVz
 dCBDb21tZXJjaWFsMB4XDTEwMDEyOTE0MDYwNloXDTMwMTIzMTE0MDYwNlowRDEL
@@ -1227,7 +1225,7 @@ nlpOZbWUrhvfKbAW8b8Angc6F2S1BLUjIZkKlTuXfO8=
 -----END CERTIFICATE-----`))
 
 	// CN=Atos TrustedRoot 2011; O=Atos; C=DE
-	chromeIncluded.AppendCertsFromPEM([]byte(`-----BEGIN CERTIFICATE-----
+	pool.AppendCertsFromPEM([]byte(`-----BEGIN CERTIFICATE-----
 MIIDdzCCAl+gAwIBAgIIXDPLYixfszIwDQYJKoZIhvcNAQELBQAwPDEeMBwGA1UE
 AwwVQXRvcyBUcnVzdGVkUm9vdCAyMDExMQ0wCwYDVQQKDARBdG9zMQswCQYDVQQG
 EwJERTAeFw0xMTA3MDcxNDU4MzBaFw0zMDEyMzEyMzU5NTlaMDwxHjAcBgNVBAMM
@@ -1250,7 +1248,7 @@ KrcYPqcZ2Qt9sTdBQrC6YB3y/gkRsPCHe6ed
 -----END CERTIFICATE-----`))
 
 	// CN=Atos TrustedRoot Root CA ECC TLS 2021; O=Atos; C=DE
-	chromeIncluded.AppendCertsFromPEM([]byte(`-----BEGIN CERTIFICATE-----
+	pool.AppendCertsFromPEM([]byte(`-----BEGIN CERTIFICATE-----
 MIICFTCCAZugAwIBAgIQPZg7pmY9kGP3fiZXOATvADAKBggqhkjOPQQDAzBMMS4w
 LAYDVQQDDCVBdG9zIFRydXN0ZWRSb290IFJvb3QgQ0EgRUNDIFRMUyAyMDIxMQ0w
 CwYDVQQKDARBdG9zMQswCQYDVQQGEwJERTAeFw0yMTA0MjIwOTI2MjNaFw00MTA0
@@ -1266,7 +1264,7 @@ CCrCp1rIAjEAmeMM56PDr9NJLkaCI2ZdyQAUEv049OGYa3cpetskz2VAv9LcjBHo
 -----END CERTIFICATE-----`))
 
 	// CN=Atos TrustedRoot Root CA RSA TLS 2021; O=Atos; C=DE
-	chromeIncluded.AppendCertsFromPEM([]byte(`-----BEGIN CERTIFICATE-----
+	pool.AppendCertsFromPEM([]byte(`-----BEGIN CERTIFICATE-----
 MIIFZDCCA0ygAwIBAgIQU9XP5hmTC/srBRLYwiqipDANBgkqhkiG9w0BAQwFADBM
 MS4wLAYDVQQDDCVBdG9zIFRydXN0ZWRSb290IFJvb3QgQ0EgUlNBIFRMUyAyMDIx
 MQ0wCwYDVQQKDARBdG9zMQswCQYDVQQGEwJERTAeFw0yMTA0MjIwOTIxMTBaFw00
@@ -1299,7 +1297,7 @@ oji2jbDwN/zIIX8/syQbPYtuzE2wFg2WHYMfRsCbvUOZ58SWLs5fyQ==
 -----END CERTIFICATE-----`))
 
 	// CN=GlobalSign; OU=GlobalSign Root CA - R6; O=GlobalSign
-	chromeIncluded.AppendCertsFromPEM([]byte(`-----BEGIN CERTIFICATE-----
+	pool.AppendCertsFromPEM([]byte(`-----BEGIN CERTIFICATE-----
 MIIFgzCCA2ugAwIBAgIORea7A4Mzw4VlSOb/RVEwDQYJKoZIhvcNAQEMBQAwTDEg
 MB4GA1UECxMXR2xvYmFsU2lnbiBSb290IENBIC0gUjYxEzARBgNVBAoTCkdsb2Jh
 bFNpZ24xEzARBgNVBAMTCkdsb2JhbFNpZ24wHhcNMTQxMjEwMDAwMDAwWhcNMzQx
@@ -1333,7 +1331,7 @@ JJUEeKgDu+6B5dpffItKoZB0JaezPkvILFa9x8jvOOJckvB595yEunQtYQEgfn7R
 -----END CERTIFICATE-----`))
 
 	// CN=GlobalSign Root E46; O=GlobalSign nv-sa; C=BE
-	chromeIncluded.AppendCertsFromPEM([]byte(`-----BEGIN CERTIFICATE-----
+	pool.AppendCertsFromPEM([]byte(`-----BEGIN CERTIFICATE-----
 MIICCzCCAZGgAwIBAgISEdK7ujNu1LzmJGjFDYQdmOhDMAoGCCqGSM49BAMDMEYx
 CzAJBgNVBAYTAkJFMRkwFwYDVQQKExBHbG9iYWxTaWduIG52LXNhMRwwGgYDVQQD
 ExNHbG9iYWxTaWduIFJvb3QgRTQ2MB4XDTE5MDMyMDAwMDAwMFoXDTQ2MDMyMDAw
@@ -1348,7 +1346,7 @@ DgQWBBQxCpCPtsad0kRLgLWi5h+xEk8blTAKBggqhkjOPQQDAwNoADBlAjEA31SQ
 -----END CERTIFICATE-----`))
 
 	// CN=GlobalSign Root R46; O=GlobalSign nv-sa; C=BE
-	chromeIncluded.AppendCertsFromPEM([]byte(`-----BEGIN CERTIFICATE-----
+	pool.AppendCertsFromPEM([]byte(`-----BEGIN CERTIFICATE-----
 MIIFWjCCA0KgAwIBAgISEdK7udcjGJ5AXwqdLdDfJWfRMA0GCSqGSIb3DQEBDAUA
 MEYxCzAJBgNVBAYTAkJFMRkwFwYDVQQKExBHbG9iYWxTaWduIG52LXNhMRwwGgYD
 VQQDExNHbG9iYWxTaWduIFJvb3QgUjQ2MB4XDTE5MDMyMDAwMDAwMFoXDTQ2MDMy
@@ -1381,7 +1379,7 @@ vouXsXgxT7PntgMTzlSdriVZzH81Xwj3QEUxeCp6
 -----END CERTIFICATE-----`))
 
 	// CN=GlobalSign; OU=GlobalSign ECC Root CA - R5; O=GlobalSign
-	chromeIncluded.AppendCertsFromPEM([]byte(`-----BEGIN CERTIFICATE-----
+	pool.AppendCertsFromPEM([]byte(`-----BEGIN CERTIFICATE-----
 MIICHjCCAaSgAwIBAgIRYFlJ4CYuu1X5CneKcflK2GwwCgYIKoZIzj0EAwMwUDEk
 MCIGA1UECxMbR2xvYmFsU2lnbiBFQ0MgUm9vdCBDQSAtIFI1MRMwEQYDVQQKEwpH
 bG9iYWxTaWduMRMwEQYDVQQDEwpHbG9iYWxTaWduMB4XDTEyMTExMzAwMDAwMFoX
@@ -1397,7 +1395,7 @@ xwy8p2Fp8fc74SrL+SvzZpA3
 -----END CERTIFICATE-----`))
 
 	// CN=GlobalSign; OU=GlobalSign Root CA - R3; O=GlobalSign
-	chromeIncluded.AppendCertsFromPEM([]byte(`-----BEGIN CERTIFICATE-----
+	pool.AppendCertsFromPEM([]byte(`-----BEGIN CERTIFICATE-----
 MIIDXzCCAkegAwIBAgILBAAAAAABIVhTCKIwDQYJKoZIhvcNAQELBQAwTDEgMB4G
 A1UECxMXR2xvYmFsU2lnbiBSb290IENBIC0gUjMxEzARBgNVBAoTCkdsb2JhbFNp
 Z24xEzARBgNVBAMTCkdsb2JhbFNpZ24wHhcNMDkwMzE4MTAwMDAwWhcNMjkwMzE4
@@ -1420,7 +1418,7 @@ WD9f
 -----END CERTIFICATE-----`))
 
 	// CN=Starfield Root Certificate Authority - G2; O=Starfield Technologies, Inc.; L=Scottsdale; ST=Arizona; C=US
-	chromeIncluded.AppendCertsFromPEM([]byte(`-----BEGIN CERTIFICATE-----
+	pool.AppendCertsFromPEM([]byte(`-----BEGIN CERTIFICATE-----
 MIID3TCCAsWgAwIBAgIBADANBgkqhkiG9w0BAQsFADCBjzELMAkGA1UEBhMCVVMx
 EDAOBgNVBAgTB0FyaXpvbmExEzARBgNVBAcTClNjb3R0c2RhbGUxJTAjBgNVBAoT
 HFN0YXJmaWVsZCBUZWNobm9sb2dpZXMsIEluYy4xMjAwBgNVBAMTKVN0YXJmaWVs
@@ -1445,7 +1443,7 @@ mMpYjn0q7pBZc2T5NnReJaH1ZgUufzkVqSr7UIuOhWn0
 -----END CERTIFICATE-----`))
 
 	// CN=Go Daddy Root Certificate Authority - G2; O=GoDaddy.com, Inc.; L=Scottsdale; ST=Arizona; C=US
-	chromeIncluded.AppendCertsFromPEM([]byte(`-----BEGIN CERTIFICATE-----
+	pool.AppendCertsFromPEM([]byte(`-----BEGIN CERTIFICATE-----
 MIIDxTCCAq2gAwIBAgIBADANBgkqhkiG9w0BAQsFADCBgzELMAkGA1UEBhMCVVMx
 EDAOBgNVBAgTB0FyaXpvbmExEzARBgNVBAcTClNjb3R0c2RhbGUxGjAYBgNVBAoT
 EUdvRGFkZHkuY29tLCBJbmMuMTEwLwYDVQQDEyhHbyBEYWRkeSBSb290IENlcnRp
@@ -1470,7 +1468,7 @@ LPAvTK33sefOT6jEm0pUBsV/fdUID+Ic/n4XuKxe9tQWskMJDE32p2u0mYRlynqI
 -----END CERTIFICATE-----`))
 
 	// CN=GlobalSign; OU=GlobalSign ECC Root CA - R4; O=GlobalSign
-	chromeIncluded.AppendCertsFromPEM([]byte(`-----BEGIN CERTIFICATE-----
+	pool.AppendCertsFromPEM([]byte(`-----BEGIN CERTIFICATE-----
 MIIB3DCCAYOgAwIBAgINAgPlfvU/k/2lCSGypjAKBggqhkjOPQQDAjBQMSQwIgYD
 VQQLExtHbG9iYWxTaWduIEVDQyBSb290IENBIC0gUjQxEzARBgNVBAoTCkdsb2Jh
 bFNpZ24xEzARBgNVBAMTCkdsb2JhbFNpZ24wHhcNMTIxMTEzMDAwMDAwWhcNMzgw
@@ -1484,7 +1482,7 @@ bmF0774BxL4YSFlhgjICICadVGNA3jdgUM/I2O2dgq43mLyjj0xMqTQrbO/7lZsm
 -----END CERTIFICATE-----`))
 
 	// CN=GTS Root R4; O=Google Trust Services LLC; C=US
-	chromeIncluded.AppendCertsFromPEM([]byte(`-----BEGIN CERTIFICATE-----
+	pool.AppendCertsFromPEM([]byte(`-----BEGIN CERTIFICATE-----
 MIICCTCCAY6gAwIBAgINAgPlwGjvYxqccpBQUjAKBggqhkjOPQQDAzBHMQswCQYD
 VQQGEwJVUzEiMCAGA1UEChMZR29vZ2xlIFRydXN0IFNlcnZpY2VzIExMQzEUMBIG
 A1UEAxMLR1RTIFJvb3QgUjQwHhcNMTYwNjIyMDAwMDAwWhcNMzYwNjIyMDAwMDAw
@@ -1499,7 +1497,7 @@ p/SgguMh1YQdc4acLa/KNJvxn7kjNuK8YAOdgLOaVsjh4rsUecrNIdSUtUlD
 -----END CERTIFICATE-----`))
 
 	// CN=GTS Root R2; O=Google Trust Services LLC; C=US
-	chromeIncluded.AppendCertsFromPEM([]byte(`-----BEGIN CERTIFICATE-----
+	pool.AppendCertsFromPEM([]byte(`-----BEGIN CERTIFICATE-----
 MIIFVzCCAz+gAwIBAgINAgPlrsWNBCUaqxElqjANBgkqhkiG9w0BAQwFADBHMQsw
 CQYDVQQGEwJVUzEiMCAGA1UEChMZR29vZ2xlIFRydXN0IFNlcnZpY2VzIExMQzEU
 MBIGA1UEAxMLR1RTIFJvb3QgUjIwHhcNMTYwNjIyMDAwMDAwWhcNMzYwNjIyMDAw
@@ -1532,7 +1530,7 @@ JPFI/2R80L5cFtHvma3AH/vLrrw4IgYmZNralw4/KBVEqE8AyvCazM90arQ+POuV
 -----END CERTIFICATE-----`))
 
 	// CN=GTS Root R1; O=Google Trust Services LLC; C=US
-	chromeIncluded.AppendCertsFromPEM([]byte(`-----BEGIN CERTIFICATE-----
+	pool.AppendCertsFromPEM([]byte(`-----BEGIN CERTIFICATE-----
 MIIFVzCCAz+gAwIBAgINAgPlk28xsBNJiGuiFzANBgkqhkiG9w0BAQwFADBHMQsw
 CQYDVQQGEwJVUzEiMCAGA1UEChMZR29vZ2xlIFRydXN0IFNlcnZpY2VzIExMQzEU
 MBIGA1UEAxMLR1RTIFJvb3QgUjEwHhcNMTYwNjIyMDAwMDAwWhcNMzYwNjIyMDAw
@@ -1565,7 +1563,7 @@ bP6MvPJwNQzcmRk13NfIRmPVNnGuV/u3gm3c
 -----END CERTIFICATE-----`))
 
 	// CN=GTS Root R3; O=Google Trust Services LLC; C=US
-	chromeIncluded.AppendCertsFromPEM([]byte(`-----BEGIN CERTIFICATE-----
+	pool.AppendCertsFromPEM([]byte(`-----BEGIN CERTIFICATE-----
 MIICCTCCAY6gAwIBAgINAgPluILrIPglJ209ZjAKBggqhkjOPQQDAzBHMQswCQYD
 VQQGEwJVUzEiMCAGA1UEChMZR29vZ2xlIFRydXN0IFNlcnZpY2VzIExMQzEUMBIG
 A1UEAxMLR1RTIFJvb3QgUjMwHhcNMTYwNjIyMDAwMDAwWhcNMzYwNjIyMDAwMDAw
@@ -1580,7 +1578,7 @@ ZuVDFhOD3cffL74UOO0BzrEXGhF16b0DjyZ+hOXJYKaV11RZt+cRLInUue4X
 -----END CERTIFICATE-----`))
 
 	// CN=ACCVRAIZ1; OU=PKIACCV; O=ACCV; C=ES
-	chromeIncluded.AppendCertsFromPEM([]byte(`-----BEGIN CERTIFICATE-----
+	pool.AppendCertsFromPEM([]byte(`-----BEGIN CERTIFICATE-----
 MIIH0zCCBbugAwIBAgIIXsO3pkN/pOAwDQYJKoZIhvcNAQEFBQAwQjESMBAGA1UE
 AwwJQUNDVlJBSVoxMRAwDgYDVQQLDAdQS0lBQ0NWMQ0wCwYDVQQKDARBQ0NWMQsw
 CQYDVQQGEwJFUzAeFw0xMTA1MDUwOTM3MzdaFw0zMDEyMzEwOTM3MzdaMEIxEjAQ
@@ -1626,7 +1624,7 @@ pPVWQxaZLPSkVrQ0uGE3ycJYgBugl6H8WY3pEfbRD0tVNEYqi4Y7
 -----END CERTIFICATE-----`))
 
 	// OU=AC RAIZ FNMT-RCM; O=FNMT-RCM; C=ES
-	chromeIncluded.AppendCertsFromPEM([]byte(`-----BEGIN CERTIFICATE-----
+	pool.AppendCertsFromPEM([]byte(`-----BEGIN CERTIFICATE-----
 MIIFgzCCA2ugAwIBAgIPXZONMGc2yAYdGsdUhGkHMA0GCSqGSIb3DQEBCwUAMDsx
 CzAJBgNVBAYTAkVTMREwDwYDVQQKDAhGTk1ULVJDTTEZMBcGA1UECwwQQUMgUkFJ
 WiBGTk1ULVJDTTAeFw0wODEwMjkxNTU5NTZaFw0zMDAxMDEwMDAwMDBaMDsxCzAJ
@@ -1660,7 +1658,7 @@ uu8wd+RU4riEmViAqhOLUTpPSPaLtrM=
 -----END CERTIFICATE-----`))
 
 	// CN=AC RAIZ FNMT-RCM SERVIDORES SEGUROS; OU=Ceres; O=FNMT-RCM; C=ES; OrganizationIdentifier=VATES-Q2826004J
-	chromeIncluded.AppendCertsFromPEM([]byte(`-----BEGIN CERTIFICATE-----
+	pool.AppendCertsFromPEM([]byte(`-----BEGIN CERTIFICATE-----
 MIICbjCCAfOgAwIBAgIQYvYybOXE42hcG2LdnC6dlTAKBggqhkjOPQQDAzB4MQsw
 CQYDVQQGEwJFUzERMA8GA1UECgwIRk5NVC1SQ00xDjAMBgNVBAsMBUNlcmVzMRgw
 FgYDVQRhDA9WQVRFUy1RMjgyNjAwNEoxLDAqBgNVBAMMI0FDIFJBSVogRk5NVC1S
@@ -1678,7 +1676,7 @@ v+c=
 -----END CERTIFICATE-----`))
 
 	// CN=TUBITAK Kamu SM SSL Kok Sertifikasi - Surum 1; OU=Kamu Sertifikasyon Merkezi - Kamu SM; O=Turkiye Bilimsel ve Teknolojik Arastirma Kurumu - TUBITAK; L=Gebze - Kocaeli; C=TR
-	chromeIncluded.AppendCertsFromPEM([]byte(`-----BEGIN CERTIFICATE-----
+	pool.AppendCertsFromPEM([]byte(`-----BEGIN CERTIFICATE-----
 MIIEYzCCA0ugAwIBAgIBATANBgkqhkiG9w0BAQsFADCB0jELMAkGA1UEBhMCVFIx
 GDAWBgNVBAcTD0dlYnplIC0gS29jYWVsaTFCMEAGA1UEChM5VHVya2l5ZSBCaWxp
 bXNlbCB2ZSBUZWtub2xvamlrIEFyYXN0aXJtYSBLdXJ1bXUgLSBUVUJJVEFLMS0w
@@ -1706,7 +1704,7 @@ lo3Ptv0AnVoUmr8CRPXBwp8iXqIPoeM=
 -----END CERTIFICATE-----`))
 
 	// CN=HARICA TLS RSA Root CA 2021; O=Hellenic Academic and Research Institutions CA; C=GR
-	chromeIncluded.AppendCertsFromPEM([]byte(`-----BEGIN CERTIFICATE-----
+	pool.AppendCertsFromPEM([]byte(`-----BEGIN CERTIFICATE-----
 MIIFpDCCA4ygAwIBAgIQOcqTHO9D88aOk8f0ZIk4fjANBgkqhkiG9w0BAQsFADBs
 MQswCQYDVQQGEwJHUjE3MDUGA1UECgwuSGVsbGVuaWMgQWNhZGVtaWMgYW5kIFJl
 c2VhcmNoIEluc3RpdHV0aW9ucyBDQTEkMCIGA1UEAwwbSEFSSUNBIFRMUyBSU0Eg
@@ -1741,7 +1739,7 @@ xw/ogM4cKGR0GQjTQuPOAF1/sdwTsOEFy9EgqoZ0njnnkf3/W9b3raYvAwtt41dU
 -----END CERTIFICATE-----`))
 
 	// CN=HARICA TLS ECC Root CA 2021; O=Hellenic Academic and Research Institutions CA; C=GR
-	chromeIncluded.AppendCertsFromPEM([]byte(`-----BEGIN CERTIFICATE-----
+	pool.AppendCertsFromPEM([]byte(`-----BEGIN CERTIFICATE-----
 MIICVDCCAdugAwIBAgIQZ3SdjXfYO2rbIvT/WeK/zjAKBggqhkjOPQQDAzBsMQsw
 CQYDVQQGEwJHUjE3MDUGA1UECgwuSGVsbGVuaWMgQWNhZGVtaWMgYW5kIFJlc2Vh
 cmNoIEluc3RpdHV0aW9ucyBDQTEkMCIGA1UEAwwbSEFSSUNBIFRMUyBFQ0MgUm9v
@@ -1758,7 +1756,7 @@ nxS2PFOiTAZpffpskcYqSUXm7LcT4Tps
 -----END CERTIFICATE-----`))
 
 	// CN=IdenTrust Commercial Root CA 1; O=IdenTrust; C=US
-	chromeIncluded.AppendCertsFromPEM([]byte(`-----BEGIN CERTIFICATE-----
+	pool.AppendCertsFromPEM([]byte(`-----BEGIN CERTIFICATE-----
 MIIFYDCCA0igAwIBAgIQCgFCgAAAAUUjyES1AAAAAjANBgkqhkiG9w0BAQsFADBK
 MQswCQYDVQQGEwJVUzESMBAGA1UEChMJSWRlblRydXN0MScwJQYDVQQDEx5JZGVu
 VHJ1c3QgQ29tbWVyY2lhbCBSb290IENBIDEwHhcNMTQwMTE2MTgxMjIzWhcNMzQw
@@ -1791,7 +1789,7 @@ mUlO+KWA2yUPHGNiiskzZ2s8EIPGrd6ozRaOjfAHN3Gf8qv8QfXBi+wAN10J5U6A
 -----END CERTIFICATE-----`))
 
 	// CN=ISRG Root X1; O=Internet Security Research Group; C=US
-	chromeIncluded.AppendCertsFromPEM([]byte(`-----BEGIN CERTIFICATE-----
+	pool.AppendCertsFromPEM([]byte(`-----BEGIN CERTIFICATE-----
 MIIFazCCA1OgAwIBAgIRAIIQz7DSQONZRGPgu2OCiwAwDQYJKoZIhvcNAQELBQAw
 TzELMAkGA1UEBhMCVVMxKTAnBgNVBAoTIEludGVybmV0IFNlY3VyaXR5IFJlc2Vh
 cmNoIEdyb3VwMRUwEwYDVQQDEwxJU1JHIFJvb3QgWDEwHhcNMTUwNjA0MTEwNDM4
@@ -1824,7 +1822,7 @@ emyPxgcYxn/eR44/KJ4EBs+lVDR3veyJm+kXQ99b21/+jh5Xos1AnX5iItreGCc=
 -----END CERTIFICATE-----`))
 
 	// CN=ISRG Root X2; O=Internet Security Research Group; C=US
-	chromeIncluded.AppendCertsFromPEM([]byte(`-----BEGIN CERTIFICATE-----
+	pool.AppendCertsFromPEM([]byte(`-----BEGIN CERTIFICATE-----
 MIICGzCCAaGgAwIBAgIQQdKd0XLq7qeAwSxs6S+HUjAKBggqhkjOPQQDAzBPMQsw
 CQYDVQQGEwJVUzEpMCcGA1UEChMgSW50ZXJuZXQgU2VjdXJpdHkgUmVzZWFyY2gg
 R3JvdXAxFTATBgNVBAMTDElTUkcgUm9vdCBYMjAeFw0yMDA5MDQwMDAwMDBaFw00
@@ -1840,7 +1838,7 @@ tL4ndQavEi51mI38AjEAi/V3bNTIZargCyzuFJ0nN6T5U6VR5CmD1/iQMVtCnwr1
 -----END CERTIFICATE-----`))
 
 	// CN=Izenpe.com; O=IZENPE S.A.; C=ES
-	chromeIncluded.AppendCertsFromPEM([]byte(`-----BEGIN CERTIFICATE-----
+	pool.AppendCertsFromPEM([]byte(`-----BEGIN CERTIFICATE-----
 MIIF8TCCA9mgAwIBAgIQALC3WhZIX7/hy/WL1xnmfTANBgkqhkiG9w0BAQsFADA4
 MQswCQYDVQQGEwJFUzEUMBIGA1UECgwLSVpFTlBFIFMuQS4xEzARBgNVBAMMCkl6
 ZW5wZS5jb20wHhcNMDcxMjEzMTMwODI4WhcNMzcxMjEzMDgyNzI1WjA4MQswCQYD
@@ -1876,7 +1874,7 @@ QyYBNWNgVYkDOnXYukrZVP/u3oDYLdE41V4tC5h9Pmzb/CaIxw==
 -----END CERTIFICATE-----`))
 
 	// CN=SZAFIR ROOT CA2; O=Krajowa Izba Rozliczeniowa S.A.; C=PL
-	chromeIncluded.AppendCertsFromPEM([]byte(`-----BEGIN CERTIFICATE-----
+	pool.AppendCertsFromPEM([]byte(`-----BEGIN CERTIFICATE-----
 MIIDcjCCAlqgAwIBAgIUPopdB+xV0jLVt+O2XwHrLdzk1uQwDQYJKoZIhvcNAQEL
 BQAwUTELMAkGA1UEBhMCUEwxKDAmBgNVBAoMH0tyYWpvd2EgSXpiYSBSb3psaWN6
 ZW5pb3dhIFMuQS4xGDAWBgNVBAMMD1NaQUZJUiBST09UIENBMjAeFw0xNTEwMTkw
@@ -1899,7 +1897,7 @@ LvWpCz/UXeHPhJ/iGcJfitYgHuNztw==
 -----END CERTIFICATE-----`))
 
 	// CN=e-Szigno Root CA 2017; O=Microsec Ltd.; L=Budapest; C=HU; OrganizationIdentifier=VATHU-23584497
-	chromeIncluded.AppendCertsFromPEM([]byte(`-----BEGIN CERTIFICATE-----
+	pool.AppendCertsFromPEM([]byte(`-----BEGIN CERTIFICATE-----
 MIICQDCCAeWgAwIBAgIMAVRI7yH9l1kN9QQKMAoGCCqGSM49BAMCMHExCzAJBgNV
 BAYTAkhVMREwDwYDVQQHDAhCdWRhcGVzdDEWMBQGA1UECgwNTWljcm9zZWMgTHRk
 LjEXMBUGA1UEYQwOVkFUSFUtMjM1ODQ0OTcxHjAcBgNVBAMMFWUtU3ppZ25vIFJv
@@ -1916,7 +1914,7 @@ jbjcI4qKDdQvfepz7L9NbKgCIQDLpbQS+ue16M9+k/zzNY9vTlp8tLxOsvxyqltZ
 -----END CERTIFICATE-----`))
 
 	// CN=Microsec e-Szigno Root CA 2009; O=Microsec Ltd.; L=Budapest; C=HU; EmailAddress=info@e-szigno.hu
-	chromeIncluded.AppendCertsFromPEM([]byte(`-----BEGIN CERTIFICATE-----
+	pool.AppendCertsFromPEM([]byte(`-----BEGIN CERTIFICATE-----
 MIIECjCCAvKgAwIBAgIJAMJ+QwRORz8ZMA0GCSqGSIb3DQEBCwUAMIGCMQswCQYD
 VQQGEwJIVTERMA8GA1UEBwwIQnVkYXBlc3QxFjAUBgNVBAoMDU1pY3Jvc2VjIEx0
 ZC4xJzAlBgNVBAMMHk1pY3Jvc2VjIGUtU3ppZ25vIFJvb3QgQ0EgMjAwOTEfMB0G
@@ -1942,7 +1940,7 @@ HMN1Rq41Bab2XD0h7lbwyYIiLXpUq3DDfSJlgnCW
 -----END CERTIFICATE-----`))
 
 	// CN=Microsoft ECC Root Certificate Authority 2017; O=Microsoft Corporation; C=US
-	chromeIncluded.AppendCertsFromPEM([]byte(`-----BEGIN CERTIFICATE-----
+	pool.AppendCertsFromPEM([]byte(`-----BEGIN CERTIFICATE-----
 MIICWTCCAd+gAwIBAgIQZvI9r4fei7FK6gxXMQHC7DAKBggqhkjOPQQDAzBlMQsw
 CQYDVQQGEwJVUzEeMBwGA1UEChMVTWljcm9zb2Z0IENvcnBvcmF0aW9uMTYwNAYD
 VQQDEy1NaWNyb3NvZnQgRUNDIFJvb3QgQ2VydGlmaWNhdGUgQXV0aG9yaXR5IDIw
@@ -1959,7 +1957,7 @@ iudQZsIxtzm6uBoiB078a1QWIP8rtedMDE2mT3M=
 -----END CERTIFICATE-----`))
 
 	// CN=Microsoft RSA Root Certificate Authority 2017; O=Microsoft Corporation; C=US
-	chromeIncluded.AppendCertsFromPEM([]byte(`-----BEGIN CERTIFICATE-----
+	pool.AppendCertsFromPEM([]byte(`-----BEGIN CERTIFICATE-----
 MIIFqDCCA5CgAwIBAgIQHtOXCV/YtLNHcB6qvn9FszANBgkqhkiG9w0BAQwFADBl
 MQswCQYDVQQGEwJVUzEeMBwGA1UEChMVTWljcm9zb2Z0IENvcnBvcmF0aW9uMTYw
 NAYDVQQDEy1NaWNyb3NvZnQgUlNBIFJvb3QgQ2VydGlmaWNhdGUgQXV0aG9yaXR5
@@ -1994,7 +1992,7 @@ RA+GsCyRxj3qrg+E
 -----END CERTIFICATE-----`))
 
 	// CN=NAVER Global Root Certification Authority; O=NAVER BUSINESS PLATFORM Corp.; C=KR
-	chromeIncluded.AppendCertsFromPEM([]byte(`-----BEGIN CERTIFICATE-----
+	pool.AppendCertsFromPEM([]byte(`-----BEGIN CERTIFICATE-----
 MIIFojCCA4qgAwIBAgIUAZQwHqIL3fXFMyqxQ0Rx+NZQTQ0wDQYJKoZIhvcNAQEM
 BQAwaTELMAkGA1UEBhMCS1IxJjAkBgNVBAoMHU5BVkVSIEJVU0lORVNTIFBMQVRG
 T1JNIENvcnAuMTIwMAYDVQQDDClOQVZFUiBHbG9iYWwgUm9vdCBDZXJ0aWZpY2F0
@@ -2029,7 +2027,7 @@ dh2ajcQGjTa3FPOdVGm3jjzVpG2Tgbet9r1ke8LJaDmgkpzNNIaRkPpkUZ3+/uul
 -----END CERTIFICATE-----`))
 
 	// CN=NetLock Arany (Class Gold) Főtanúsítvány; OU=Tanúsítványkiadók (Certification Services); O=NetLock Kft.; L=Budapest; C=HU
-	chromeIncluded.AppendCertsFromPEM([]byte(`-----BEGIN CERTIFICATE-----
+	pool.AppendCertsFromPEM([]byte(`-----BEGIN CERTIFICATE-----
 MIIEFTCCAv2gAwIBAgIGSUEs5AAQMA0GCSqGSIb3DQEBCwUAMIGnMQswCQYDVQQG
 EwJIVTERMA8GA1UEBwwIQnVkYXBlc3QxFTATBgNVBAoMDE5ldExvY2sgS2Z0LjE3
 MDUGA1UECwwuVGFuw7pzw610dsOhbnlraWFkw7NrIChDZXJ0aWZpY2F0aW9uIFNl
@@ -2055,7 +2053,7 @@ XjG4Kvte9nHfRCaexOYNkbQudZWAUWpLMKawYqGT8ZvYzsRjdT9ZR7E=
 -----END CERTIFICATE-----`))
 
 	// CN=OISTE WISeKey Global Root GC CA; OU=OISTE Foundation Endorsed; O=WISeKey; C=CH
-	chromeIncluded.AppendCertsFromPEM([]byte(`-----BEGIN CERTIFICATE-----
+	pool.AppendCertsFromPEM([]byte(`-----BEGIN CERTIFICATE-----
 MIICaTCCAe+gAwIBAgIQISpWDK7aDKtARb8roi066jAKBggqhkjOPQQDAzBtMQsw
 CQYDVQQGEwJDSDEQMA4GA1UEChMHV0lTZUtleTEiMCAGA1UECxMZT0lTVEUgRm91
 bmRhdGlvbiBFbmRvcnNlZDEoMCYGA1UEAxMfT0lTVEUgV0lTZUtleSBHbG9iYWwg
@@ -2072,7 +2070,7 @@ Mgj/mkkCtojeFK9dbJlxjRo/i9fgojaGHAeCOnZT/cKi7e97sIBPWA9LUzm9
 -----END CERTIFICATE-----`))
 
 	// CN=OISTE WISeKey Global Root GB CA; OU=OISTE Foundation Endorsed; O=WISeKey; C=CH
-	chromeIncluded.AppendCertsFromPEM([]byte(`-----BEGIN CERTIFICATE-----
+	pool.AppendCertsFromPEM([]byte(`-----BEGIN CERTIFICATE-----
 MIIDtTCCAp2gAwIBAgIQdrEgUnTwhYdGs/gjGvbCwDANBgkqhkiG9w0BAQsFADBt
 MQswCQYDVQQGEwJDSDEQMA4GA1UEChMHV0lTZUtleTEiMCAGA1UECxMZT0lTVEUg
 Rm91bmRhdGlvbiBFbmRvcnNlZDEoMCYGA1UEAxMfT0lTVEUgV0lTZUtleSBHbG9i
@@ -2096,7 +2094,7 @@ Nc1MaRVUGpCY3useX8p3x8uOPUNpnJpY0CQ73xtAln41rYHHTnG6iBM=
 -----END CERTIFICATE-----`))
 
 	// CN=Security Communication ECC RootCA1; O=SECOM Trust Systems CO.,LTD.; C=JP
-	chromeIncluded.AppendCertsFromPEM([]byte(`-----BEGIN CERTIFICATE-----
+	pool.AppendCertsFromPEM([]byte(`-----BEGIN CERTIFICATE-----
 MIICODCCAb6gAwIBAgIJANZdm7N4gS7rMAoGCCqGSM49BAMDMGExCzAJBgNVBAYT
 AkpQMSUwIwYDVQQKExxTRUNPTSBUcnVzdCBTeXN0ZW1zIENPLixMVEQuMSswKQYD
 VQQDEyJTZWN1cml0eSBDb21tdW5pY2F0aW9uIEVDQyBSb290Q0ExMB4XDTE2MDYx
@@ -2112,7 +2110,7 @@ be0YottT6SXbVQjgUMzfRGEWgqtJsLKB7HOHeLRMsmIbEvoWTSVLY70eN9k=
 -----END CERTIFICATE-----`))
 
 	// OU=Security Communication RootCA2; O=SECOM Trust Systems CO.,LTD.; C=JP
-	chromeIncluded.AppendCertsFromPEM([]byte(`-----BEGIN CERTIFICATE-----
+	pool.AppendCertsFromPEM([]byte(`-----BEGIN CERTIFICATE-----
 MIIDdzCCAl+gAwIBAgIBADANBgkqhkiG9w0BAQsFADBdMQswCQYDVQQGEwJKUDEl
 MCMGA1UEChMcU0VDT00gVHJ1c3QgU3lzdGVtcyBDTy4sTFRELjEnMCUGA1UECxMe
 U2VjdXJpdHkgQ29tbXVuaWNhdGlvbiBSb290Q0EyMB4XDTA5MDUyOTA1MDAzOVoX
@@ -2135,7 +2133,7 @@ SjnRBUkLp7Y3gaVdjKozXoEofKd9J+sAro03
 -----END CERTIFICATE-----`))
 
 	// CN=Entrust Root Certification Authority; OU=www.entrust.net/CPS is incorporated by reference, (c) 2006 Entrust, Inc.; O=Entrust, Inc.; C=US
-	chromeIncluded.AppendCertsFromPEM([]byte(`-----BEGIN CERTIFICATE-----
+	pool.AppendCertsFromPEM([]byte(`-----BEGIN CERTIFICATE-----
 MIIEkTCCA3mgAwIBAgIERWtQVDANBgkqhkiG9w0BAQUFADCBsDELMAkGA1UEBhMC
 VVMxFjAUBgNVBAoTDUVudHJ1c3QsIEluYy4xOTA3BgNVBAsTMHd3dy5lbnRydXN0
 Lm5ldC9DUFMgaXMgaW5jb3Jwb3JhdGVkIGJ5IHJlZmVyZW5jZTEfMB0GA1UECxMW
@@ -2164,7 +2162,7 @@ eu6FSqdQgPCnXEqULl8FmTxSQeDNtGPPAUO6nIPcj2A781q0tHuu2guQOHXvgR1m
 -----END CERTIFICATE-----`))
 
 	// CN=Sectigo Public Server Authentication Root E46; O=Sectigo Limited; C=GB
-	chromeIncluded.AppendCertsFromPEM([]byte(`-----BEGIN CERTIFICATE-----
+	pool.AppendCertsFromPEM([]byte(`-----BEGIN CERTIFICATE-----
 MIICOjCCAcGgAwIBAgIQQvLM2htpN0RfFf51KBC49DAKBggqhkjOPQQDAzBfMQsw
 CQYDVQQGEwJHQjEYMBYGA1UEChMPU2VjdGlnbyBMaW1pdGVkMTYwNAYDVQQDEy1T
 ZWN0aWdvIFB1YmxpYyBTZXJ2ZXIgQXV0aGVudGljYXRpb24gUm9vdCBFNDYwHhcN
@@ -2180,7 +2178,7 @@ qCG76UeXlImldCBteU/IvZNeWBj7LRoAasm4PdCkT0RHlAFWovgzJQxC36oCMB3q
 -----END CERTIFICATE-----`))
 
 	// CN=COMODO ECC Certification Authority; O=COMODO CA Limited; L=Salford; ST=Greater Manchester; C=GB
-	chromeIncluded.AppendCertsFromPEM([]byte(`-----BEGIN CERTIFICATE-----
+	pool.AppendCertsFromPEM([]byte(`-----BEGIN CERTIFICATE-----
 MIICiTCCAg+gAwIBAgIQH0evqmIAcFBUTAGem2OZKjAKBggqhkjOPQQDAzCBhTEL
 MAkGA1UEBhMCR0IxGzAZBgNVBAgTEkdyZWF0ZXIgTWFuY2hlc3RlcjEQMA4GA1UE
 BxMHU2FsZm9yZDEaMBgGA1UEChMRQ09NT0RPIENBIExpbWl0ZWQxKzApBgNVBAMT
@@ -2198,7 +2196,7 @@ GDeAU/7dIOA1mjbRxwG55tzd8/8dLDoWV9mSOdY=
 -----END CERTIFICATE-----`))
 
 	// CN=COMODO Certification Authority; O=COMODO CA Limited; L=Salford; ST=Greater Manchester; C=GB
-	chromeIncluded.AppendCertsFromPEM([]byte(`-----BEGIN CERTIFICATE-----
+	pool.AppendCertsFromPEM([]byte(`-----BEGIN CERTIFICATE-----
 MIID0DCCArigAwIBAgIQIKTEf93f4cdTYwcTiHdgEjANBgkqhkiG9w0BAQUFADCB
 gTELMAkGA1UEBhMCR0IxGzAZBgNVBAgTEkdyZWF0ZXIgTWFuY2hlc3RlcjEQMA4G
 A1UEBxMHU2FsZm9yZDEaMBgGA1UEChMRQ09NT0RPIENBIExpbWl0ZWQxJzAlBgNV
@@ -2223,7 +2221,7 @@ R1uUq27UlTMdphVx8fiUylQ5PsE=
 -----END CERTIFICATE-----`))
 
 	// CN=COMODO RSA Certification Authority; O=COMODO CA Limited; L=Salford; ST=Greater Manchester; C=GB
-	chromeIncluded.AppendCertsFromPEM([]byte(`-----BEGIN CERTIFICATE-----
+	pool.AppendCertsFromPEM([]byte(`-----BEGIN CERTIFICATE-----
 MIIF2DCCA8CgAwIBAgIQTKr5yttjb+Af907YWwOGnTANBgkqhkiG9w0BAQwFADCB
 hTELMAkGA1UEBhMCR0IxGzAZBgNVBAgTEkdyZWF0ZXIgTWFuY2hlc3RlcjEQMA4G
 A1UEBxMHU2FsZm9yZDEaMBgGA1UEChMRQ09NT0RPIENBIExpbWl0ZWQxKzApBgNV
@@ -2259,7 +2257,7 @@ NVOFBkpdn627G190
 -----END CERTIFICATE-----`))
 
 	// CN=USERTrust RSA Certification Authority; O=The USERTRUST Network; L=Jersey City; ST=New Jersey; C=US
-	chromeIncluded.AppendCertsFromPEM([]byte(`-----BEGIN CERTIFICATE-----
+	pool.AppendCertsFromPEM([]byte(`-----BEGIN CERTIFICATE-----
 MIIF3jCCA8agAwIBAgIQAf1tMPyjylGoG7xkDjUDLTANBgkqhkiG9w0BAQwFADCB
 iDELMAkGA1UEBhMCVVMxEzARBgNVBAgTCk5ldyBKZXJzZXkxFDASBgNVBAcTC0pl
 cnNleSBDaXR5MR4wHAYDVQQKExVUaGUgVVNFUlRSVVNUIE5ldHdvcmsxLjAsBgNV
@@ -2295,7 +2293,7 @@ jjxDah2nGN59PRbxYvnKkKj9
 -----END CERTIFICATE-----`))
 
 	// CN=USERTrust ECC Certification Authority; O=The USERTRUST Network; L=Jersey City; ST=New Jersey; C=US
-	chromeIncluded.AppendCertsFromPEM([]byte(`-----BEGIN CERTIFICATE-----
+	pool.AppendCertsFromPEM([]byte(`-----BEGIN CERTIFICATE-----
 MIICjzCCAhWgAwIBAgIQXIuZxVqUxdJxVt7NiYDMJjAKBggqhkjOPQQDAzCBiDEL
 MAkGA1UEBhMCVVMxEzARBgNVBAgTCk5ldyBKZXJzZXkxFDASBgNVBAcTC0plcnNl
 eSBDaXR5MR4wHAYDVQQKExVUaGUgVVNFUlRSVVNUIE5ldHdvcmsxLjAsBgNVBAMT
@@ -2313,7 +2311,7 @@ RNZu9YO6bVi9JNlWSOrvxKJGgYhqOkbRqZtNyWHa0V1Xahg=
 -----END CERTIFICATE-----`))
 
 	// CN=Sectigo Public Server Authentication Root R46; O=Sectigo Limited; C=GB
-	chromeIncluded.AppendCertsFromPEM([]byte(`-----BEGIN CERTIFICATE-----
+	pool.AppendCertsFromPEM([]byte(`-----BEGIN CERTIFICATE-----
 MIIFijCCA3KgAwIBAgIQdY39i658BwD6qSWn4cetFDANBgkqhkiG9w0BAQwFADBf
 MQswCQYDVQQGEwJHQjEYMBYGA1UEChMPU2VjdGlnbyBMaW1pdGVkMTYwNAYDVQQD
 Ey1TZWN0aWdvIFB1YmxpYyBTZXJ2ZXIgQXV0aGVudGljYXRpb24gUm9vdCBSNDYw
@@ -2347,7 +2345,7 @@ QqszKbrAKbkTidOIijlBO8n9pu0f9GBj39ItVQGL
 -----END CERTIFICATE-----`))
 
 	// CN=Entrust Root Certification Authority - G2; OU=See www.entrust.net/legal-terms, (c) 2009 Entrust, Inc. - for authorized use only; O=Entrust, Inc.; C=US
-	chromeIncluded.AppendCertsFromPEM([]byte(`-----BEGIN CERTIFICATE-----
+	pool.AppendCertsFromPEM([]byte(`-----BEGIN CERTIFICATE-----
 MIIEPjCCAyagAwIBAgIESlOMKDANBgkqhkiG9w0BAQsFADCBvjELMAkGA1UEBhMC
 VVMxFjAUBgNVBAoTDUVudHJ1c3QsIEluYy4xKDAmBgNVBAsTH1NlZSB3d3cuZW50
 cnVzdC5uZXQvbGVnYWwtdGVybXMxOTA3BgNVBAsTMChjKSAyMDA5IEVudHJ1c3Qs
@@ -2374,7 +2372,7 @@ VHOkc8KT/1EQrBVUAdj8BbGJoX90g5pJ19xOe4pIb4tF9g==
 -----END CERTIFICATE-----`))
 
 	// CN=Entrust Root Certification Authority - EC1; OU=See www.entrust.net/legal-terms, (c) 2012 Entrust, Inc. - for authorized use only; O=Entrust, Inc.; C=US
-	chromeIncluded.AppendCertsFromPEM([]byte(`-----BEGIN CERTIFICATE-----
+	pool.AppendCertsFromPEM([]byte(`-----BEGIN CERTIFICATE-----
 MIIC+TCCAoCgAwIBAgINAKaLeSkAAAAAUNCR+TAKBggqhkjOPQQDAzCBvzELMAkG
 A1UEBhMCVVMxFjAUBgNVBAoTDUVudHJ1c3QsIEluYy4xKDAmBgNVBAsTH1NlZSB3
 d3cuZW50cnVzdC5uZXQvbGVnYWwtdGVybXMxOTA3BgNVBAsTMChjKSAyMDEyIEVu
@@ -2394,7 +2392,7 @@ hTcGtXsI/esni0qU+eH6p44mCOh8kmhtc9hvJqwhAriZtyZBWyVgrtBIGu4G
 -----END CERTIFICATE-----`))
 
 	// CN=SSL.com Root Certification Authority RSA; O=SSL Corporation; L=Houston; ST=Texas; C=US
-	chromeIncluded.AppendCertsFromPEM([]byte(`-----BEGIN CERTIFICATE-----
+	pool.AppendCertsFromPEM([]byte(`-----BEGIN CERTIFICATE-----
 MIIF3TCCA8WgAwIBAgIIeyyb0xaAMpkwDQYJKoZIhvcNAQELBQAwfDELMAkGA1UE
 BhMCVVMxDjAMBgNVBAgMBVRleGFzMRAwDgYDVQQHDAdIb3VzdG9uMRgwFgYDVQQK
 DA9TU0wgQ29ycG9yYXRpb24xMTAvBgNVBAMMKFNTTC5jb20gUm9vdCBDZXJ0aWZp
@@ -2430,7 +2428,7 @@ Ic2wBlX7Jz9TkHCpBB5XJ7k=
 -----END CERTIFICATE-----`))
 
 	// CN=SSL.com TLS ECC Root CA 2022; O=SSL Corporation; C=US
-	chromeIncluded.AppendCertsFromPEM([]byte(`-----BEGIN CERTIFICATE-----
+	pool.AppendCertsFromPEM([]byte(`-----BEGIN CERTIFICATE-----
 MIICOjCCAcCgAwIBAgIQFAP1q/s3ixdAW+JDsqXRxDAKBggqhkjOPQQDAzBOMQsw
 CQYDVQQGEwJVUzEYMBYGA1UECgwPU1NMIENvcnBvcmF0aW9uMSUwIwYDVQQDDBxT
 U0wuY29tIFRMUyBFQ0MgUm9vdCBDQSAyMDIyMB4XDTIyMDgyNTE2MzM0OFoXDTQ2
@@ -2446,7 +2444,7 @@ b0Igj762TVntd00pxCAgRWSGOlDGxK0tk/UYfXLtqc/ErFc2KAhl3zx5Zn6g6g==
 -----END CERTIFICATE-----`))
 
 	// CN=SSL.com TLS RSA Root CA 2022; O=SSL Corporation; C=US
-	chromeIncluded.AppendCertsFromPEM([]byte(`-----BEGIN CERTIFICATE-----
+	pool.AppendCertsFromPEM([]byte(`-----BEGIN CERTIFICATE-----
 MIIFiTCCA3GgAwIBAgIQb77arXO9CEDii02+1PdbkTANBgkqhkiG9w0BAQsFADBO
 MQswCQYDVQQGEwJVUzEYMBYGA1UECgwPU1NMIENvcnBvcmF0aW9uMSUwIwYDVQQD
 DBxTU0wuY29tIFRMUyBSU0EgUm9vdCBDQSAyMDIyMB4XDTIyMDgyNTE2MzQyMloX
@@ -2480,7 +2478,7 @@ Mho6/4UIyYOf8kpIEFR3N+2ivEC+5BB09+Rbu7nzifmPQdjH5FCQNYA+HLhNkNPU
 -----END CERTIFICATE-----`))
 
 	// CN=SSL.com Root Certification Authority ECC; O=SSL Corporation; L=Houston; ST=Texas; C=US
-	chromeIncluded.AppendCertsFromPEM([]byte(`-----BEGIN CERTIFICATE-----
+	pool.AppendCertsFromPEM([]byte(`-----BEGIN CERTIFICATE-----
 MIICjTCCAhSgAwIBAgIIdebfy8FoW6gwCgYIKoZIzj0EAwIwfDELMAkGA1UEBhMC
 VVMxDjAMBgNVBAgMBVRleGFzMRAwDgYDVQQHDAdIb3VzdG9uMRgwFgYDVQQKDA9T
 U0wgQ29ycG9yYXRpb24xMTAvBgNVBAMMKFNTTC5jb20gUm9vdCBDZXJ0aWZpY2F0
@@ -2498,7 +2496,7 @@ gA0z5Wajs6O7pdWLjwkspl1+4vAHCGht0nxpbl/f5Wpl
 -----END CERTIFICATE-----`))
 
 	// CN=SSL.com EV Root Certification Authority RSA R2; O=SSL Corporation; L=Houston; ST=Texas; C=US
-	chromeIncluded.AppendCertsFromPEM([]byte(`-----BEGIN CERTIFICATE-----
+	pool.AppendCertsFromPEM([]byte(`-----BEGIN CERTIFICATE-----
 MIIF6zCCA9OgAwIBAgIIVrYpzTS8ePYwDQYJKoZIhvcNAQELBQAwgYIxCzAJBgNV
 BAYTAlVTMQ4wDAYDVQQIDAVUZXhhczEQMA4GA1UEBwwHSG91c3RvbjEYMBYGA1UE
 CgwPU1NMIENvcnBvcmF0aW9uMTcwNQYDVQQDDC5TU0wuY29tIEVWIFJvb3QgQ2Vy
@@ -2534,7 +2532,7 @@ mKVx01QT2WDz9UtmT/rx7iASjbSsV7FFY6GsdqnC+w==
 -----END CERTIFICATE-----`))
 
 	// CN=SSL.com EV Root Certification Authority ECC; O=SSL Corporation; L=Houston; ST=Texas; C=US
-	chromeIncluded.AppendCertsFromPEM([]byte(`-----BEGIN CERTIFICATE-----
+	pool.AppendCertsFromPEM([]byte(`-----BEGIN CERTIFICATE-----
 MIIClDCCAhqgAwIBAgIILCmcWxbtBZUwCgYIKoZIzj0EAwIwfzELMAkGA1UEBhMC
 VVMxDjAMBgNVBAgMBVRleGFzMRAwDgYDVQQHDAdIb3VzdG9uMRgwFgYDVQQKDA9T
 U0wgQ29ycG9yYXRpb24xNDAyBgNVBAMMK1NTTC5jb20gRVYgUm9vdCBDZXJ0aWZp
@@ -2552,7 +2550,7 @@ h5Mmm7I1HrrW9zzRHM76JTymGoEVW/MSD2zuZYrJh6j5B+BimoxcSg==
 -----END CERTIFICATE-----`))
 
 	// CN=SwissSign Gold CA - G2; O=SwissSign AG; C=CH
-	chromeIncluded.AppendCertsFromPEM([]byte(`-----BEGIN CERTIFICATE-----
+	pool.AppendCertsFromPEM([]byte(`-----BEGIN CERTIFICATE-----
 MIIFujCCA6KgAwIBAgIJALtAHEP1Xk+wMA0GCSqGSIb3DQEBBQUAMEUxCzAJBgNV
 BAYTAkNIMRUwEwYDVQQKEwxTd2lzc1NpZ24gQUcxHzAdBgNVBAMTFlN3aXNzU2ln
 biBHb2xkIENBIC0gRzIwHhcNMDYxMDI1MDgzMDM1WhcNMzYxMDI1MDgzMDM1WjBF
@@ -2587,7 +2585,7 @@ Qc8Bsem4yWb02ybzOqR08kkkW8mw0FfB+j564ZfJ
 -----END CERTIFICATE-----`))
 
 	// CN=TWCA CYBER Root CA; OU=Root CA; O=TAIWAN-CA; C=TW
-	chromeIncluded.AppendCertsFromPEM([]byte(`-----BEGIN CERTIFICATE-----
+	pool.AppendCertsFromPEM([]byte(`-----BEGIN CERTIFICATE-----
 MIIFjTCCA3WgAwIBAgIQQAE0jMIAAAAAAAAAATzyxjANBgkqhkiG9w0BAQwFADBQ
 MQswCQYDVQQGEwJUVzESMBAGA1UEChMJVEFJV0FOLUNBMRAwDgYDVQQLEwdSb290
 IENBMRswGQYDVQQDExJUV0NBIENZQkVSIFJvb3QgQ0EwHhcNMjIxMTIyMDY1NDI5
@@ -2621,7 +2619,7 @@ t5b5wR9iWqJDB0BeJsas7a5wFsWqynKKTbDPAYsDP27X
 -----END CERTIFICATE-----`))
 
 	// CN=TWCA Global Root CA; OU=Root CA; O=TAIWAN-CA; C=TW
-	chromeIncluded.AppendCertsFromPEM([]byte(`-----BEGIN CERTIFICATE-----
+	pool.AppendCertsFromPEM([]byte(`-----BEGIN CERTIFICATE-----
 MIIFQTCCAymgAwIBAgICDL4wDQYJKoZIhvcNAQELBQAwUTELMAkGA1UEBhMCVFcx
 EjAQBgNVBAoTCVRBSVdBTi1DQTEQMA4GA1UECxMHUm9vdCBDQTEcMBoGA1UEAxMT
 VFdDQSBHbG9iYWwgUm9vdCBDQTAeFw0xMjA2MjcwNjI4MzNaFw0zMDEyMzExNTU5
@@ -2654,7 +2652,7 @@ KwbQBM0=
 -----END CERTIFICATE-----`))
 
 	// CN=TeliaSonera Root CA v1; O=TeliaSonera
-	chromeIncluded.AppendCertsFromPEM([]byte(`-----BEGIN CERTIFICATE-----
+	pool.AppendCertsFromPEM([]byte(`-----BEGIN CERTIFICATE-----
 MIIFODCCAyCgAwIBAgIRAJW+FqD3LkbxezmCcvqLzZYwDQYJKoZIhvcNAQEFBQAw
 NzEUMBIGA1UECgwLVGVsaWFTb25lcmExHzAdBgNVBAMMFlRlbGlhU29uZXJhIFJv
 b3QgQ0EgdjEwHhcNMDcxMDE4MTIwMDUwWhcNMzIxMDE4MTIwMDUwWjA3MRQwEgYD
@@ -2686,7 +2684,7 @@ SK236thZiNSQvxaz2emsWWFUyBy6ysHK4bkgTI86k4mloMy/0/Z1pHWWbVY=
 -----END CERTIFICATE-----`))
 
 	// CN=Telia Root CA v2; O=Telia Finland Oyj; C=FI
-	chromeIncluded.AppendCertsFromPEM([]byte(`-----BEGIN CERTIFICATE-----
+	pool.AppendCertsFromPEM([]byte(`-----BEGIN CERTIFICATE-----
 MIIFdDCCA1ygAwIBAgIPAWdfJ9b+euPkrL4JWwWeMA0GCSqGSIb3DQEBCwUAMEQx
 CzAJBgNVBAYTAkZJMRowGAYDVQQKDBFUZWxpYSBGaW5sYW5kIE95ajEZMBcGA1UE
 AwwQVGVsaWEgUm9vdCBDQSB2MjAeFw0xODExMjkxMTU1NTRaFw00MzExMjkxMTU1
@@ -2720,7 +2718,7 @@ rBPuUBQemMc=
 -----END CERTIFICATE-----`))
 
 	// CN=Trustwave Global ECC P384 Certification Authority; O=Trustwave Holdings, Inc.; L=Chicago; ST=Illinois; C=US
-	chromeIncluded.AppendCertsFromPEM([]byte(`-----BEGIN CERTIFICATE-----
+	pool.AppendCertsFromPEM([]byte(`-----BEGIN CERTIFICATE-----
 MIICnTCCAiSgAwIBAgIMCL2Fl2yZJ6SAaEc7MAoGCCqGSM49BAMDMIGRMQswCQYD
 VQQGEwJVUzERMA8GA1UECBMISWxsaW5vaXMxEDAOBgNVBAcTB0NoaWNhZ28xITAf
 BgNVBAoTGFRydXN0d2F2ZSBIb2xkaW5ncywgSW5jLjE6MDgGA1UEAxMxVHJ1c3R3
@@ -2739,7 +2737,7 @@ Sw==
 -----END CERTIFICATE-----`))
 
 	// CN=Trustwave Global ECC P256 Certification Authority; O=Trustwave Holdings, Inc.; L=Chicago; ST=Illinois; C=US
-	chromeIncluded.AppendCertsFromPEM([]byte(`-----BEGIN CERTIFICATE-----
+	pool.AppendCertsFromPEM([]byte(`-----BEGIN CERTIFICATE-----
 MIICYDCCAgegAwIBAgIMDWpfCD8oXD5Rld9dMAoGCCqGSM49BAMCMIGRMQswCQYD
 VQQGEwJVUzERMA8GA1UECBMISWxsaW5vaXMxEDAOBgNVBAcTB0NoaWNhZ28xITAf
 BgNVBAoTGFRydXN0d2F2ZSBIb2xkaW5ncywgSW5jLjE6MDgGA1UEAxMxVHJ1c3R3
@@ -2756,7 +2754,7 @@ DDcCIC0mA6AFvWvR9lz4ZcyGbbOcNEhjhAnFjXca4syc4XR7
 -----END CERTIFICATE-----`))
 
 	// CN=SecureTrust CA; O=SecureTrust Corporation; C=US
-	chromeIncluded.AppendCertsFromPEM([]byte(`-----BEGIN CERTIFICATE-----
+	pool.AppendCertsFromPEM([]byte(`-----BEGIN CERTIFICATE-----
 MIIDuDCCAqCgAwIBAgIQDPCOXAgWpa1Cf/DrJxhZ0DANBgkqhkiG9w0BAQUFADBI
 MQswCQYDVQQGEwJVUzEgMB4GA1UEChMXU2VjdXJlVHJ1c3QgQ29ycG9yYXRpb24x
 FzAVBgNVBAMTDlNlY3VyZVRydXN0IENBMB4XDTA2MTEwNzE5MzExOFoXDTI5MTIz
@@ -2780,7 +2778,7 @@ CPyI6a6Lf+Ew9Dd+/cYy2i2eRDAwbO4H3tI0/NL/QPZL9GZGBlSm8jIKYyYwa5vR
 -----END CERTIFICATE-----`))
 
 	// CN=Trustwave Global Certification Authority; O=Trustwave Holdings, Inc.; L=Chicago; ST=Illinois; C=US
-	chromeIncluded.AppendCertsFromPEM([]byte(`-----BEGIN CERTIFICATE-----
+	pool.AppendCertsFromPEM([]byte(`-----BEGIN CERTIFICATE-----
 MIIF2jCCA8KgAwIBAgIMBfcOhtpJ80Y1LrqyMA0GCSqGSIb3DQEBCwUAMIGIMQsw
 CQYDVQQGEwJVUzERMA8GA1UECAwISWxsaW5vaXMxEDAOBgNVBAcMB0NoaWNhZ28x
 ITAfBgNVBAoMGFRydXN0d2F2ZSBIb2xkaW5ncywgSW5jLjExMC8GA1UEAwwoVHJ1
@@ -2814,4 +2812,5 @@ h6jCJ3zhM0EPz8/8AKAigJ5Kp28AsEFFtyLKaEjFQqKu3R3y4G5OBVixwJAWKqQ9
 EEC+j2Jjg6mcgn0tAumDMHzLJ8n9HmYAsC7TIS+OMxZsmO0QqAfWzJPP29FpHOTK
 yeC2nOnOcXHebD8WpHk=
 -----END CERTIFICATE-----`))
+	return pool
 }
