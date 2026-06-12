@@ -129,9 +129,30 @@ sing-box run -E -C config_dir
 
 可以看到，`02-provider-1.json` 是可插拔的，不需要时，可以简单地移除整个文件，而不破坏剩余配置文件的可用性。
 
-注意：扩展合并逻辑与 `format` 命令在设计层面冲突，以下情况 `format` 命令不能正确工作：
+> 注意：扩展合并逻辑与 `format` 命令在设计层面冲突，以下情况 `format` 命令不能正确工作：
+>
+> 1. `*.json` 格式，但使用了扩展字段 `_order` 或 `_tag`。
+> 1. `*.json` 以外的所有格式。
+>
+> 若你不依赖于 `format`，则无需担心。
 
-1. `*.json` 格式，但使用了扩展字段 `_order` 或 `_tag`。
-1. `*.json` 以外的所有格式。
+此外，对于高阶用户，扩展合并增加了带类型的环境变量语法支持。可用于任何字符串字段，允许在应用配置前将环境变量转换为特定类型。
 
-若你不依赖于 `format`，则无需担心。
+语法格式为 `${ENV_VAR:type}`，其中 `type` 可以是 `string`(默认)、`number` 或 `boolean`。
+
+举例来说，可能你设置了 `TPROXY_LISTEN_PORT`为`"12345"`，但 `sing-box` 要求 `listen_port` 是一个数字。
+使用 `${TPROXY_LISTEN_PORT:number}` 语法，程序会在应用配置前将其转换为数字。
+
+```jsonc
+{
+  "inbounds": [{
+    "type": "tproxy",
+    "listen_port": "${TPROXY_LISTEN_PORT:number}",
+  }]
+}
+```
+
+布尔值支持以下字符串（不区分大小写）：
+
+- `true`：`"true"`、`"1"`、`"yes"`、`"on"`、`"ok"`、`"enabled"`。
+- `false`：`"false"`、`"0"`、`"no"`、`"off"`、`"disabled"`。

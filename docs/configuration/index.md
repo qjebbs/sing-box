@@ -129,9 +129,27 @@ Merged:
 
 As you can see, `02-provider-1.json` is pluggable, you can simply remove the entire file when you don’t need it, without breaking the usability of the remaining files.
 
-Note: The extended merging conflicts with the `format` command at the design level, the `format` command won't work correctly in the following cases:
+> Note: The extended merging conflicts with the `format` command at the design level, the `format` command won't work correctly in the following cases:
+> 
+> 1. `*.json` files with `_order` or `_tag` fields.
+> 1. All files other than `*.json`.
+> 
+> If you don't depend on `format`, you don't need to worry about it.
 
-1. `*.json` files with `_order` or `_tag` fields.
-1. All files other than `*.json`.
+In addition, for advanced users, the extended merging adds support for typed environment variable syntax `${ENV_VAR:type}`, where `type` can be `string` (default), `number`, or `boolean`.
 
-If you don't depend on `format`, you don't need to worry about it.
+For example, if you have an environment variable `TPROXY_LISTEN_PORT` with value `12345` which can only be a string, but the `sing-box`  requires `listen_port` to be a number. By using the `${TPROXY_LISTEN_PORT:number}` syntax, the program will convert it before applying the configuration.
+
+```jsonc
+{
+  "inbounds": [{
+    "type": "tproxy",
+    "listen_port": "${TPROXY_LISTEN_PORT:number}",
+  }]
+}
+```
+
+The boolean type supports the following strings (case-insensitive):
+
+- `true`：`"true"`、`"1"`、`"yes"`、`"on"`、`"ok"`、`"enabled"`。
+- `false`：`"false"`、`"0"`、`"no"`、`"off"`、`"disabled"`。

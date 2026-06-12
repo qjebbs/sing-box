@@ -14,6 +14,7 @@ import (
 	myjson "github.com/sagernet/sing/common/json"
 
 	"github.com/qjebbs/go-jsons"
+	"github.com/qjebbs/go-jsons/preprocess"
 )
 
 // Formats and extensions.
@@ -51,7 +52,7 @@ func init() {
 		jsons.WithMergeByAndRemove("_tag"),
 		jsons.WithOrderByAndRemove("_order"),
 		jsons.WithIndent("", "  "),
-		jsons.WithPreprocessor(expandEnv),
+		jsons.WithPreprocessor(preprocess.ExpandTypedEnv),
 	)
 	merger.RegisterOrderedLoader(
 		formatJSON,
