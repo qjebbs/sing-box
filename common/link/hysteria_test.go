@@ -9,10 +9,14 @@ import (
 func TestHysteria(t *testing.T) {
 	runTests(t, link.ParseHysteria, TestCases[*link.Hysteria]{
 		{
-			Link: "hysteria://host:443?protocol=udp&auth=123456&peer=sni.domain&insecure=1&upmbps=100&downmbps=100&alpn=hysteria&obfs=xplus&obfsParam=123456#remarks",
+			Link: "hysteria://host:443?protocol=udp&auth=123456&peer=sni.domain&insecure=1&upmbps=100&downmbps=100&alpn=hysteria&obfs=xplus&obfsParam=123456&mport=1234,5000-6000#remarks",
 			Want: &link.Hysteria{
-				Host:      "host",
-				Port:      443,
+				Host: "host",
+				Port: 443,
+				Ports: link.HysteriaPortRanges{
+					{1234, 1234},
+					{5000, 6000},
+				},
 				Protocol:  "udp",
 				Auth:      "123456",
 				Peer:      "sni.domain",

@@ -9,11 +9,15 @@ import (
 func TestHysteria2(t *testing.T) {
 	runTests(t, link.ParseHysteria2, TestCases[*link.Hysteria2]{
 		{
-			Link: "hysteria2://letmein@example.com/?insecure=1&obfs=salamander&obfs-password=gawrgura&pinSHA256=&sni=real.example.com#remarks",
+			Link: "hysteria2://letmein@example.com/?insecure=1&obfs=salamander&obfs-password=gawrgura&pinSHA256=&sni=real.example.com&mport=1234,5000-6000#remarks",
 			Want: &link.Hysteria2{
-				Auth:         "letmein",
-				Host:         "example.com",
-				Port:         443,
+				Auth: "letmein",
+				Host: "example.com",
+				Port: 443,
+				Ports: link.HysteriaPortRanges{
+					{1234, 1234},
+					{5000, 6000},
+				},
 				Obfs:         "salamander",
 				ObfsPassword: "gawrgura",
 				SNI:          "real.example.com",

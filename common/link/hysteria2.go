@@ -25,15 +25,16 @@ func init() {
 
 // Hysteria2 represents a parsed hysteria2 link
 type Hysteria2 struct {
-	User         string `json:"user,omitempty"`
-	Auth         string `json:"auth,omitempty"`
-	Host         string `json:"host,omitempty"`
-	Port         uint16 `json:"port,omitempty"`
-	Obfs         string `json:"obfs,omitempty"`
-	ObfsPassword string `json:"obfs_password,omitempty"`
-	SNI          string `json:"sni,omitempty"`
-	Insecure     bool   `json:"insecure,omitempty"`
-	PinSHA256    string `json:"pin_sha256,omitempty"`
+	User         string             `json:"user,omitempty"`
+	Auth         string             `json:"auth,omitempty"`
+	Host         string             `json:"host,omitempty"`
+	Port         uint16             `json:"port,omitempty"`
+	Ports        HysteriaPortRanges `json:"ports,omitempty"`
+	Obfs         string             `json:"obfs,omitempty"`
+	ObfsPassword string             `json:"obfs_password,omitempty"`
+	SNI          string             `json:"sni,omitempty"`
+	Insecure     bool               `json:"insecure,omitempty"`
+	PinSHA256    string             `json:"pin_sha256,omitempty"`
 
 	Remarks string `json:"remarks,omitempty"`
 }
@@ -80,6 +81,12 @@ func ParseHysteria2(u *url.URL) (*Hysteria2, error) {
 			link.Insecure = values[0] == "1"
 		case "pinSHA256":
 			link.PinSHA256 = values[0]
+		case "mport", "mports", "ports":
+			ports, err := ParsePortRanges(values[0])
+			if err != nil {
+				return nil, E.Cause(err, "invalid", key, "=", values[0])
+			}
+			link.Ports = ports
 		}
 	}
 	return link, nil
@@ -87,8 +94,14 @@ func ParseHysteria2(u *url.URL) (*Hysteria2, error) {
 
 // Outbound implements the Link interface
 func (l *Hysteria2) Outbound() (*option.Outbound, error) {
+	insecure := l.Insecure
 	if l.PinSHA256 != "" {
-		return nil, E.New("pinSHA256 is not unsupported")
+		// return nil, E.New("pinSHA256 is not unsupported")
+
+		// sing-box does not support pinSHA256 option.
+		// once pinSHA256 is set, we assume the link requires insecure, or the pinSHA256 should not be provided.
+		// the hy2 doc says it's recommended to set pinSHA256 when insecure is set.
+		insecure = true
 	}
 	password := l.Auth
 	if l.User != "" {
@@ -109,13 +122,15 @@ func (l *Hysteria2) Outbound() (*option.Outbound, error) {
 				Server:     l.Host,
 				ServerPort: l.Port,
 			},
-			Password: password,
-			Obfs:     obfs,
+			ServerPorts: l.Ports.SingBoxPorts(),
+			Password:    password,
+			Obfs:        obfs,
 			OutboundTLSOptionsContainer: option.OutboundTLSOptionsContainer{
 				TLS: &option.OutboundTLSOptions{
 					Enabled:    true,
 					ServerName: l.SNI,
-					Insecure:   l.Insecure,
+					Insecure:   insecure,
+					// CertificatePublicKeySHA256: [][]byte{[]byte(l.PinSHA256)},
 				},
 			},
 		},
@@ -148,6 +163,9 @@ func (l *Hysteria2) URL() (string, error) {
 	}
 	if l.SNI != "" {
 		query.Set("sni", l.SNI)
+	}
+	if len(l.Ports) > 0 {
+		query.Set("mport", l.Ports.String())
 	}
 	if l.Insecure {
 		query.Set("insecure", "1")

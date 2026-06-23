@@ -25,18 +25,19 @@ func init() {
 
 // Hysteria represents a parsed hysteria link
 type Hysteria struct {
-	Host      string `json:"host,omitempty"`
-	Port      uint16 `json:"port,omitempty"`
-	Protocol  string `json:"protocol,omitempty"`
-	Auth      string `json:"auth,omitempty"`
-	Peer      string `json:"peer,omitempty"`
-	Insecure  bool   `json:"insecure,omitempty"`
-	ALPN      string `json:"alpn,omitempty"`
-	UpMpbs    uint64 `json:"up_mpbs,omitempty"`
-	DownMpbs  uint64 `json:"down_mpbs,omitempty"`
-	Obfs      string `json:"obfs,omitempty"`
-	ObfsParam string `json:"obfs_param,omitempty"`
-	Remarks   string `json:"remarks,omitempty"`
+	Host      string             `json:"host,omitempty"`
+	Port      uint16             `json:"port,omitempty"`
+	Ports     HysteriaPortRanges `json:"ports,omitempty"`
+	Protocol  string             `json:"protocol,omitempty"`
+	Auth      string             `json:"auth,omitempty"`
+	Peer      string             `json:"peer,omitempty"`
+	Insecure  bool               `json:"insecure,omitempty"`
+	ALPN      string             `json:"alpn,omitempty"`
+	UpMpbs    uint64             `json:"up_mpbs,omitempty"`
+	DownMpbs  uint64             `json:"down_mpbs,omitempty"`
+	Obfs      string             `json:"obfs,omitempty"`
+	ObfsParam string             `json:"obfs_param,omitempty"`
+	Remarks   string             `json:"remarks,omitempty"`
 }
 
 // ParseHysteria parses a hysteria link
@@ -69,18 +70,24 @@ func ParseHysteria(u *url.URL) (*Hysteria, error) {
 			link.Auth = values[0]
 		case "peer":
 			link.Peer = values[0]
+		case "mport", "mports", "ports":
+			ports, err := ParsePortRanges(values[0])
+			if err != nil {
+				return nil, E.Cause(err, "invalid", key, "=", values[0])
+			}
+			link.Ports = ports
 		case "insecure", "allowInsecure":
 			link.Insecure = values[0] == "1"
 		case "upmbps":
 			val, err := strconv.ParseUint(values[0], 10, 64)
 			if err != nil {
-				return nil, E.Cause(err, "invalid upmbps ", values[0])
+				return nil, E.Cause(err, "invalid", key, "=", values[0])
 			}
 			link.UpMpbs = val
 		case "downmbps":
 			val, err := strconv.ParseUint(values[0], 10, 64)
 			if err != nil {
-				return nil, E.Cause(err, "invalid downmbps ", values[0])
+				return nil, E.Cause(err, "invalid", key, "=", values[0])
 			}
 			link.DownMpbs = val
 		case "alpn":
@@ -123,7 +130,8 @@ func (l *Hysteria) Outbound() (*option.Outbound, error) {
 				Server:     l.Host,
 				ServerPort: l.Port,
 			},
-			AuthString: l.Auth,
+			ServerPorts: l.Ports.SingBoxPorts(),
+			AuthString:  l.Auth,
 			OutboundTLSOptionsContainer: option.OutboundTLSOptionsContainer{
 				TLS: &option.OutboundTLSOptions{
 					Enabled:    true,
@@ -154,6 +162,9 @@ func (l *Hysteria) URL() (string, error) {
 	}
 	if l.Peer != "" {
 		query.Set("peer", l.Peer)
+	}
+	if len(l.Ports) > 0 {
+		query.Set("mports", l.Ports.String())
 	}
 	if l.Insecure {
 		query.Set("insecure", "1")
