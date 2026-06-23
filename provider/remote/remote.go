@@ -345,11 +345,10 @@ func (s *Remote) parseLinks(content string, dedupHost, dedupHostPort bool) []*pa
 	for i := len(links) - 1; i >= 0; i-- {
 		lnk := links[i]
 		hp := hostport{
-			host: lnk.URL.Hostname(),
-			port: lnk.URL.Port(),
+			scheme: lnk.URL.Scheme,
+			host:   lnk.URL.Hostname(),
+			port:   lnk.URL.Port(),
 		}
-		hp.scheme = lnk.URL.Scheme
-		hp.host = ""
 		if !dedupHostPort {
 			hp.port = ""
 		}
