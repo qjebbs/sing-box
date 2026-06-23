@@ -78,10 +78,10 @@ func runPing() (*ping.Statistics, error) {
 		return nil, E.New("no destination specified")
 	}
 	var (
-		tags        []string
-		requireConf bool
-		outbounds   []option.Outbound
-		detour      string
+		tags          []string
+		requireConf   bool
+		linkOutbounds []option.Outbound
+		detour        string
 	)
 	for i, arg := range commandPing.Flags().Args() {
 		uri, err := url.Parse(arg)
@@ -103,7 +103,7 @@ func runPing() (*ping.Statistics, error) {
 			out.Tag = fmt.Sprintf("outbound%d", i+1)
 		}
 		tags = append(tags, out.Tag)
-		outbounds = append(outbounds, *out)
+		linkOutbounds = append(linkOutbounds, *out)
 		encoder := json.NewEncoder(os.Stdout)
 		encoder.SetIndent("", "  ")
 		encoder.Encode(out)
@@ -124,24 +124,27 @@ func runPing() (*ping.Statistics, error) {
 		encoder.SetIndent("", "  ")
 		encoder.Encode(&chain)
 		os.Stdout.WriteString("\n")
-		outbounds = append(outbounds, chain)
+		linkOutbounds = append(linkOutbounds, chain)
 	}
 
-	var providers []option.Provider
+	var options option.Options
 	if requireConf {
-		options, err := readConfigAndMerge()
+		o, err := readConfigAndMerge()
 		if err != nil {
 			return nil, err
 		}
-		outbounds = append(outbounds, options.Outbounds...)
-		providers = options.Providers
+		o.Outbounds = append(o.Outbounds, linkOutbounds...)
+		options = o
+	} else {
+		options = option.Options{
+			Outbounds: linkOutbounds,
+		}
 	}
 
 	client := &ping.Client{
-		Count:     commandPingFlagCount,
-		Interval:  commandPingFlagInteval,
-		Outbounds: outbounds,
-		Providers: providers,
+		Count:    commandPingFlagCount,
+		Interval: commandPingFlagInteval,
+		Options:  options,
 	}
 
 	ctx, cancel := context.WithCancel(globalCtx)

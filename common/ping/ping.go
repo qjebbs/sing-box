@@ -8,21 +8,19 @@ import (
 	box "github.com/sagernet/sing-box"
 	"github.com/sagernet/sing-box/common/urltest"
 	C "github.com/sagernet/sing-box/constant"
-	"github.com/sagernet/sing-box/log"
 	"github.com/sagernet/sing-box/option"
 )
 
 // Client is the ping client
 type Client struct {
-	Count     uint
-	Interval  time.Duration
-	Outbounds []option.Outbound
-	Providers []option.Provider
+	Count    uint
+	Interval time.Duration
+	Options  option.Options
 }
 
 // Ping pings the destination
 func (c *Client) Ping(ctx context.Context, tag string, destination string) (*Statistics, error) {
-	instance, err := newInstance(ctx, c.Outbounds, c.Providers)
+	instance, err := newInstance(ctx, c.Options)
 	if err != nil {
 		return nil, err
 	}
@@ -77,15 +75,20 @@ L:
 	return getStatistics(startAt, round, rtts), nil
 }
 
-func newInstance(ctx context.Context, outbounds []option.Outbound, providers []option.Provider) (*box.Box, error) {
-	options := option.Options{
+func newInstance(ctx context.Context, options option.Options) (*box.Box, error) {
+	// Pick option sections required for ping.
+	// Inbounds / Experimental are not needed for ping,
+	// they may require extra permission / resources to run,
+	// e.g. tun requires root permission, and clash_api requires a port to listen on.
+	options = option.Options{
 		Log: &option.LogOptions{
 			Disabled: true,
-			Level:    log.FormatLevel(log.LevelInfo),
 		},
-		Outbounds: outbounds,
-		Providers: providers,
+		Providers: options.Providers,
+		Outbounds: options.Outbounds,
+		Endpoints: options.Endpoints,
 	}
+	options.Inbounds = nil
 	instance, err := box.New(box.Options{
 		Context: ctx,
 		Options: options,
