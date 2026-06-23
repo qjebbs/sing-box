@@ -381,7 +381,7 @@ func (v *Xray) check() error {
 		}
 	}
 	if v.TransportType != "kcp" {
-		if v.HeaderType != "" {
+		if v.HeaderType != "" && v.HeaderType != "none" {
 			return E.New("headerType is not supported in ", v.TransportType)
 		}
 		if v.Seed != "" {
