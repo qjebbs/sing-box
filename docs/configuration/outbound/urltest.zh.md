@@ -17,7 +17,7 @@
   ],
   "exclude": "",
   "include": "",
-  "checker": "health-checker",
+  "checker": "default",
   "tolerance": 50
 }
 ```
@@ -46,7 +46,7 @@
 
 #### checker
 
-健康检查服务的标签。必须添加健康检查服务才能使用 URLTest 出站组。
+健康检查服务的标签。可选，未配置时使用默认健康检查服务。
 
 #### tolerance
 

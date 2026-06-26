@@ -3,7 +3,7 @@
 Health checker service is used to check and provide health status information of nodes for outbound groups. 
 It can be shared by multiple outbound groups to avoid redundant health check overhead.
 
-If you want to use URLTest / Loadbalance outbound groups, you must add this service.
+The program will automatically create a default health checker service with the tag `default`. You can explicitly override it or create a new service.
 
 ### Structure
 
@@ -12,7 +12,7 @@ If you want to use URLTest / Loadbalance outbound groups, you must add this serv
   "services": [
     {
       "type": "health-checker",
-      "tag": "health-checker",
+      "tag": "default",
       "interval": "5m",
       "sampling": 10,
       "destination": "https://www.gstatic.com/generate_204",

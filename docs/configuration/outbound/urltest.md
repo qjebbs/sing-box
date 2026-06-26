@@ -17,7 +17,7 @@
   ],
   "exclude": "",
   "include": "",
-  "checker": "health-checker",
+  "checker": "default",
   "tolerance": 50
 }
 ```
@@ -46,7 +46,7 @@ Include regular expression to filter `providers` nodes.
 
 #### checker
 
-The tag of the health check service. A health check service must be added to use the URLTest outbound group.
+The tag of the health check service. Optional, if not configured, the default health check service will be used.
 
 #### tolerance
 

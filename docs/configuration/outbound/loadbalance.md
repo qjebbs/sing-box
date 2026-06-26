@@ -16,7 +16,7 @@
   ],
   "exclude": "",
   "include": "",
-  "checker": "health-checker",
+  "checker": "default",
   "pick": {
     "objective": "leastload",
     "strategy": "random",
@@ -69,7 +69,7 @@ Include regular expression to filter `providers` nodes.
 
 #### Checker
 
-The tag of the health check service. A health check service must be added to use the Loadbalance outbound group.
+The tag of the health check service. Optional, if not configured, the default health check service will be used.
 
 #### pick
 

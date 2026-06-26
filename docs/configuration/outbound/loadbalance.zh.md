@@ -16,7 +16,7 @@
   ],
   "exclude": "",
   "include": "",
-  "checker": "health-checker",
+  "checker": "default",
   "pick": {
     "objective": "leastload",
     "strategy": "random",
@@ -69,7 +69,7 @@
 
 #### checker
 
-健康检查服务的标签。必须添加健康检查服务才能使用 Loadbalance 出站组。
+健康检查服务的标签。可选，未配置时使用默认健康检查服务。
 
 参阅 [健康检查](/zh/configuration/service/health-checker/) 了解详情。
 

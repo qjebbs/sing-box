@@ -2,7 +2,7 @@
 
 健康检查服务用于检查并为出站组提供节点的健康状态信息，可被多个出站组共享，避免重复的健康检查开销。
 
-若要使用 URLTest / Loadbalance 出站组，必须添加此服务。
+程序会自动创建一个默认的健康检查服务，tag 为 `default`，你可以显式覆盖它或创建新的服务。
 
 ### 结构
 
@@ -11,7 +11,7 @@
   "services": [
     {
       "type": "health-checker",
-      "tag": "health-checker",
+      "tag": "default",
       "interval": "5m",
       "sampling": 10,
       "destination": "https://www.gstatic.com/generate_204",
