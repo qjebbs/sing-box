@@ -307,19 +307,6 @@ func New(options Options) (*Box, error) {
 		if err != nil {
 			return nil, E.Cause(err, "initialize outbound[", i, "]")
 		}
-		for _, derived := range outboundRegistry.DeriveOptions(outboundOptions.Type, outboundOptions.Tag, outboundOptions.Options) {
-			err = outboundManager.Create(
-				outboundCtx,
-				router,
-				logFactory.NewLogger(F.ToString("outbound/", derived.Type, "[", derived.Tag, "]")),
-				derived.Tag,
-				derived.Type,
-				derived.Options,
-			)
-			if err != nil {
-				return nil, E.Cause(err, "initialize outbound[", i, "]")
-			}
-		}
 	}
 	for i, opt := range options.Providers {
 		var tag string

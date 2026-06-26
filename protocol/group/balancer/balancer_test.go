@@ -11,7 +11,7 @@ import (
 	"github.com/sagernet/sing-box/option"
 	"github.com/sagernet/sing-box/protocol/block"
 	"github.com/sagernet/sing-box/protocol/group/balancer"
-	"github.com/sagernet/sing-box/protocol/group/healthcheck"
+	"github.com/sagernet/sing-box/service/healthcheck"
 )
 
 var (

@@ -31,15 +31,16 @@ const (
 	TypeCCM          = "ccm"
 	TypeOCM          = "ocm"
 	TypeOOMKiller    = "oom-killer"
+
+	TypeHealthChecker = "health-checker"
 )
 
 const (
 	TypeSelector = "selector"
 	TypeURLTest  = "urltest"
 
-	TypeLoadBalance        = "loadbalance"
-	TypeLoadBalanceProfile = "loadbalance-profile"
-	TypeChain              = "chain"
+	TypeLoadBalance = "loadbalance"
+	TypeChain       = "chain"
 )
 
 func ProxyDisplayName(proxyType string) string {
@@ -98,8 +99,6 @@ func ProxyDisplayName(proxyType string) string {
 		return "URLTest"
 	case TypeLoadBalance:
 		return "LoadBalance"
-	case TypeLoadBalanceProfile:
-		return "LoadBalanceProfile"
 	case TypeChain:
 		return "Chain"
 	default:

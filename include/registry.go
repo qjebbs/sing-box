@@ -36,6 +36,7 @@ import (
 	"github.com/sagernet/sing-box/protocol/vless"
 	"github.com/sagernet/sing-box/protocol/vmess"
 	"github.com/sagernet/sing-box/provider/remote"
+	"github.com/sagernet/sing-box/service/healthcheck"
 	"github.com/sagernet/sing-box/service/resolved"
 	"github.com/sagernet/sing-box/service/ssmapi"
 	E "github.com/sagernet/sing/common/exceptions"
@@ -88,7 +89,6 @@ func OutboundRegistry() *outbound.Registry {
 	group.RegisterSelectorProvider(registry)
 	group.RegisterURLTestProvider(registry)
 	group.RegisterLoadBalance(registry)
-	group.RegisterLoadBalanceProfile(registry)
 	group.RegisterChain(registry)
 
 	socks.RegisterOutbound(registry)
@@ -142,6 +142,7 @@ func ServiceRegistry() *service.Registry {
 
 	resolved.RegisterService(registry)
 	ssmapi.RegisterService(registry)
+	healthcheck.RegisterService(registry)
 
 	registerDERPService(registry)
 	registerCCMService(registry)

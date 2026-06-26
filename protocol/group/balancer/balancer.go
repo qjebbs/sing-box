@@ -6,7 +6,7 @@ import (
 	"github.com/sagernet/sing-box/adapter"
 	"github.com/sagernet/sing-box/log"
 	"github.com/sagernet/sing-box/option"
-	"github.com/sagernet/sing-box/protocol/group/healthcheck"
+	"github.com/sagernet/sing-box/service/healthcheck"
 	"github.com/sagernet/sing/common"
 	E "github.com/sagernet/sing/common/exceptions"
 	M "github.com/sagernet/sing/common/metadata"
@@ -189,13 +189,4 @@ func (b *Balancer) GetNodes(logging bool) (all, filtered []*Node) {
 		b.logger.Info(n.String())
 	}
 	return all, filtered
-}
-
-// InterfaceUpdated implements adapter.InterfaceUpdateListener
-func (b *Balancer) InterfaceUpdated() {
-	// b can be nil if the parent struct has not initialized it yet.
-	if b == nil || b.HealthCheck == nil {
-		return
-	}
-	go b.HealthCheck.CheckAll(context.Background())
 }

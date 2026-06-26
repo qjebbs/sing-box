@@ -12,23 +12,22 @@ import (
 	C "github.com/sagernet/sing-box/constant"
 	"github.com/sagernet/sing-box/log"
 	"github.com/sagernet/sing-box/option"
-	"github.com/sagernet/sing-box/protocol/group/healthcheck"
+	"github.com/sagernet/sing-box/service/healthcheck"
 	tun "github.com/sagernet/sing-tun"
 	"github.com/sagernet/sing/common"
 	E "github.com/sagernet/sing/common/exceptions"
-	"github.com/sagernet/sing/common/json/badoption"
 	M "github.com/sagernet/sing/common/metadata"
 	N "github.com/sagernet/sing/common/network"
 	"github.com/sagernet/sing/service"
 )
 
 func RegisterURLTestProvider(registry *outbound.Registry) {
-	outbound.Register[option.ProviderURLTestOptions](registry, C.TypeURLTest, NewURLTestProvider)
+	outbound.Register(registry, C.TypeURLTest, NewURLTestProvider)
 }
 
 var (
 	_ adapter.Outbound                = (*URLTestProvider)(nil)
-	_ adapter.OutboundCheckGroup      = (*URLTestProvider)(nil)
+	_ adapter.URLTestGroup            = (*URLTestProvider)(nil)
 	_ adapter.InterfaceUpdateListener = (*URLTestProvider)(nil)
 	_ adapter.DirectRouteOutbound     = (*URLTestProvider)(nil)
 )
@@ -43,25 +42,18 @@ type URLTestProvider struct {
 	outbound   adapter.OutboundManager
 	provider   adapter.ProviderManager
 	connection adapter.ConnectionManager
+	serviceMgr adapter.ServiceManager
 
-	options   option.HealthCheckOptions
+	checker   string
 	tolerance healthcheck.RTT
 }
 
 func NewURLTestProvider(ctx context.Context, router adapter.Router, logger log.ContextLogger, tag string, options option.ProviderURLTestOptions) (adapter.Outbound, error) {
-	link := options.URL
-	interval := options.Interval
 	tolerance := healthcheck.RTT(options.Tolerance)
-	if link == "" {
-		link = "https://www.gstatic.com/generate_204"
-	}
-	if interval == 0 {
-		interval = badoption.Duration(C.DefaultURLTestInterval)
-	}
 	if tolerance == 0 {
 		tolerance = 50
 	}
-	outbound := &URLTestProvider{
+	return &URLTestProvider{
 		GroupAdapter: outbound.NewGroupAdapter(C.TypeURLTest, tag, []string{N.NetworkTCP, N.NetworkUDP}, options.ProviderGroupCommonOption),
 		ctx:          ctx,
 		router:       router,
@@ -69,29 +61,40 @@ func NewURLTestProvider(ctx context.Context, router adapter.Router, logger log.C
 		outbound:     service.FromContext[adapter.OutboundManager](ctx),
 		connection:   service.FromContext[adapter.ConnectionManager](ctx),
 		provider:     service.FromContext[adapter.ProviderManager](ctx),
-		options: option.HealthCheckOptions{
-			Sampling:    1,
-			Interval:    interval,
-			Destination: link,
-		},
-		tolerance: tolerance,
-	}
-	return outbound, nil
+		serviceMgr:   service.FromContext[adapter.ServiceManager](ctx),
+		checker:      options.Checker,
+		tolerance:    tolerance,
+	}, nil
 }
 
 func (s *URLTestProvider) Start() error {
 	if err := s.InitProviders(s.outbound, s.provider); err != nil {
 		return err
 	}
-	s.HealthCheck = healthcheck.New(s.ctx, s.router, s.outbound, s.Providers(), &s.options, s.logger)
-	return s.HealthCheck.Start()
+	if s.checker == "" {
+		return E.New("urltest requires a checker service, set 'checker' in options")
+	}
+	svc, ok := s.serviceMgr.Get(s.checker)
+	if !ok {
+		return E.New("health checker service not found: ", s.checker)
+	}
+	checker, ok := svc.(*healthcheck.Service)
+	if !ok {
+		return E.New("service [", s.checker, "] is not a health checker service")
+	}
+	if err := checker.HealthCheck.SetProviders(s.Tag(), s.Providers()); err != nil {
+		return err
+	}
+	s.HealthCheck = checker.HealthCheck
+	return nil
 }
 
 func (s URLTestProvider) Close() error {
+	s.HealthCheck.RemoveProviders(s.Tag())
 	if s.HealthCheck == nil {
 		return nil
 	}
-	return s.HealthCheck.Close()
+	return nil
 }
 
 func (s *URLTestProvider) Now() string {
@@ -240,4 +243,18 @@ func (s *URLTestProvider) getHistory(outbound adapter.Outbound) *healthcheck.His
 		outbound = real
 	}
 	return s.HealthCheck.Storage.Latest(outbound.Tag())
+}
+
+// URLTest implements adapter.OutboundCheckGroup
+func (s *URLTestProvider) URLTest(ctx context.Context) (map[string]uint16, error) {
+	return s.HealthCheck.CheckAll(ctx, s.Tag())
+}
+
+// InterfaceUpdated implements adapter.InterfaceUpdateListener
+func (s *URLTestProvider) InterfaceUpdated() {
+	// b can be nil if the parent struct has not initialized it yet.
+	if s.HealthCheck == nil {
+		return
+	}
+	go s.HealthCheck.CheckAll(context.Background(), s.Tag())
 }

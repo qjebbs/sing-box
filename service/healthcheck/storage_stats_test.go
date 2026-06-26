@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/sagernet/sing-box/protocol/group/healthcheck"
+	"github.com/sagernet/sing-box/service/healthcheck"
 )
 
 func TestStorageStats(t *testing.T) {

@@ -7,7 +7,7 @@ import (
 	"strings"
 
 	"github.com/sagernet/sing-box/adapter"
-	"github.com/sagernet/sing-box/protocol/group/healthcheck"
+	"github.com/sagernet/sing-box/service/healthcheck"
 )
 
 // Status is the status of a node

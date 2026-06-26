@@ -25,7 +25,7 @@ func NewStorage(cap uint, validity time.Duration) *Storage {
 	return &Storage{
 		cap:      int(cap),
 		validity: validity,
-		history:  make([]History, cap, cap),
+		history:  make([]History, cap),
 	}
 }
 

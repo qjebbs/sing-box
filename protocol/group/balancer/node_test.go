@@ -3,7 +3,7 @@ package balancer
 import (
 	"testing"
 
-	"github.com/sagernet/sing-box/protocol/group/healthcheck"
+	"github.com/sagernet/sing-box/service/healthcheck"
 )
 
 func TestNodeStatus(t *testing.T) {

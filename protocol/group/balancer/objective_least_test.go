@@ -5,7 +5,7 @@ import (
 	"testing"
 
 	"github.com/sagernet/sing-box/protocol/group/balancer"
-	"github.com/sagernet/sing-box/protocol/group/healthcheck"
+	"github.com/sagernet/sing-box/service/healthcheck"
 )
 
 func TestLeastNodes(t *testing.T) {

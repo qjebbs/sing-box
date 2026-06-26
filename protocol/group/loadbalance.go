@@ -12,7 +12,7 @@ import (
 	"github.com/sagernet/sing-box/log"
 	"github.com/sagernet/sing-box/option"
 	"github.com/sagernet/sing-box/protocol/group/balancer"
-	"github.com/sagernet/sing-box/protocol/group/healthcheck"
+	"github.com/sagernet/sing-box/service/healthcheck"
 	tun "github.com/sagernet/sing-tun"
 	"github.com/sagernet/sing/common"
 	E "github.com/sagernet/sing/common/exceptions"
@@ -22,12 +22,12 @@ import (
 )
 
 func RegisterLoadBalance(registry *outbound.Registry) {
-	outbound.Register(registry, C.TypeLoadBalance, NewLoadBalance, DeriveLoadBalanceProfiles)
+	outbound.Register(registry, C.TypeLoadBalance, NewLoadBalance)
 }
 
 var (
 	_ adapter.Outbound                = (*LoadBalance)(nil)
-	_ adapter.OutboundCheckGroup      = (*LoadBalance)(nil)
+	_ adapter.URLTestGroup            = (*LoadBalance)(nil)
 	_ adapter.DirectRouteOutbound     = (*LoadBalance)(nil)
 	_ adapter.SimpleLifecycle         = (*LoadBalance)(nil)
 	_ adapter.InterfaceUpdateListener = (*LoadBalance)(nil)
@@ -44,6 +44,7 @@ type LoadBalance struct {
 	outbound   adapter.OutboundManager
 	provider   adapter.ProviderManager
 	connection adapter.ConnectionManager
+	serviceMgr adapter.ServiceManager
 	options    option.LoadBalanceOutboundOptions
 }
 
@@ -53,7 +54,6 @@ func NewLoadBalance(ctx context.Context, router adapter.Router, logger log.Conte
 		GroupAdapter: outbound.NewGroupAdapter(
 			C.TypeLoadBalance, tag, []string{N.NetworkTCP, N.NetworkUDP},
 			options.ProviderGroupCommonOption,
-			options.Check.DetourOf...,
 		),
 		ctx:        ctx,
 		router:     router,
@@ -61,31 +61,9 @@ func NewLoadBalance(ctx context.Context, router adapter.Router, logger log.Conte
 		outbound:   service.FromContext[adapter.OutboundManager](ctx),
 		provider:   service.FromContext[adapter.ProviderManager](ctx),
 		connection: service.FromContext[adapter.ConnectionManager](ctx),
+		serviceMgr: service.FromContext[adapter.ServiceManager](ctx),
 		options:    options,
 	}, nil
-}
-
-// DeriveLoadBalanceProfiles derives load balance profile outbounds from load balance outbound options
-func DeriveLoadBalanceProfiles(tag string, options option.LoadBalanceOutboundOptions) []option.Outbound {
-	profiles := options.Profiles
-	if len(profiles) == 0 {
-		return nil
-	}
-	result := make([]option.Outbound, 0, len(profiles))
-	for _, profile := range profiles {
-		result = append(result, option.Outbound{
-			Type: C.TypeLoadBalanceProfile,
-			Tag:  profile.Tag,
-			// Must be pointer type
-			Options: &option.LoadBalanceProfileOutboundOptions{
-				LoadBalanceTag: tag,
-				Exclude:        profile.Exclude,
-				Include:        profile.Include,
-				Pick:           profile.LoadBalancePickOptions,
-			},
-		})
-	}
-	return result
 }
 
 // Now implements adapter.OutboundGroup
@@ -205,10 +183,11 @@ func (s *LoadBalance) NewDirectRouteConnection(metadata adapter.InboundContext, 
 
 // Close implements adapter.Service
 func (s *LoadBalance) Close() error {
-	if s.Balancer == nil {
-		return nil
+	s.HealthCheck.RemoveProviders(s.Tag())
+	if s.Balancer != nil {
+		return s.Balancer.Close()
 	}
-	return s.Balancer.Close()
+	return nil
 }
 
 // Start implements adapter.Service
@@ -216,11 +195,39 @@ func (s *LoadBalance) Start() error {
 	if err := s.InitProviders(s.outbound, s.provider); err != nil {
 		return err
 	}
-	hc := healthcheck.New(s.ctx, s.router, s.outbound, s.Providers(), &s.options.Check, s.logger)
-	b, err := balancer.New(s.logger, &s.GroupAdapter, hc, s.options.Pick)
+	if s.options.Checker == "" {
+		return E.New("loadbalance requires a checker service, set 'checker' in options")
+	}
+	svc, ok := s.serviceMgr.Get(s.options.Checker)
+	if !ok {
+		return E.New("health checker service not found: ", s.options.Checker)
+	}
+	checker, ok := svc.(*healthcheck.Service)
+	if !ok {
+		return E.New("service [", s.options.Checker, "] is not a health checker service")
+	}
+	// Submit all providers to the shared checker.
+	if err := checker.HealthCheck.SetProviders(s.Tag(), s.Providers()); err != nil {
+		return err
+	}
+	b, err := balancer.New(s.logger, &s.GroupAdapter, checker.HealthCheck, s.options.Pick)
 	if err != nil {
 		return err
 	}
 	s.Balancer = b
 	return s.Balancer.Start()
+}
+
+// URLTest implements adapter.OutboundCheckGroup
+func (s *LoadBalance) URLTest(ctx context.Context) (map[string]uint16, error) {
+	return s.Balancer.HealthCheck.CheckAll(ctx, s.Tag())
+}
+
+// InterfaceUpdated implements adapter.InterfaceUpdateListener
+func (s *LoadBalance) InterfaceUpdated() {
+	// b can be nil if the parent struct has not initialized it yet.
+	if s.Balancer == nil || s.Balancer.HealthCheck == nil {
+		return
+	}
+	go s.Balancer.HealthCheck.CheckAll(context.Background(), s.Tag())
 }

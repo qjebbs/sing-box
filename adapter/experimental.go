@@ -138,11 +138,9 @@ type OutboundGroup interface {
 	Provider(tag string) (Provider, bool)
 }
 
-type OutboundCheckGroup interface {
+type URLTestGroup interface {
 	OutboundGroup
-	CheckAll(ctx context.Context) (map[string]uint16, error)
-	CheckProvider(ctx context.Context, tag string) (map[string]uint16, error)
-	CheckOutbound(ctx context.Context, tag string) (uint16, error)
+	URLTest(ctx context.Context) (map[string]uint16, error)
 }
 
 func RealOutbound(outbound Outbound) (Outbound, error) {

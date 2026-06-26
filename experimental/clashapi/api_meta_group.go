@@ -81,8 +81,8 @@ func getGroupDelay(server *Server) func(w http.ResponseWriter, r *http.Request) 
 		defer cancel()
 
 		var result map[string]uint16
-		if checker, ok := outboundGroup.(adapter.OutboundCheckGroup); ok {
-			result, err = checker.CheckAll(ctx)
+		if checker, ok := outboundGroup.(adapter.URLTestGroup); ok {
+			result, err = checker.URLTest(ctx)
 		} else {
 			b, _ := batch.New(ctx, batch.WithConcurrencyNum[any](10))
 			checked := make(map[string]bool)

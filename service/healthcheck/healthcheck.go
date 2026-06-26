@@ -24,34 +24,30 @@ var (
 
 // HealthCheck is the health checker for balancers
 type HealthCheck struct {
-	Storage *Storages
+	ctx          context.Context
+	router       adapter.Router
+	om           adapter.OutboundManager
+	logger       log.ContextLogger
+	pauseManager pause.Manager
+	options      *option.HealthCheckOptions
 
-	ctx            context.Context
-	router         adapter.Router
-	om             adapter.OutboundManager
-	logger         log.ContextLogger
-	pauseManager   pause.Manager
-	globalHistory  adapter.URLTestHistoryStorage
-	providers      []adapter.Provider
-	providersByTag map[string]adapter.Provider
-	detourOf       []adapter.Outbound
-
-	options *option.HealthCheckOptions
-
-	cancel context.CancelFunc
+	Storage         *Storages
+	mergedProviders *mergedProvider
+	cancel          context.CancelFunc
+	detourOf        []adapter.Outbound
+	globalHistory   adapter.URLTestHistoryStorage
 }
 
-// New creates a new HealthPing with settings.
+// NewHealthCheck creates a new HealthPing with settings.
 //
 // The globalHistory is optional and is only used to sync latency history
 // between different health checkers. Each HealthCheck will maintain its own
 // history storage since different ones can have different check destinations,
 // sampling numbers, etc.
-func New(
+func NewHealthCheck(
 	ctx context.Context,
 	router adapter.Router,
 	outbound adapter.OutboundManager,
-	providers []adapter.Provider,
 	options *option.HealthCheckOptions, logger log.ContextLogger,
 ) *HealthCheck {
 	if options == nil {
@@ -66,25 +62,12 @@ func New(
 	if options.Sampling <= 0 {
 		options.Sampling = 10
 	}
-	providersByTag := make(map[string]adapter.Provider)
-	for _, provider := range providers {
-		providersByTag[provider.Tag()] = provider
-	}
-	var history adapter.URLTestHistoryStorage
-	if history = service.FromContext[adapter.URLTestHistoryStorage](ctx); history != nil {
-	} else if clashServer := service.FromContext[adapter.ClashServer](ctx); clashServer != nil {
-		history = clashServer.HistoryStorage()
-	} else {
-		history = urltest.NewHistoryStorage()
-	}
 	return &HealthCheck{
-		ctx:            ctx,
-		om:             outbound,
-		logger:         logger,
-		globalHistory:  history,
-		providers:      providers,
-		providersByTag: providersByTag,
-		options:        options,
+		ctx:             ctx,
+		om:              outbound,
+		logger:          logger,
+		mergedProviders: newMergedProvider(),
+		options:         options,
 		Storage: NewStorages(
 			options.Sampling,
 			time.Duration(options.Sampling+1)*time.Duration(options.Interval),
@@ -93,10 +76,34 @@ func New(
 	}
 }
 
+// SetProviders replaces the full provider list for the given namespace.
+func (h *HealthCheck) SetProviders(namespace string, providers []adapter.Provider) error {
+	if h.mergedProviders != nil {
+		h.mergedProviders.Set(namespace, providers)
+		go func() {
+			// wait for all providers to be ready
+			h.mergedProviders.NamespacedWait(namespace)
+			h.CheckAll(context.Background(), namespace)
+		}()
+	}
+	return nil
+}
+
+// RemoveProviders removes the provider list for the given namespace.
+func (h *HealthCheck) RemoveProviders(namespace string) error {
+	if h.mergedProviders != nil {
+		h.mergedProviders.Set(namespace, nil)
+	}
+	return nil
+}
+
 // Start starts the health check service, implements adapter.Service
 func (h *HealthCheck) Start() error {
 	if h.cancel != nil {
 		return nil
+	}
+	if clashServer := service.FromContext[adapter.ClashServer](h.ctx); clashServer != nil {
+		h.globalHistory = clashServer.HistoryStorage()
 	}
 	if len(h.options.DetourOf) > 0 {
 		if h.om == nil {
@@ -117,10 +124,6 @@ func (h *HealthCheck) Start() error {
 	ctx, cancel := context.WithCancel(context.Background())
 	h.cancel = cancel
 	go func() {
-		// wait for all providers to be ready
-		for _, p := range h.providers {
-			p.Wait()
-		}
 		go h.checkLoop(ctx)
 		go h.cleanupLoop(ctx, 8*time.Hour)
 	}()
@@ -145,8 +148,7 @@ func (h *HealthCheck) InterfaceUpdated() {
 		return
 	}
 	// h.logger.Info("[InterfaceUpdated]: CheckAll()")
-	go h.CheckAll(context.Background())
-	return
+	go h.checkAll(context.Background(), true, "")
 }
 
 // ReportFailure reports a failure of the node
@@ -162,7 +164,7 @@ func (h *HealthCheck) ReportFailure(outbound adapter.Outbound) {
 }
 
 func (h *HealthCheck) checkLoop(ctx context.Context) {
-	go h.checkAll(ctx, true)
+	go h.checkAll(ctx, true, "")
 	ticker := time.NewTicker(time.Duration(h.options.Interval))
 	defer ticker.Stop()
 	for {
@@ -171,49 +173,41 @@ func (h *HealthCheck) checkLoop(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			go h.checkAll(ctx, true)
+			go h.checkAll(ctx, true, "")
 		}
 	}
 }
 
 // CheckAll performs checks for nodes of all providers
-func (h *HealthCheck) CheckAll(ctx context.Context) (map[string]uint16, error) {
-	return h.checkAll(ctx, false)
+func (h *HealthCheck) CheckAll(ctx context.Context, namespace string) (map[string]uint16, error) {
+	return h.checkAll(ctx, false, namespace)
 }
 
-func (h *HealthCheck) checkAll(ctx context.Context, scheduled bool) (map[string]uint16, error) {
+func (h *HealthCheck) checkAll(ctx context.Context, scheduled bool, namespace string) (map[string]uint16, error) {
 	batch, _ := batch.New(ctx, batch.WithConcurrencyNum[uint16](10))
 	// share ctx information between checks
 	meta := NewMetaData()
 	meta.scheduled = scheduled
-	for _, provider := range h.providers {
-		err := h.checkProviderBatch(ctx, meta, batch, provider)
+	if scheduled {
+		err := h.checkProviderBatch(ctx, meta, batch, h.mergedProviders)
 		if err != nil {
 			return nil, err
+		}
+	} else {
+		outbounds := h.mergedProviders.NamespacedOutbounds(namespace)
+		for _, outbound := range outbounds {
+			err := h.checkOutboundBatch(ctx, meta, batch, outbound)
+			if err != nil {
+				return nil, err
+			}
 		}
 	}
 	return h.waitProcessResult(batch, meta)
 }
 
-// CheckProvider performs checks for nodes of the provider
-func (h *HealthCheck) CheckProvider(ctx context.Context, tag string) (map[string]uint16, error) {
-	provider, ok := h.providersByTag[tag]
-	if !ok {
-		return nil, E.New("provider [", tag, "] not found")
-	}
-	batch, _ := batch.New(ctx, batch.WithConcurrencyNum[uint16](10))
-	// share ctx information between checks
-	meta := NewMetaData()
-	err := h.checkProviderBatch(ctx, meta, batch, provider)
-	if err != nil {
-		return nil, err
-	}
-	return h.waitProcessResult(batch, meta)
-}
-
 // CheckOutbound performs check for the specified node
-func (h *HealthCheck) CheckOutbound(ctx context.Context, tag string) (uint16, error) {
-	outbound, ok := h.outbound(tag)
+func (h *HealthCheck) CheckOutbound(ctx context.Context, namespace, tag string) (uint16, error) {
+	outbound, ok := h.mergedProviders.NamespacedOutbound(namespace, tag)
 	if !ok {
 		return 0, E.New("outbound [", tag, "] not found")
 	}
@@ -266,16 +260,6 @@ func (h *HealthCheck) checkOutboundBatch(ctx context.Context, meta *MetaData, ba
 		},
 	)
 	return nil
-}
-
-func (h *HealthCheck) outbound(tag string) (adapter.Outbound, bool) {
-	for _, provider := range h.providers {
-		outbound, ok := provider.Outbound(tag)
-		if ok {
-			return outbound, ok
-		}
-	}
-	return nil, false
 }
 
 func (h *HealthCheck) checkOutbound(ctx context.Context, outbound adapter.Outbound) (uint16, error) {
@@ -342,15 +326,8 @@ func (h *HealthCheck) cleanupLoop(ctx context.Context, interval time.Duration) {
 
 func (h *HealthCheck) cleanup() {
 	for _, tag := range h.Storage.List() {
-		if _, ok := h.outbound(tag); !ok {
+		if _, ok := h.mergedProviders.Outbound(tag); !ok {
 			h.Storage.Delete(tag)
 		}
 	}
-}
-
-func makeOutboundChain(detourOf []adapter.Outbound, node adapter.Outbound) []adapter.Outbound {
-	chain := make([]adapter.Outbound, len(detourOf)+1)
-	copy(chain, detourOf)
-	chain[len(detourOf)] = node
-	return chain
 }

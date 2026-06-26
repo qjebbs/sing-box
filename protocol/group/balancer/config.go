@@ -5,7 +5,7 @@ import (
 	"regexp"
 
 	"github.com/sagernet/sing-box/option"
-	"github.com/sagernet/sing-box/protocol/group/healthcheck"
+	"github.com/sagernet/sing-box/service/healthcheck"
 )
 
 type balancerConfig struct {
