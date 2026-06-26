@@ -17,8 +17,7 @@
   ],
   "exclude": "",
   "include": "",
-  "url": "",
-  "interval": "1m",
+  "checker": "health-checker",
   "tolerance": 50
 }
 ```
@@ -45,13 +44,9 @@
 
 包含 `providers` 节点的正则表达式。
 
-#### url
+#### checker
 
-用于测试的链接。默认使用 `https://www.gstatic.com/generate_204`。
-
-#### interval
-
-测试间隔。 默认使用 `3m`。
+健康检查服务的标签。必须添加健康检查服务才能使用 URLTest 出站组。
 
 #### tolerance
 

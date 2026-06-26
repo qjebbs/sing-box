@@ -28,6 +28,7 @@ icon: material/new-box
 | `ocm`      | [OCM](./ocm)           |
 | `resolved` | [Resolved](./resolved) |
 | `ssm-api`  | [SSM API](./ssm-api)   |
+| `health-checker` | [Health Checker](./health-checker) |
 
 #### tag
 

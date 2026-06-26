@@ -16,15 +16,7 @@
   ],
   "exclude": "",
   "include": "",
-  "check": {
-    "interval": "5m",
-    "sampling": 10,
-    "destination": "https://www.gstatic.com/generate_204",
-    "detour_of": [
-      "proxy-a",
-      "proxy-b"
-    ]
-  },
+  "checker": "health-checker",
   "pick": {
     "objective": "leastload",
     "strategy": "random",
@@ -49,14 +41,7 @@
         "rtt_scale": 10
       }
     ]
-  },
-  "profiles": [
-    {
-      "tag": "loadbalance-alive",
-      "objective": "alive",
-      "strategy": "random"
-    }
-  ]
+  }
 }
 ```
 
@@ -82,62 +67,15 @@
 
 包含 `providers` 节点的正则表达式。
 
-#### check
+#### checker
 
-参见“健康检查字段”
+健康检查服务的标签。必须添加健康检查服务才能使用 Loadbalance 出站组。
+
+参阅 [健康检查](/zh/configuration/service/health-checker/) 了解详情。
 
 #### pick
 
 参见“节点挑选字段”
-
-### 健康检查字段
-
-#### interval
-
-每个节点的健康检查间隔。不小于`10s`，默认为 `5m`。
-
-#### sampling
-
-对最近的多少次检查结果进行采样。大于 `0`，默认为 `10`。
-
-#### destination
-
-用于健康检查的链接。默认使用 `http://www.gstatic.com/generate_204`。
-
-#### detour_of
-
-假设你配置有链式出站：
-
-```json
-{
-  "tag": "chain",
-  "type": "chain",
-  "outbounds": ["A", "B"]
-}
-```
-
-实际链路为：
-
-```
-Shadowsocks (A) ---> LoadBalance (B)
-```
-
-并且你希望 `B` 节点的健康检查链路与上图一致。那么只需设置 
-
-```json
-"detour_of": ["A"]
-```
-
-实际检查链路为：
-
-```
-Shadowsocks (A) ---> Trojan [B.Node]
-```
-
-若非如此，几乎不可能检测出这样的节点，它们直接使用没问题，但作为链式代理上游时，却由于审计规则等原因，无法正常工作。
-配置此项还可以避免服务器对测试请求的劫持，提高检测的准确性。
-
-限制：此配置不支持添加出站组，如 `selector`, `loadbalance`, `chain`。
 
 ### 节点挑选字段
 
@@ -217,9 +155,3 @@ Shadowsocks (A) ---> Trojan [B.Node]
 - `regexp` 表示节点标签匹配某个正则表达式时匹配。
 
 如果配置了多个条件，满足任一条件即可匹配。
-
-### profiles
-
-负载均衡的额外配置文件，默认为空。当 `profiles` 不为空时，sing-box 将为每个配置文件创建一个出站，标签为配置中的 `tag` 字段，其余字段参考[节点挑选字段](#节点挑选字段)。
-
-新增出站基于当前负载均衡出站，不会增加额外的健康检查开销。

@@ -56,6 +56,9 @@ func NewHealthCheck(
 	if options.Destination == "" {
 		options.Destination = "https://www.gstatic.com/generate_204"
 	}
+	if options.Interval <= 0 {
+		options.Interval = badoption.Duration(5 * time.Minute)
+	}
 	if options.Interval < badoption.Duration(10*time.Second) {
 		options.Interval = badoption.Duration(10 * time.Second)
 	}

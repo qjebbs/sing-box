@@ -17,8 +17,7 @@
   ],
   "exclude": "",
   "include": "",
-  "url": "",
-  "interval": "1m",
+  "checker": "health-checker",
   "tolerance": 50
 }
 ```
@@ -45,13 +44,9 @@ Exclude regular expression to filter `providers` nodes. The priority of the excl
 
 Include regular expression to filter `providers` nodes.
 
-#### url
+#### checker
 
-The URL to test. `https://www.gstatic.com/generate_204` will be used if empty.
-
-#### interval
-
-The test interval. `3m` will be used if empty.
+The tag of the health check service. A health check service must be added to use the URLTest outbound group.
 
 #### tolerance
 

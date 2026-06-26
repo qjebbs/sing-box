@@ -16,15 +16,7 @@
   ],
   "exclude": "",
   "include": "",
-  "check": {
-    "interval": "5m",
-    "sampling": 10,
-    "destination": "https://www.gstatic.com/generate_204",
-    "detour_of": [
-      "proxy-a",
-      "proxy-b"
-    ]
-  },
+  "checker": "health-checker",
   "pick": {
     "objective": "leastload",
     "strategy": "random",
@@ -49,14 +41,7 @@
         "rtt_scale": 10
       }
     ]
-  },
-  "profiles": [
-    {
-      "tag": "loadbalance-alive",
-      "objective": "alive",
-      "strategy": "random"
-    }
-  ]
+  }
 }
 ```
 
@@ -82,61 +67,15 @@ Exclude regular expression to filter `providers` nodes. The priority of the excl
 
 Include regular expression to filter `providers` nodes.
 
-#### check
+#### Checker
 
-See "Check Fields"
+The tag of the health check service. A health check service must be added to use the Loadbalance outbound group.
 
 #### pick
 
 See "Pick Fields"
 
-### Check Fields
-
-#### interval
-
-The interval of health check for each node. Must be greater than `10s`, default is `5m`.
-
-#### sampling
-
-The number of recent health check results to sample. Must be greater than `0`, default is `10`.
-
-#### destination
-
-The destination URL for health check. Default is `http://www.gstatic.com/generate_204`.
-
-#### detour_of
-
-Let's say you have an outbound chain:
-
-```json
-{
-  "tag": "chain",
-  "type": "chain",
-  "outbounds": ["A", "B"]
-}
-```
-The actual chain is:
-
-```
-Shadowsocks (A) ---> LoadBalance (B)
-```
-
-And you want the health check of each node of `B` to be exactly the same as above, just configurate
-
-```json
-"detour_of": ["A"]
-```
-
-The check chain will be:
-
-```
-Shadowsocks (A) ---> Trojan [B.Node]
-```
-
-If not, it would be almost impossible to detect such nodes, which are fine to use directly, but not when they're used as an upstream, due to audit rules and other reasons.
-Configuring this item can also avoid the server from hijacking the test request, and improve the accuracy of the health check.
-
-Restrictions: This configuration does not support adding outbound groups, such as `selector`, `loadbalance`, `chain`.
+See [Health Checker](/configuration/service/health-checker/) for details.
 
 ### Pick Fields
 
@@ -218,9 +157,3 @@ For example, `rtt_scale: 10` means that when the node's round-trip time is `100m
 - `regexp` means matching when the node tag matches a regular expression.
 
 If multiple conditions are configured, matching any one of them is sufficient.
-
-### profiles
-
-The extra profile for load balancing, default is empty. When `profiles` is not empty, sing-box will create an outbound for each profile, with the `tag` field in profile as the tag of the outbound, and the rest of the fields refer to [Pick Fields](#pick-fields) .
-
-The new outbound is based on the current load balancing outbound, and does not add extra health check overhead.
