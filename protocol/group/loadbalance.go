@@ -196,9 +196,10 @@ func (s *LoadBalance) Start() error {
 		return err
 	}
 	if s.options.Checker == "" {
-		return E.New("loadbalance requires a checker service, set 'checker' in options")
+		s.options.Checker = healthcheck.DefaultServiceTag
+		// return E.New("loadbalance requires a checker service, set 'checker' in options")
 	}
-	svc, ok := s.serviceMgr.Get(s.options.Checker)
+	svc, ok := s.serviceMgr.Get(C.TypeHealthChecker, s.options.Checker)
 	if !ok {
 		return E.New("health checker service not found: ", s.options.Checker)
 	}

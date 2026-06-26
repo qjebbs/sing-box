@@ -72,9 +72,10 @@ func (s *URLTestProvider) Start() error {
 		return err
 	}
 	if s.checker == "" {
-		return E.New("urltest requires a checker service, set 'checker' in options")
+		s.checker = healthcheck.DefaultServiceTag
+		// return E.New("urltest requires a checker service, set 'checker' in options")
 	}
-	svc, ok := s.serviceMgr.Get(s.checker)
+	svc, ok := s.serviceMgr.Get(C.TypeHealthChecker, s.checker)
 	if !ok {
 		return E.New("health checker service not found: ", s.checker)
 	}

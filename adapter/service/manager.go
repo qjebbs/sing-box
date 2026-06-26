@@ -22,14 +22,14 @@ type Manager struct {
 	started      bool
 	stage        adapter.StartStage
 	services     []adapter.Service
-	serviceByTag map[string]adapter.Service
+	serviceByKey map[serviceKey]adapter.Service
 }
 
 func NewManager(logger log.ContextLogger, registry adapter.ServiceRegistry) *Manager {
 	return &Manager{
 		logger:       logger,
 		registry:     registry,
-		serviceByTag: make(map[string]adapter.Service),
+		serviceByKey: make(map[serviceKey]adapter.Service),
 	}
 }
 
@@ -84,21 +84,23 @@ func (m *Manager) Services() []adapter.Service {
 	return m.services
 }
 
-func (m *Manager) Get(tag string) (adapter.Service, bool) {
+func (m *Manager) Get(serviceType, tag string) (adapter.Service, bool) {
+	key := serviceKeyOf(serviceType, tag)
 	m.access.Lock()
-	service, found := m.serviceByTag[tag]
+	service, found := m.serviceByKey[key]
 	m.access.Unlock()
 	return service, found
 }
 
-func (m *Manager) Remove(tag string) error {
+func (m *Manager) Remove(serviceType, tag string) error {
+	key := serviceKeyOf(serviceType, tag)
 	m.access.Lock()
-	service, found := m.serviceByTag[tag]
+	service, found := m.serviceByKey[key]
 	if !found {
 		m.access.Unlock()
 		return os.ErrInvalid
 	}
-	delete(m.serviceByTag, tag)
+	delete(m.serviceByKey, key)
 	index := common.Index(m.services, func(it adapter.Service) bool {
 		return it == service
 	})
@@ -119,6 +121,7 @@ func (m *Manager) Create(ctx context.Context, logger log.ContextLogger, tag stri
 	if err != nil {
 		return err
 	}
+	key := serviceKeyOf(serviceType, tag)
 	m.access.Lock()
 	defer m.access.Unlock()
 	if m.started {
@@ -132,7 +135,7 @@ func (m *Manager) Create(ctx context.Context, logger log.ContextLogger, tag stri
 			}
 		}
 	}
-	if existsService, loaded := m.serviceByTag[tag]; loaded {
+	if existsService, loaded := m.serviceByKey[key]; loaded {
 		if m.started {
 			err = existsService.Close()
 			if err != nil {
@@ -148,6 +151,14 @@ func (m *Manager) Create(ctx context.Context, logger log.ContextLogger, tag stri
 		m.services = append(m.services[:existsIndex], m.services[existsIndex+1:]...)
 	}
 	m.services = append(m.services, service)
-	m.serviceByTag[tag] = service
+	m.serviceByKey[key] = service
 	return nil
+}
+
+type serviceKey struct {
+	typ, tag string
+}
+
+func serviceKeyOf(typ, tag string) serviceKey {
+	return serviceKey{typ, tag}
 }

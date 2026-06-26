@@ -2,6 +2,7 @@ package healthcheck
 
 import (
 	"context"
+	"sync"
 	"time"
 
 	"github.com/sagernet/sing-box/adapter"
@@ -36,6 +37,10 @@ type HealthCheck struct {
 	cancel          context.CancelFunc
 	detourOf        []adapter.Outbound
 	globalHistory   adapter.URLTestHistoryStorage
+
+	loopCtx     context.Context
+	loopStarted bool
+	loopMu      sync.Mutex
 }
 
 // NewHealthCheck creates a new HealthPing with settings.
@@ -81,14 +86,15 @@ func NewHealthCheck(
 
 // SetProviders replaces the full provider list for the given namespace.
 func (h *HealthCheck) SetProviders(namespace string, providers []adapter.Provider) error {
-	if h.mergedProviders != nil {
-		h.mergedProviders.Set(namespace, providers)
-		go func() {
-			// wait for all providers to be ready
-			h.mergedProviders.NamespacedWait(namespace)
-			h.CheckAll(context.Background(), namespace)
-		}()
+	h.mergedProviders.Set(namespace, providers)
+	if len(providers) > 0 {
+		h.tryStartLoops()
 	}
+	go func() {
+		// wait for all providers to be ready
+		h.mergedProviders.NamespacedWait(namespace)
+		h.CheckAll(context.Background(), namespace)
+	}()
 	return nil
 }
 
@@ -126,19 +132,34 @@ func (h *HealthCheck) Start() error {
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	h.cancel = cancel
-	go func() {
-		go h.checkLoop(ctx)
-		go h.cleanupLoop(ctx, 8*time.Hour)
-	}()
+	h.loopCtx = ctx
+	// loops are started lazily when providers are registered via SetProviders
 	return nil
+}
+
+// tryStartLoops starts the background loops if they haven't been started yet.
+// Must be called after Start() has initialized h.loopCtx.
+func (h *HealthCheck) tryStartLoops() {
+	h.loopMu.Lock()
+	defer h.loopMu.Unlock()
+	if h.loopCtx == nil || h.loopStarted {
+		return
+	}
+	h.loopStarted = true
+	go h.checkLoop(h.loopCtx)
+	go h.cleanupLoop(h.loopCtx, 8*time.Hour)
 }
 
 // Close stops the health check service, implements adapter.Service
 func (h *HealthCheck) Close() error {
+	h.loopMu.Lock()
 	if h.cancel != nil {
 		h.cancel()
 		h.cancel = nil
 	}
+	h.loopCtx = nil
+	h.loopStarted = false
+	h.loopMu.Unlock()
 	for _, detour := range h.detourOf {
 		common.Close(detour)
 	}

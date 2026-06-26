@@ -8,6 +8,7 @@ import (
 	boxConstant "github.com/sagernet/sing-box/constant"
 	"github.com/sagernet/sing-box/log"
 	"github.com/sagernet/sing-box/option"
+	F "github.com/sagernet/sing/common/format"
 	"github.com/sagernet/sing/service"
 )
 
@@ -52,4 +53,22 @@ func (s *Service) Start(stage adapter.StartStage) error {
 // Close stops the health check service. Implements adapter.Service.
 func (s *Service) Close() error {
 	return s.HealthCheck.Close()
+}
+
+// DefaultServiceTag is the tag for the default health check service.
+const DefaultServiceTag = "default"
+
+// RegisterDefaultService registers the default health check service to the service manager.
+// The service is lazily started so it does not consume resources if no outbounds are using it.
+func RegisterDefaultService(ctx context.Context, serviceManager *boxService.Manager, logFactory log.Factory) error {
+	if _, ok := serviceManager.Get(boxConstant.TypeHealthChecker, DefaultServiceTag); ok {
+		return nil
+	}
+	return serviceManager.Create(
+		ctx,
+		logFactory.NewLogger(F.ToString("service/", boxConstant.TypeHealthChecker, "[", DefaultServiceTag, "]")),
+		DefaultServiceTag,
+		boxConstant.TypeHealthChecker,
+		&option.HealthCheckOptions{},
+	)
 }
