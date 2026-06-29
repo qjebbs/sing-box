@@ -134,8 +134,6 @@ type OutboundGroup interface {
 	All() []string
 	Outbounds() []Outbound
 	Outbound(tag string) (Outbound, bool)
-	Providers() []Provider
-	Provider(tag string) (Provider, bool)
 }
 
 type URLTestGroup interface {
