@@ -9,10 +9,10 @@
             "type": "go",
             "request": "launch",
             "mode": "auto",
-			"asRoot": true, //https://github.com/golang/vscode-go/issues/558
+            "asRoot": true, //https://github.com/golang/vscode-go/issues/558
             "console": "integratedTerminal",
             "program": "${workspaceFolder}/cmd/sing-box",
-            "buildFlags": "-tags=with_clash_api,with_gvisor,with_dhcp,with_utls",
+            "buildFlags": "-tags=with_gvisor,with_dhcp,with_wireguard,with_utls,with_clash_api,with_quic",
             "args": [
                 "run",  "-c", "${workspaceFolder}/config.json",
             ]
