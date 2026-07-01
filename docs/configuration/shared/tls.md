@@ -267,6 +267,24 @@ openssl x509 -in certificate.pem -pubkey -noout | openssl pkey -pubin -outform d
 echo | openssl s_client -servername example.com -connect example.com:443 2>/dev/null | openssl x509 -pubkey -noout | openssl pkey -pubin -outform der | openssl dgst -sha256 -binary | openssl enc -base64
 ```
 
+#### certificate_public_key_sha256
+
+!!! question "Since sing-box 1.13.14+rev.2"
+
+==Client only==
+
+List of SHA-256 hashes of server certificate, in base64 format.
+
+To generate the SHA-256 hash for a certificate, use the following commands:
+
+```bash
+# For a certificate file
+openssl x509 -in certificate.pem -outform der | openssl dgst -sha256 -binary | openssl enc -base64
+
+# For a certificate from a remote server
+echo | openssl s_client -servername example.com -connect example.com:443 2>/dev/null | openssl x509 -outform der | openssl dgst -sha256 -binary | openssl enc -base64
+```
+
 #### client_certificate
 
 !!! question "Since sing-box 1.13.0"

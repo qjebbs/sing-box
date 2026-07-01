@@ -262,6 +262,24 @@ openssl x509 -in certificate.pem -pubkey -noout | openssl pkey -pubin -outform d
 echo | openssl s_client -servername example.com -connect example.com:443 2>/dev/null | openssl x509 -pubkey -noout | openssl pkey -pubin -outform der | openssl dgst -sha256 -binary | openssl enc -base64
 ```
 
+#### certificate_sha256
+
+!!! question "自 sing-box 1.13.14+rev.2 起"
+
+==仅客户端==
+
+服务器证书的 SHA-256 哈希列表，base64 格式。
+
+要生成证书的 SHA-256 哈希，请使用以下命令：
+
+```bash
+# 对于证书文件
+openssl x509 -in certificate.pem -outform der | openssl dgst -sha256 -binary | openssl enc -base64
+
+# 对于远程服务器的证书
+echo | openssl s_client -servername example.com -connect example.com:443 2>/dev/null | openssl x509 -outform der | openssl dgst -sha256 -binary | openssl enc -base64
+```
+
 #### client_certificate
 
 !!! question "自 sing-box 1.13.0 起"

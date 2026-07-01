@@ -1,6 +1,7 @@
 package link
 
 import (
+	"encoding/hex"
 	"fmt"
 	"net/url"
 	"strconv"
@@ -94,15 +95,6 @@ func ParseHysteria2(u *url.URL) (*Hysteria2, error) {
 
 // Outbound implements the Link interface
 func (l *Hysteria2) Outbound() (*option.Outbound, error) {
-	insecure := l.Insecure
-	if l.PinSHA256 != "" {
-		// return nil, E.New("pinSHA256 is not unsupported")
-
-		// sing-box does not support pinSHA256 option.
-		// once pinSHA256 is set, we assume the link requires insecure, or the pinSHA256 should not be provided.
-		// the hy2 doc says it's recommended to set pinSHA256 when insecure is set.
-		insecure = true
-	}
 	password := l.Auth
 	if l.User != "" {
 		password = fmt.Sprintf("%s:%s", l.User, l.Auth)
@@ -113,6 +105,14 @@ func (l *Hysteria2) Outbound() (*option.Outbound, error) {
 			Type:     l.Obfs,
 			Password: l.ObfsPassword,
 		}
+	}
+	var certPin [][]byte
+	if l.PinSHA256 != "" {
+		pin, err := hex.DecodeString(l.PinSHA256)
+		if err != nil {
+			return nil, E.Cause(err, "invalid pinSHA256")
+		}
+		certPin = [][]byte{pin}
 	}
 	return &option.Outbound{
 		Type: C.TypeHysteria2,
@@ -127,10 +127,10 @@ func (l *Hysteria2) Outbound() (*option.Outbound, error) {
 			Obfs:        obfs,
 			OutboundTLSOptionsContainer: option.OutboundTLSOptionsContainer{
 				TLS: &option.OutboundTLSOptions{
-					Enabled:    true,
-					ServerName: l.SNI,
-					Insecure:   insecure,
-					// CertificatePublicKeySHA256: [][]byte{[]byte(l.PinSHA256)},
+					Enabled:           true,
+					ServerName:        l.SNI,
+					Insecure:          l.Insecure,
+					CertificateSHA256: certPin,
 				},
 			},
 		},

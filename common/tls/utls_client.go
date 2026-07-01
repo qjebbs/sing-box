@@ -13,7 +13,7 @@ import (
 	"time"
 
 	"github.com/sagernet/sing-box/adapter"
-	"github.com/sagernet/sing-box/common/tlsfragment"
+	tf "github.com/sagernet/sing-box/common/tlsfragment"
 	C "github.com/sagernet/sing-box/constant"
 	"github.com/sagernet/sing-box/option"
 	"github.com/sagernet/sing/common"
@@ -167,13 +167,13 @@ func NewUTLSClient(ctx context.Context, logger logger.ContextLogger, serverAddre
 		}
 		tlsConfig.InsecureServerNameToVerify = serverName
 	}
-	if len(options.CertificatePublicKeySHA256) > 0 {
+	if len(options.CertificatePublicKeySHA256) > 0 || len(options.CertificateSHA256) > 0 {
 		if len(options.Certificate) > 0 || options.CertificatePath != "" {
-			return nil, E.New("certificate_public_key_sha256 is conflict with certificate or certificate_path")
+			return nil, E.New("certificate_public_key_sha256 or certificate_sha256 is conflict with certificate or certificate_path")
 		}
 		tlsConfig.InsecureSkipVerify = true
 		tlsConfig.VerifyPeerCertificate = func(rawCerts [][]byte, verifiedChains [][]*x509.Certificate) error {
-			return verifyPublicKeySHA256(options.CertificatePublicKeySHA256, rawCerts, tlsConfig.Time)
+			return verifyKeyOrCertSHA256(options.CertificatePublicKeySHA256, options.CertificateSHA256, rawCerts)
 		}
 	}
 	if len(options.ALPN) > 0 {

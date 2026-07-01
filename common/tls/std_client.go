@@ -13,7 +13,7 @@ import (
 	"time"
 
 	"github.com/sagernet/sing-box/adapter"
-	"github.com/sagernet/sing-box/common/tlsfragment"
+	tf "github.com/sagernet/sing-box/common/tlsfragment"
 	C "github.com/sagernet/sing-box/constant"
 	"github.com/sagernet/sing-box/option"
 	E "github.com/sagernet/sing/common/exceptions"
@@ -111,13 +111,13 @@ func NewSTDClient(ctx context.Context, logger logger.ContextLogger, serverAddres
 			return err
 		}
 	}
-	if len(options.CertificatePublicKeySHA256) > 0 {
+	if len(options.CertificatePublicKeySHA256) > 0 || len(options.CertificateSHA256) > 0 {
 		if len(options.Certificate) > 0 || options.CertificatePath != "" {
-			return nil, E.New("certificate_public_key_sha256 is conflict with certificate or certificate_path")
+			return nil, E.New("certificate_public_key_sha256 or certificate_sha256 is conflict with certificate or certificate_path")
 		}
 		tlsConfig.InsecureSkipVerify = true
 		tlsConfig.VerifyPeerCertificate = func(rawCerts [][]byte, verifiedChains [][]*x509.Certificate) error {
-			return verifyPublicKeySHA256(options.CertificatePublicKeySHA256, rawCerts, tlsConfig.Time)
+			return verifyKeyOrCertSHA256(options.CertificatePublicKeySHA256, options.CertificateSHA256, rawCerts)
 		}
 	}
 	if len(options.ALPN) > 0 {
@@ -237,4 +237,32 @@ func verifyPublicKeySHA256(knownHashValues [][]byte, rawCerts [][]byte, timeFunc
 		}
 	}
 	return E.New("unrecognized remote public key: ", base64.StdEncoding.EncodeToString(hashValue[:]))
+}
+
+func verifyKeyOrCertSHA256(pkeyHashValues, certHashValues [][]byte, rawCerts [][]byte) error {
+	leafCertificate, err := x509.ParseCertificate(rawCerts[0])
+	if err != nil {
+		return E.Cause(err, "failed to parse leaf certificate")
+	}
+
+	pubKeyBytes, err := x509.MarshalPKIXPublicKey(leafCertificate.PublicKey)
+	if err != nil {
+		return E.Cause(err, "failed to marshal public key")
+	}
+	pubKeyHash := sha256.Sum256(pubKeyBytes)
+	for _, value := range pkeyHashValues {
+		if bytes.Equal(value, pubKeyHash[:]) {
+			return nil
+		}
+	}
+
+	certHash := sha256.Sum256(rawCerts[0])
+	for _, value := range certHashValues {
+		if bytes.Equal(value, certHash[:]) {
+			return nil
+		}
+	}
+
+	return E.New("unrecognized remote public key: ", base64.StdEncoding.EncodeToString(pubKeyHash[:]),
+		", unrecognized remote certificate: ", base64.StdEncoding.EncodeToString(certHash[:]))
 }
