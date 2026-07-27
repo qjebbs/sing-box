@@ -41,6 +41,9 @@ type HealthCheck struct {
 	loopCtx     context.Context
 	loopStarted bool
 	loopMu      sync.Mutex
+
+	listenersMu        sync.Mutex
+	postCheckListeners []func()
 }
 
 // NewHealthCheck creates a new HealthPing with settings.
@@ -202,6 +205,33 @@ func (h *HealthCheck) checkLoop(ctx context.Context) {
 	}
 }
 
+// RegisterPostCheckListener registers a listener function that will be called after each CheckAll() call.
+func (h *HealthCheck) RegisterPostCheckListener(listener func()) {
+	h.listenersMu.Lock()
+	defer h.listenersMu.Unlock()
+	h.postCheckListeners = append(h.postCheckListeners, listener)
+}
+
+// UnregisterPostCheckListener unregisters a listener function that was previously registered with RegisterPostCheckListener.
+func (h *HealthCheck) UnregisterPostCheckListener(listener func()) {
+	h.listenersMu.Lock()
+	defer h.listenersMu.Unlock()
+	for i, l := range h.postCheckListeners {
+		if &l == &listener {
+			h.postCheckListeners = append(h.postCheckListeners[:i], h.postCheckListeners[i+1:]...)
+			return
+		}
+	}
+}
+
+func (h *HealthCheck) notifyPostCheckListeners() {
+	h.listenersMu.Lock()
+	defer h.listenersMu.Unlock()
+	for _, listener := range h.postCheckListeners {
+		listener()
+	}
+}
+
 // CheckAll performs checks for nodes of all providers
 func (h *HealthCheck) CheckAll(ctx context.Context, namespace string) (map[string]uint16, error) {
 	return h.checkAll(ctx, false, namespace)
@@ -226,29 +256,31 @@ func (h *HealthCheck) checkAll(ctx context.Context, scheduled bool, namespace st
 			}
 		}
 	}
-	return h.waitProcessResult(batch, meta)
+	r, err := h.waitProcessResult(batch, meta)
+	go h.notifyPostCheckListeners()
+	return r, err
 }
 
-// CheckOutbound performs check for the specified node
-func (h *HealthCheck) CheckOutbound(ctx context.Context, namespace, tag string) (uint16, error) {
-	outbound, ok := h.mergedProviders.NamespacedOutbound(namespace, tag)
-	if !ok {
-		return 0, E.New("outbound [", tag, "] not found")
-	}
-	outbound, err := adapter.RealOutbound(outbound)
-	if err != nil {
-		return 0, err
-	}
-	t, err := h.checkOutbound(ctx, outbound)
-	if h.globalHistory != nil {
-		h.globalHistory.StoreURLTestHistory(tag, &adapter.URLTestHistory{
-			Time:  time.Now(),
-			Delay: t,
-		})
-	}
-	h.Storage.Update(tag, RTT(t))
-	return t, err
-}
+// // CheckOutbound performs check for the specified node
+// func (h *HealthCheck) CheckOutbound(ctx context.Context, namespace, tag string) (uint16, error) {
+// 	outbound, ok := h.mergedProviders.NamespacedOutbound(namespace, tag)
+// 	if !ok {
+// 		return 0, E.New("outbound [", tag, "] not found")
+// 	}
+// 	outbound, err := adapter.RealOutbound(outbound)
+// 	if err != nil {
+// 		return 0, err
+// 	}
+// 	t, err := h.checkOutbound(ctx, outbound)
+// 	if h.globalHistory != nil {
+// 		h.globalHistory.StoreURLTestHistory(tag, &adapter.URLTestHistory{
+// 			Time:  time.Now(),
+// 			Delay: t,
+// 		})
+// 	}
+// 	h.Storage.Update(tag, RTT(t))
+// 	return t, err
+// }
 
 func (h *HealthCheck) checkProviderBatch(ctx context.Context, meta *MetaData, batch *batch.Batch[uint16], provider adapter.Provider) error {
 	for _, outbound := range provider.Outbounds() {

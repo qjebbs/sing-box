@@ -41,7 +41,8 @@
         "rtt_scale": 10
       }
     ]
-  }
+  },
+  "interrupt_exist_connections": false
 }
 ```
 
@@ -157,3 +158,9 @@ For example, `rtt_scale: 10` means that when the node's round-trip time is `100m
 - `regexp` means matching when the node tag matches a regular expression.
 
 If multiple conditions are configured, matching any one of them is sufficient.
+
+#### interrupt_exist_connections
+
+Interrupt existing connections when the selected outbound has changed.
+
+Only inbound connections are affected by this setting, internal connections will always be interrupted.

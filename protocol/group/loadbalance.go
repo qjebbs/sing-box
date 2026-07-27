@@ -38,14 +38,16 @@ type LoadBalance struct {
 	outbound.GroupAdapter
 	*balancer.Balancer
 
-	ctx        context.Context
-	router     adapter.Router
-	logger     log.ContextLogger
-	outbound   adapter.OutboundManager
-	provider   adapter.ProviderManager
-	connection adapter.ConnectionManager
-	serviceMgr adapter.ServiceManager
-	options    option.LoadBalanceOutboundOptions
+	ctx                          context.Context
+	router                       adapter.Router
+	logger                       log.ContextLogger
+	outbound                     adapter.OutboundManager
+	provider                     adapter.ProviderManager
+	connection                   adapter.ConnectionManager
+	serviceMgr                   adapter.ServiceManager
+	options                      option.LoadBalanceOutboundOptions
+	interruptGroup               *interrupt.Group
+	interruptExternalConnections bool
 }
 
 // NewLoadBalance creates a new load balance outbound
@@ -55,14 +57,16 @@ func NewLoadBalance(ctx context.Context, router adapter.Router, logger log.Conte
 			C.TypeLoadBalance, tag, []string{N.NetworkTCP, N.NetworkUDP},
 			options.ProviderGroupCommonOption,
 		),
-		ctx:        ctx,
-		router:     router,
-		logger:     logger,
-		outbound:   service.FromContext[adapter.OutboundManager](ctx),
-		provider:   service.FromContext[adapter.ProviderManager](ctx),
-		connection: service.FromContext[adapter.ConnectionManager](ctx),
-		serviceMgr: service.FromContext[adapter.ServiceManager](ctx),
-		options:    options,
+		ctx:                          ctx,
+		router:                       router,
+		logger:                       logger,
+		outbound:                     service.FromContext[adapter.OutboundManager](ctx),
+		provider:                     service.FromContext[adapter.ProviderManager](ctx),
+		connection:                   service.FromContext[adapter.ConnectionManager](ctx),
+		serviceMgr:                   service.FromContext[adapter.ServiceManager](ctx),
+		options:                      options,
+		interruptGroup:               interrupt.NewGroup(),
+		interruptExternalConnections: options.InterruptExistConnections,
 	}, nil
 }
 
@@ -80,7 +84,7 @@ func (s *LoadBalance) All() []string {
 	// s.LogNodes()
 	// return s.GroupAdapter.All()
 
-	_, filtered := s.GetNodes(true)
+	_, filtered := s.GetNodes(false)
 	return common.Map(filtered, func(node *balancer.Node) string {
 		return node.Tag()
 	})
@@ -103,7 +107,7 @@ func (s *LoadBalance) DialContext(ctx context.Context, network string, destinati
 		}
 		conn, err := picked.DialContext(ctx, network, destination)
 		if err == nil {
-			return conn, nil
+			return s.interruptGroup.NewConn(conn, interrupt.IsExternalConnectionFromContext(ctx), picked.Tag()), nil
 		}
 		lastErr = err
 		s.logger.ErrorContext(ctx, err)
@@ -124,7 +128,7 @@ func (s *LoadBalance) ListenPacket(ctx context.Context, destination M.Socksaddr)
 		}
 		conn, err := picked.ListenPacket(ctx, destination)
 		if err == nil {
-			return conn, nil
+			return s.interruptGroup.NewPacketConn(conn, interrupt.IsExternalConnectionFromContext(ctx), picked.Tag()), nil
 		}
 		lastErr = err
 		s.logger.ErrorContext(ctx, err)
@@ -135,7 +139,7 @@ func (s *LoadBalance) ListenPacket(ctx context.Context, destination M.Socksaddr)
 
 // NewConnectionEx implements adapter.TCPInjectableInbound
 func (s *LoadBalance) NewConnectionEx(ctx context.Context, conn net.Conn, metadata adapter.InboundContext, onClose N.CloseHandlerFunc) {
-	selected := s.Pick(ctx, N.NetworkUDP, metadata.Destination)
+	selected := s.Pick(ctx, N.NetworkTCP, metadata.Destination)
 	if selected == nil {
 		s.connection.NewConnection(ctx, newErrDailer(E.New("no outbound available")), conn, metadata, onClose)
 		return
@@ -183,6 +187,7 @@ func (s *LoadBalance) NewDirectRouteConnection(metadata adapter.InboundContext, 
 
 // Close implements adapter.Service
 func (s *LoadBalance) Close() error {
+	s.HealthCheck.UnregisterPostCheckListener(s.interruptOutdatedConnections)
 	s.HealthCheck.RemoveProviders(s.Tag())
 	if s.Balancer != nil {
 		return s.Balancer.Close()
@@ -207,6 +212,7 @@ func (s *LoadBalance) Start() error {
 	if !ok {
 		return E.New("service [", s.options.Checker, "] is not a health checker service")
 	}
+	checker.RegisterPostCheckListener(s.interruptOutdatedConnections)
 	// Submit all providers to the shared checker.
 	if err := checker.HealthCheck.SetProviders(s.Tag(), s.Providers()); err != nil {
 		return err
@@ -219,7 +225,11 @@ func (s *LoadBalance) Start() error {
 	return s.Balancer.Start()
 }
 
-// URLTest implements adapter.OutboundCheckGroup
+func (s *LoadBalance) interruptOutdatedConnections() {
+	s.interruptGroup.Interrupt(s.interruptExternalConnections, s.Balancer.AvailableNodes())
+}
+
+// URLTest implements adapter.URLTestGroup
 func (s *LoadBalance) URLTest(ctx context.Context) (map[string]uint16, error) {
 	return s.Balancer.HealthCheck.CheckAll(ctx, s.Tag())
 }

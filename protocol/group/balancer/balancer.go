@@ -105,6 +105,19 @@ func (b *Balancer) Pick(ctx context.Context, network string, destination M.Socks
 	return picked.Outbound
 }
 
+// AvailableNodes returns all available nodes
+func (b *Balancer) AvailableNodes() []string {
+	_, filtered := b.GetNodes(true)
+	if len(filtered) == 0 {
+		return []string{}
+	}
+	return common.Uniq(common.Map(
+		filtered, func(node *Node) string {
+			return node.Tag()
+		},
+	))
+}
+
 // Networks returns all networks supported by this balancer
 func (b *Balancer) Networks() []string {
 	if b.networks == nil {
@@ -170,7 +183,7 @@ func (b *Balancer) availableNetworks() []string {
 
 // GetNodes returns all nodes and filtered nodes, and logs the nodes if logging is true
 func (b *Balancer) GetNodes(logging bool) (all, filtered []*Node) {
-	all = b.Nodes("")
+	all = b.Nodes(N.NetworkTCP)
 	filtered = b.Objective.Filter(all)
 	if !logging {
 		return all, filtered

@@ -18,7 +18,8 @@
   "exclude": "",
   "include": "",
   "checker": "default",
-  "tolerance": 50
+  "tolerance": 50,
+  "interrupt_exist_connections": false
 }
 ```
 
@@ -51,3 +52,9 @@
 #### tolerance
 
 以毫秒为单位的测试容差。 默认使用 `50`。
+
+#### interrupt_exist_connections
+
+当选定的出站发生更改时，中断现有连接。
+
+仅入站连接受此设置影响，内部连接将始终被中断。

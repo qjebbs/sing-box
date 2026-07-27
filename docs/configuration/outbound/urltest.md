@@ -18,7 +18,8 @@
   "exclude": "",
   "include": "",
   "checker": "default",
-  "tolerance": 50
+  "tolerance": 50,
+  "interrupt_exist_connections": false
 }
 ```
 
@@ -51,3 +52,9 @@ The tag of the health check service. Optional, if not configured, the default he
 #### tolerance
 
 The test tolerance in milliseconds. `50` will be used if empty.
+
+#### interrupt_exist_connections
+
+Interrupt existing connections when the selected outbound has changed.
+
+Only inbound connections are affected by this setting, internal connections will always be interrupted.

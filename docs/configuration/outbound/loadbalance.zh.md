@@ -41,7 +41,8 @@
         "rtt_scale": 10
       }
     ]
-  }
+  },
+  "interrupt_exist_connections": false
 }
 ```
 
@@ -155,3 +156,9 @@
 - `regexp` 表示节点标签匹配某个正则表达式时匹配。
 
 如果配置了多个条件，满足任一条件即可匹配。
+
+#### interrupt_exist_connections
+
+当选定的出站发生更改时，中断现有连接。
+
+仅入站连接受此设置影响，内部连接将始终被中断。

@@ -10,8 +10,9 @@ type ProviderSelectorOptions struct {
 // ProviderURLTestOptions is the options for urltest outbounds with providers support
 type ProviderURLTestOptions struct {
 	ProviderGroupCommonOption
-	Checker   string `json:"checker,omitempty"`
-	Tolerance uint16 `json:"tolerance,omitempty"`
+	Checker                   string `json:"checker,omitempty"`
+	Tolerance                 uint16 `json:"tolerance,omitempty"`
+	InterruptExistConnections bool   `json:"interrupt_exist_connections,omitempty"`
 }
 
 // ChainOptions is the chain of outbounds

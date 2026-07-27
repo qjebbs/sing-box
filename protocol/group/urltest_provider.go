@@ -46,6 +46,9 @@ type URLTestProvider struct {
 
 	checker   string
 	tolerance healthcheck.RTT
+
+	interruptGroup               *interrupt.Group
+	interruptExternalConnections bool
 }
 
 func NewURLTestProvider(ctx context.Context, router adapter.Router, logger log.ContextLogger, tag string, options option.ProviderURLTestOptions) (adapter.Outbound, error) {
@@ -54,16 +57,18 @@ func NewURLTestProvider(ctx context.Context, router adapter.Router, logger log.C
 		tolerance = 50
 	}
 	return &URLTestProvider{
-		GroupAdapter: outbound.NewGroupAdapter(C.TypeURLTest, tag, []string{N.NetworkTCP, N.NetworkUDP}, options.ProviderGroupCommonOption),
-		ctx:          ctx,
-		router:       router,
-		logger:       logger,
-		outbound:     service.FromContext[adapter.OutboundManager](ctx),
-		connection:   service.FromContext[adapter.ConnectionManager](ctx),
-		provider:     service.FromContext[adapter.ProviderManager](ctx),
-		serviceMgr:   service.FromContext[adapter.ServiceManager](ctx),
-		checker:      options.Checker,
-		tolerance:    tolerance,
+		GroupAdapter:                 outbound.NewGroupAdapter(C.TypeURLTest, tag, []string{N.NetworkTCP, N.NetworkUDP}, options.ProviderGroupCommonOption),
+		ctx:                          ctx,
+		router:                       router,
+		logger:                       logger,
+		outbound:                     service.FromContext[adapter.OutboundManager](ctx),
+		connection:                   service.FromContext[adapter.ConnectionManager](ctx),
+		provider:                     service.FromContext[adapter.ProviderManager](ctx),
+		serviceMgr:                   service.FromContext[adapter.ServiceManager](ctx),
+		checker:                      options.Checker,
+		tolerance:                    tolerance,
+		interruptGroup:               interrupt.NewGroup(),
+		interruptExternalConnections: options.InterruptExistConnections,
 	}, nil
 }
 
@@ -83,6 +88,7 @@ func (s *URLTestProvider) Start() error {
 	if !ok {
 		return E.New("service [", s.checker, "] is not a health checker service")
 	}
+	checker.RegisterPostCheckListener(s.interruptOutdatedConnections)
 	if err := checker.HealthCheck.SetProviders(s.Tag(), s.Providers()); err != nil {
 		return err
 	}
@@ -91,11 +97,20 @@ func (s *URLTestProvider) Start() error {
 }
 
 func (s URLTestProvider) Close() error {
+	s.HealthCheck.UnregisterPostCheckListener(s.interruptOutdatedConnections)
 	s.HealthCheck.RemoveProviders(s.Tag())
 	if s.HealthCheck == nil {
 		return nil
 	}
 	return nil
+}
+
+func (s *URLTestProvider) interruptOutdatedConnections() {
+	outbound, err := s.Select(N.NetworkTCP)
+	if err != nil {
+		return
+	}
+	s.interruptGroup.Interrupt(s.interruptExternalConnections, []string{outbound.Tag()})
 }
 
 func (s *URLTestProvider) Now() string {
@@ -246,7 +261,7 @@ func (s *URLTestProvider) getHistory(outbound adapter.Outbound) *healthcheck.His
 	return s.HealthCheck.Storage.Latest(outbound.Tag())
 }
 
-// URLTest implements adapter.OutboundCheckGroup
+// URLTest implements adapter.URLTestGroup
 func (s *URLTestProvider) URLTest(ctx context.Context) (map[string]uint16, error) {
 	return s.HealthCheck.CheckAll(ctx, s.Tag())
 }
