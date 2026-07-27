@@ -38,16 +38,15 @@ type LoadBalance struct {
 	outbound.GroupAdapter
 	*balancer.Balancer
 
-	ctx                          context.Context
-	router                       adapter.Router
-	logger                       log.ContextLogger
-	outbound                     adapter.OutboundManager
-	provider                     adapter.ProviderManager
-	connection                   adapter.ConnectionManager
-	serviceMgr                   adapter.ServiceManager
-	options                      option.LoadBalanceOutboundOptions
-	interruptGroup               *interrupt.Group
-	interruptExternalConnections bool
+	ctx            context.Context
+	router         adapter.Router
+	logger         log.ContextLogger
+	outbound       adapter.OutboundManager
+	provider       adapter.ProviderManager
+	connection     adapter.ConnectionManager
+	serviceMgr     adapter.ServiceManager
+	options        option.LoadBalanceOutboundOptions
+	interruptGroup *interrupt.Group
 }
 
 // NewLoadBalance creates a new load balance outbound
@@ -57,16 +56,15 @@ func NewLoadBalance(ctx context.Context, router adapter.Router, logger log.Conte
 			C.TypeLoadBalance, tag, []string{N.NetworkTCP, N.NetworkUDP},
 			options.ProviderGroupCommonOption,
 		),
-		ctx:                          ctx,
-		router:                       router,
-		logger:                       logger,
-		outbound:                     service.FromContext[adapter.OutboundManager](ctx),
-		provider:                     service.FromContext[adapter.ProviderManager](ctx),
-		connection:                   service.FromContext[adapter.ConnectionManager](ctx),
-		serviceMgr:                   service.FromContext[adapter.ServiceManager](ctx),
-		options:                      options,
-		interruptGroup:               interrupt.NewGroup(),
-		interruptExternalConnections: options.InterruptExistConnections,
+		ctx:            ctx,
+		router:         router,
+		logger:         logger,
+		outbound:       service.FromContext[adapter.OutboundManager](ctx),
+		provider:       service.FromContext[adapter.ProviderManager](ctx),
+		connection:     service.FromContext[adapter.ConnectionManager](ctx),
+		serviceMgr:     service.FromContext[adapter.ServiceManager](ctx),
+		options:        options,
+		interruptGroup: interrupt.NewGroup(),
 	}, nil
 }
 
@@ -84,7 +82,7 @@ func (s *LoadBalance) All() []string {
 	// s.LogNodes()
 	// return s.GroupAdapter.All()
 
-	_, filtered := s.GetNodes(false)
+	_, filtered := s.GetNodes()
 	return common.Map(filtered, func(node *balancer.Node) string {
 		return node.Tag()
 	})
@@ -226,7 +224,7 @@ func (s *LoadBalance) Start() error {
 }
 
 func (s *LoadBalance) interruptOutdatedConnections() {
-	s.interruptGroup.Interrupt(s.interruptExternalConnections, s.Balancer.AvailableNodes())
+	s.interruptGroup.Interrupt(s.options.InterruptExistConnections, s.Balancer.AvailableNodes(s.options.LogHealth))
 }
 
 // URLTest implements adapter.URLTestGroup

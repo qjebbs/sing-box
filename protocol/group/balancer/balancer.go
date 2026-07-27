@@ -106,8 +106,23 @@ func (b *Balancer) Pick(ctx context.Context, network string, destination M.Socks
 }
 
 // AvailableNodes returns all available nodes
-func (b *Balancer) AvailableNodes() []string {
-	_, filtered := b.GetNodes(true)
+func (b *Balancer) AvailableNodes(logging bool) []string {
+	all, filtered := b.GetNodes()
+	if logging && len(all) > 0 {
+		available := len(filtered)
+		b.logger.Info(
+			b.cfg.Objective, "/", b.cfg.Strategy, ", ",
+			available, " of ", len(all), " nodes available",
+		)
+		b.logger.Info("=== nodes available ===")
+		b.Objective.Sort(all)
+		for i, n := range all {
+			if i == available {
+				b.logger.Info("=== nodes unavailable ===")
+			}
+			b.logger.Info(n.String())
+		}
+	}
 	if len(filtered) == 0 {
 		return []string{}
 	}
@@ -182,24 +197,8 @@ func (b *Balancer) availableNetworks() []string {
 }
 
 // GetNodes returns all nodes and filtered nodes, and logs the nodes if logging is true
-func (b *Balancer) GetNodes(logging bool) (all, filtered []*Node) {
+func (b *Balancer) GetNodes() (all, filtered []*Node) {
 	all = b.Nodes(N.NetworkTCP)
 	filtered = b.Objective.Filter(all)
-	if !logging {
-		return all, filtered
-	}
-	available := len(filtered)
-	b.logger.Info(
-		b.cfg.Objective, "/", b.cfg.Strategy, ", ",
-		available, " of ", len(all), " nodes available",
-	)
-	b.logger.Info("=== nodes available ===")
-	b.Objective.Sort(all)
-	for i, n := range all {
-		if i == available {
-			b.logger.Info("=== nodes unavailable ===")
-		}
-		b.logger.Info(n.String())
-	}
 	return all, filtered
 }

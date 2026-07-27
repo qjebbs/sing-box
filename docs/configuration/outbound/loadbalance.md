@@ -42,6 +42,7 @@
       }
     ]
   },
+  "log_health": false,
   "interrupt_exist_connections": false
 }
 ```
@@ -158,6 +159,11 @@ For example, `rtt_scale: 10` means that when the node's round-trip time is `100m
 - `regexp` means matching when the node tag matches a regular expression.
 
 If multiple conditions are configured, matching any one of them is sufficient.
+
+#### log_health
+
+Whether to output the node statistics to the log after performing health checks. 
+Default is `false`.
 
 #### interrupt_exist_connections
 

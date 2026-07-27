@@ -8,6 +8,7 @@ type LoadBalanceOutboundOptions struct {
 	Checker                   string                      `json:"checker,omitempty"`
 	Pick                      LoadBalancePickOptions      `json:"pick,omitempty"`
 	Profiles                  []LoadBalanceProfileOptions `json:"profiles,omitempty"`
+	LogHealth                 bool                        `json:"log_health,omitempty"`
 	InterruptExistConnections bool                        `json:"interrupt_exist_connections,omitempty"`
 }
 
