@@ -32,5 +32,5 @@ func detourOverrideFromContext(ctx context.Context) N.Dialer {
 	}
 	v := value.(*detourOverride)
 	v.used = true
-	return v.detour.(N.Dialer)
+	return v.detour
 }
