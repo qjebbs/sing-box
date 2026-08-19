@@ -185,9 +185,9 @@ func (s *LoadBalance) NewDirectRouteConnection(metadata adapter.InboundContext, 
 
 // Close implements adapter.Service
 func (s *LoadBalance) Close() error {
-	s.HealthCheck.UnregisterPostCheckListener(s.interruptOutdatedConnections)
-	s.HealthCheck.RemoveProviders(s.Tag())
 	if s.Balancer != nil {
+		s.Balancer.HealthCheck.UnregisterPostCheckListener(s.interruptOutdatedConnections)
+		s.Balancer.HealthCheck.RemoveProviders(s.Tag())
 		return s.Balancer.Close()
 	}
 	return nil
