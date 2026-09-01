@@ -23,6 +23,7 @@ import (
 	"github.com/sagernet/sing/common/logger"
 	M "github.com/sagernet/sing/common/metadata"
 	N "github.com/sagernet/sing/common/network"
+	"github.com/sagernet/sing/service/filemanager"
 
 	"golang.org/x/crypto/ssh"
 )
@@ -41,6 +42,9 @@ type Outbound struct {
 	user              string
 	hostKey           []ssh.PublicKey
 	hostKeyAlgorithms []string
+	cipher            []string
+	mac               []string
+	kexAlgorithm      []string
 	clientVersion     string
 	authMethod        []ssh.AuthMethod
 	clientAccess      sync.Mutex
@@ -60,6 +64,9 @@ func NewOutbound(ctx context.Context, router adapter.Router, logger log.ContextL
 		serverAddr:        options.ServerOptions.Build(),
 		user:              options.User,
 		hostKeyAlgorithms: options.HostKeyAlgorithms,
+		cipher:            options.Cipher,
+		mac:               options.MAC,
+		kexAlgorithm:      options.KexAlgorithm,
 		clientVersion:     options.ClientVersion,
 	}
 	if outbound.serverAddr.Port == 0 {
@@ -80,7 +87,7 @@ func NewOutbound(ctx context.Context, router adapter.Router, logger log.ContextL
 			privateKey = []byte(strings.Join(options.PrivateKey, "\n"))
 		} else {
 			var err error
-			privateKey, err = os.ReadFile(os.ExpandEnv(options.PrivateKeyPath))
+			privateKey, err = filemanager.ReadFile(ctx, os.ExpandEnv(options.PrivateKeyPath))
 			if err != nil {
 				return nil, E.Cause(err, "read private key")
 			}
@@ -167,6 +174,15 @@ func (s *Outbound) connect(ctx context.Context) (client *ssh.Client, err error) 
 			return E.New("host key mismatch, server send ", key.Type(), " ", base64.StdEncoding.EncodeToString(serverKey))
 		},
 	}
+	if len(s.cipher) > 0 {
+		config.Ciphers = s.cipher
+	}
+	if len(s.mac) > 0 {
+		config.MACs = s.mac
+	}
+	if len(s.kexAlgorithm) > 0 {
+		config.KeyExchanges = s.kexAlgorithm
+	}
 	clientConn, chans, reqs, err := ssh.NewClientConn(conn, s.serverAddr.Addr.String(), config)
 	if err != nil {
 		conn.Close()
@@ -190,7 +206,7 @@ func (s *Outbound) connect(ctx context.Context) (client *ssh.Client, err error) 
 	return client, nil
 }
 
-func (s *Outbound) InterfaceUpdated() {
+func (s *Outbound) InterfaceUpdated(ctx context.Context) {
 	common.Close(s.clientConn)
 }
 

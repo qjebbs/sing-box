@@ -1,14 +1,22 @@
 package libbox
 
 import (
+	"math"
 	"os"
+	"path/filepath"
+	"runtime"
 	"runtime/debug"
 	"time"
 
+	"github.com/sagernet/sing-box/common/networkquality"
+	"github.com/sagernet/sing-box/common/stun"
 	C "github.com/sagernet/sing-box/constant"
+	"github.com/sagernet/sing-box/dns"
 	"github.com/sagernet/sing-box/experimental/locale"
 	"github.com/sagernet/sing-box/log"
+	"github.com/sagernet/sing-box/service/oomkiller"
 	"github.com/sagernet/sing/common/byteformats"
+	E "github.com/sagernet/sing/common/exceptions"
 )
 
 var (
@@ -22,6 +30,13 @@ var (
 	sCommandServerSecret     string
 	sLogMaxLines             int
 	sDebug                   bool
+	sCrashReportSource       string
+	sAppVersion              string
+	sAppMarketingVersion     string
+	sOOMKillerEnabled        bool
+	sOOMKillerDisabled       bool
+	sOOMMemoryLimit          int64
+	sPowerReportEnabled      bool
 )
 
 func init() {
@@ -38,9 +53,16 @@ type SetupOptions struct {
 	CommandServerSecret     string
 	LogMaxLines             int
 	Debug                   bool
+	CrashReportSource       string
+	AppVersion              string
+	AppMarketingVersion     string
+	OomKillerEnabled        bool
+	OomKillerDisabled       bool
+	OomMemoryLimit          int64
+	PowerReportEnabled      bool
 }
 
-func Setup(options *SetupOptions) error {
+func applySetupOptions(options *SetupOptions) {
 	sBasePath = options.BasePath
 	sWorkingPath = options.WorkingPath
 	sTempPath = options.TempPath
@@ -56,18 +78,51 @@ func Setup(options *SetupOptions) error {
 	sCommandServerSecret = options.CommandServerSecret
 	sLogMaxLines = options.LogMaxLines
 	sDebug = options.Debug
-
-	os.MkdirAll(sWorkingPath, 0o777)
-	os.MkdirAll(sTempPath, 0o777)
-	return nil
+	sCrashReportSource = options.CrashReportSource
+	sAppVersion = options.AppVersion
+	sAppMarketingVersion = options.AppMarketingVersion
+	ReloadSetupOptions(options)
 }
 
-func SetLocale(localeId string) {
-	locale.Set(localeId)
+func ReloadSetupOptions(options *SetupOptions) {
+	sOOMKillerEnabled = options.OomKillerEnabled
+	sOOMKillerDisabled = options.OomKillerDisabled
+	sOOMMemoryLimit = options.OomMemoryLimit
+	sPowerReportEnabled = options.PowerReportEnabled
+	if sOOMKillerEnabled {
+		if sOOMMemoryLimit == 0 && C.IsIos {
+			sOOMMemoryLimit = oomkiller.DefaultAppleNetworkExtensionMemoryLimit
+		}
+		if sOOMMemoryLimit > 0 {
+			debug.SetMemoryLimit(sOOMMemoryLimit * 4 / 5)
+		} else {
+			debug.SetMemoryLimit(math.MaxInt64)
+		}
+	} else {
+		debug.SetMemoryLimit(math.MaxInt64)
+	}
+}
+
+func Setup(options *SetupOptions) error {
+	applySetupOptions(options)
+	os.MkdirAll(sWorkingPath, 0o777)
+	os.MkdirAll(sTempPath, 0o777)
+	return redirectStderr(filepath.Join(sWorkingPath, "CrashReport-"+sCrashReportSource+".log"))
+}
+
+func SetLocale(localeID string) error {
+	if !locale.Set(localeID) {
+		return E.New("unsupported locale: ", localeID)
+	}
+	return nil
 }
 
 func Version() string {
 	return C.Version
+}
+
+func GoVersion() string {
+	return runtime.Version() + ", " + runtime.GOOS + "/" + runtime.GOARCH
 }
 
 func FormatBytes(length int64) string {
@@ -80,6 +135,60 @@ func FormatMemoryBytes(length int64) string {
 
 func FormatDuration(duration int64) string {
 	return log.FormatDuration(time.Duration(duration) * time.Millisecond)
+}
+
+func FormatBitrate(bps int64) string {
+	return networkquality.FormatBitrate(bps)
+}
+
+const NetworkQualityDefaultConfigURL = networkquality.DefaultConfigURL
+
+const NetworkQualityDefaultMaxRuntimeSeconds = int32(networkquality.DefaultMaxRuntime / time.Second)
+
+const (
+	NetworkQualityAccuracyLow    = int32(networkquality.AccuracyLow)
+	NetworkQualityAccuracyMedium = int32(networkquality.AccuracyMedium)
+	NetworkQualityAccuracyHigh   = int32(networkquality.AccuracyHigh)
+)
+
+const (
+	NetworkQualityPhaseIdle     = int32(networkquality.PhaseIdle)
+	NetworkQualityPhaseDownload = int32(networkquality.PhaseDownload)
+	NetworkQualityPhaseUpload   = int32(networkquality.PhaseUpload)
+	NetworkQualityPhaseDone     = int32(networkquality.PhaseDone)
+)
+
+const STUNDefaultServer = stun.DefaultServer
+
+const (
+	STUNPhaseBinding      = int32(stun.PhaseBinding)
+	STUNPhaseNATMapping   = int32(stun.PhaseNATMapping)
+	STUNPhaseNATFiltering = int32(stun.PhaseNATFiltering)
+	STUNPhaseDone         = int32(stun.PhaseDone)
+)
+
+const (
+	NATMappingEndpointIndependent     = int32(stun.NATMappingEndpointIndependent)
+	NATMappingAddressDependent        = int32(stun.NATMappingAddressDependent)
+	NATMappingAddressAndPortDependent = int32(stun.NATMappingAddressAndPortDependent)
+)
+
+const (
+	NATFilteringEndpointIndependent     = int32(stun.NATFilteringEndpointIndependent)
+	NATFilteringAddressDependent        = int32(stun.NATFilteringAddressDependent)
+	NATFilteringAddressAndPortDependent = int32(stun.NATFilteringAddressAndPortDependent)
+)
+
+func FormatNATMapping(value int32) string {
+	return stun.NATMapping(value).String()
+}
+
+func FormatNATFiltering(value int32) string {
+	return stun.NATFiltering(value).String()
+}
+
+func FormatFQDN(fqdn string) string {
+	return dns.FqdnToDomain(fqdn)
 }
 
 func ProxyDisplayType(proxyType string) string {

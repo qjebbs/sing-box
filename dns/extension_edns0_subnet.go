@@ -2,12 +2,61 @@ package dns
 
 import (
 	"net/netip"
+	"slices"
+
+	"github.com/sagernet/sing/common"
 
 	"github.com/miekg/dns"
 )
 
 func SetClientSubnet(message *dns.Msg, clientSubnet netip.Prefix) *dns.Msg {
 	return setClientSubnet(message, clientSubnet, true)
+}
+
+func clientSubnetFromMessage(message *dns.Msg) netip.Prefix {
+	for _, record := range message.Extra {
+		optRecord, isOPTRecord := record.(*dns.OPT)
+		if !isOPTRecord {
+			continue
+		}
+		for _, option := range optRecord.Option {
+			subnetOption, isEDNS0Subnet := option.(*dns.EDNS0_SUBNET)
+			if !isEDNS0Subnet {
+				continue
+			}
+			address, addressLoaded := netip.AddrFromSlice(subnetOption.Address)
+			if !addressLoaded {
+				return netip.Prefix{}
+			}
+			return netip.PrefixFrom(address.Unmap(), int(subnetOption.SourceNetmask))
+		}
+	}
+	return netip.Prefix{}
+}
+
+func removeClientSubnet(message *dns.Msg) *dns.Msg {
+	if !slices.ContainsFunc(message.Extra, func(record dns.RR) bool {
+		optRecord, isOPTRecord := record.(*dns.OPT)
+		if !isOPTRecord {
+			return false
+		}
+		return slices.ContainsFunc(optRecord.Option, func(option dns.EDNS0) bool {
+			return option.Option() == dns.EDNS0SUBNET
+		})
+	}) {
+		return message
+	}
+	message = message.Copy()
+	for _, record := range message.Extra {
+		optRecord, isOPTRecord := record.(*dns.OPT)
+		if !isOPTRecord {
+			continue
+		}
+		optRecord.Option = common.Filter(optRecord.Option, func(option dns.EDNS0) bool {
+			return option.Option() != dns.EDNS0SUBNET
+		})
+	}
+	return message
 }
 
 func setClientSubnet(message *dns.Msg, clientSubnet netip.Prefix, clone bool) *dns.Msg {

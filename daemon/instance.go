@@ -6,10 +6,11 @@ import (
 
 	"github.com/sagernet/sing-box"
 	"github.com/sagernet/sing-box/adapter"
+	"github.com/sagernet/sing-box/common/trafficcontrol"
 	"github.com/sagernet/sing-box/common/urltest"
 	C "github.com/sagernet/sing-box/constant"
 	"github.com/sagernet/sing-box/experimental/deprecated"
-	"github.com/sagernet/sing-box/include"
+	"github.com/sagernet/sing-box/experimental/locale"
 	"github.com/sagernet/sing-box/log"
 	"github.com/sagernet/sing-box/option"
 	"github.com/sagernet/sing/common"
@@ -25,17 +26,23 @@ type Instance struct {
 	instance              *box.Box
 	connectionManager     adapter.ConnectionManager
 	clashServer           adapter.ClashServer
+	trafficManager        *trafficcontrol.Manager
 	cacheFile             adapter.CacheFile
 	pauseManager          pause.Manager
 	urlTestHistoryStorage *urltest.HistoryStorage
+	outboundManager       adapter.OutboundManager
+	endpointManager       adapter.EndpointManager
+	logFactory            log.Factory
 }
 
-func (s *StartedService) CheckConfig(configContent string) error {
-	options, err := parseConfig(s.ctx, configContent)
+func (s *StartedService) CheckConfig(ctx context.Context, configContent string) error {
+	selectedLocale := locale.FromContext(ctx)
+	ctx, _ = locale.ContextWithLocale(s.ctx, selectedLocale.Locale)
+	options, err := parseConfig(ctx, configContent)
 	if err != nil {
 		return err
 	}
-	ctx, cancel := context.WithCancel(s.ctx)
+	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	instance, err := box.New(box.Options{
 		Context: ctx,
@@ -47,8 +54,10 @@ func (s *StartedService) CheckConfig(configContent string) error {
 	return err
 }
 
-func (s *StartedService) FormatConfig(configContent string) (string, error) {
-	options, err := parseConfig(s.ctx, configContent)
+func (s *StartedService) FormatConfig(ctx context.Context, configContent string) (string, error) {
+	selectedLocale := locale.FromContext(ctx)
+	ctx, _ = locale.ContextWithLocale(s.ctx, selectedLocale.Locale)
+	options, err := parseConfig(ctx, configContent)
 	if err != nil {
 		return "", err
 	}
@@ -68,10 +77,12 @@ type OverrideOptions struct {
 	ExcludePackage []string
 }
 
-func (s *StartedService) newInstance(profileContent string, overrideOptions *OverrideOptions) (*Instance, error) {
-	ctx := service.ExtendContext(s.ctx)
+func (s *StartedService) newInstance(ctx context.Context, profileContent string, overrideOptions *OverrideOptions) (*Instance, error) {
+	selectedLocale := locale.FromContext(ctx)
+	ctx, _ = locale.ContextWithLocale(s.ctx, selectedLocale.Locale)
+	ctx = service.ExtendContext(ctx)
 	service.MustRegister[deprecated.Manager](ctx, new(deprecatedManager))
-	ctx, cancel := context.WithCancel(include.Context(ctx))
+	ctx, cancel := context.WithCancel(ctx)
 	options, err := parseConfig(ctx, profileContent)
 	if err != nil {
 		cancel()
@@ -87,12 +98,17 @@ func (s *StartedService) newInstance(profileContent string, overrideOptions *Ove
 			}
 		}
 	}
-	if s.oomKiller && C.IsIos {
+	if s.oomKillerEnabled {
 		if !common.Any(options.Services, func(it option.Service) bool {
 			return it.Type == C.TypeOOMKiller
 		}) {
+			oomOptions := &option.OOMKillerServiceOptions{
+				KillerDisabled:      s.oomKillerDisabled,
+				MemoryLimitOverride: s.oomMemoryLimit,
+			}
 			options.Services = append(options.Services, option.Service{
-				Type: C.TypeOOMKiller,
+				Type:    C.TypeOOMKiller,
+				Options: oomOptions,
 			})
 		}
 	}
@@ -115,10 +131,29 @@ func (s *StartedService) newInstance(profileContent string, overrideOptions *Ove
 	i.instance = boxInstance
 	i.connectionManager = service.FromContext[adapter.ConnectionManager](ctx)
 	i.clashServer = service.FromContext[adapter.ClashServer](ctx)
+	i.trafficManager = service.PtrFromContext[trafficcontrol.Manager](ctx)
 	i.pauseManager = service.FromContext[pause.Manager](ctx)
 	i.cacheFile = service.FromContext[adapter.CacheFile](ctx)
+	i.outboundManager = service.FromContext[adapter.OutboundManager](ctx)
+	i.endpointManager = service.FromContext[adapter.EndpointManager](ctx)
+	i.logFactory = boxInstance.LogFactory()
 	log.SetStdLogger(boxInstance.LogFactory().Logger())
 	return i, nil
+}
+
+func attachInstance(ctx context.Context) *Instance {
+	return &Instance{
+		ctx:                   ctx,
+		connectionManager:     service.FromContext[adapter.ConnectionManager](ctx),
+		clashServer:           service.FromContext[adapter.ClashServer](ctx),
+		trafficManager:        service.PtrFromContext[trafficcontrol.Manager](ctx),
+		pauseManager:          service.FromContext[pause.Manager](ctx),
+		cacheFile:             service.FromContext[adapter.CacheFile](ctx),
+		urlTestHistoryStorage: service.PtrFromContext[urltest.HistoryStorage](ctx),
+		outboundManager:       service.FromContext[adapter.OutboundManager](ctx),
+		endpointManager:       service.FromContext[adapter.EndpointManager](ctx),
+		logFactory:            service.FromContext[log.Factory](ctx),
+	}
 }
 
 func (i *Instance) Start() error {
@@ -137,6 +172,10 @@ func (i *Instance) Box() *box.Box {
 
 func (i *Instance) PauseManager() pause.Manager {
 	return i.pauseManager
+}
+
+func (i *Instance) TrafficManager() *trafficcontrol.Manager {
+	return i.trafficManager
 }
 
 func parseConfig(ctx context.Context, configContent string) (option.Options, error) {

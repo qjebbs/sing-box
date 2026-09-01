@@ -7,15 +7,14 @@ package group
 import (
 	"context"
 	"net"
-	"time"
 
 	"github.com/sagernet/sing-box/adapter"
 	"github.com/sagernet/sing-box/adapter/outbound"
 	"github.com/sagernet/sing-box/common/interrupt"
+	"github.com/sagernet/sing-box/common/urltest"
 	C "github.com/sagernet/sing-box/constant"
 	"github.com/sagernet/sing-box/log"
 	"github.com/sagernet/sing-box/option"
-	tun "github.com/sagernet/sing-tun"
 	"github.com/sagernet/sing/common"
 	E "github.com/sagernet/sing/common/exceptions"
 	"github.com/sagernet/sing/common/logger"
@@ -29,9 +28,9 @@ func RegisterSelector(registry *outbound.Registry) {
 }
 
 var (
-	// _ adapter.OutboundGroup             = (*Selector)(nil)
-	_ adapter.ConnectionHandlerEx       = (*Selector)(nil)
-	_ adapter.PacketConnectionHandlerEx = (*Selector)(nil)
+	// _ adapter.OutboundGroup           = (*Selector)(nil)
+	_ adapter.ConnectionHandler       = (*Selector)(nil)
+	_ adapter.PacketConnectionHandler = (*Selector)(nil)
 )
 
 type Selector struct {
@@ -44,6 +43,7 @@ type Selector struct {
 	defaultTag                   string
 	outbounds                    map[string]adapter.Outbound
 	selected                     common.TypedValue[adapter.Outbound]
+	history                      *urltest.HistoryStorage
 	interruptGroup               *interrupt.Group
 	interruptExternalConnections bool
 }
@@ -58,6 +58,7 @@ func NewSelector(ctx context.Context, router adapter.Router, logger log.ContextL
 		tags:                         options.Outbounds,
 		defaultTag:                   options.Default,
 		outbounds:                    make(map[string]adapter.Outbound),
+		history:                      service.PtrFromContext[urltest.HistoryStorage](ctx),
 		interruptGroup:               interrupt.NewGroup(),
 		interruptExternalConnections: options.InterruptExistConnections,
 	}
@@ -141,6 +142,9 @@ func (s *Selector) SelectOutbound(tag string) bool {
 		}
 	}
 	s.interruptGroup.Interrupt(s.interruptExternalConnections, []string{tag})
+	if s.history != nil {
+		s.history.NotifyUpdated()
+	}
 	return true
 }
 
@@ -160,37 +164,38 @@ func (s *Selector) ListenPacket(ctx context.Context, destination M.Socksaddr) (n
 	return s.interruptGroup.NewPacketConn(conn, interrupt.IsExternalConnectionFromContext(ctx), s.selected.Load().Tag()), nil
 }
 
-func (s *Selector) NewConnectionEx(ctx context.Context, conn net.Conn, metadata adapter.InboundContext, onClose N.CloseHandlerFunc) {
+func (s *Selector) NewConnection(ctx context.Context, conn net.Conn, metadata adapter.InboundContext, onClose N.CloseHandlerFunc) {
 	ctx = interrupt.ContextWithIsExternalConnection(ctx)
 	selected := s.selected.Load()
-	if outboundHandler, isHandler := selected.(adapter.ConnectionHandlerEx); isHandler {
-		outboundHandler.NewConnectionEx(ctx, conn, metadata, onClose)
+	if outboundHandler, isHandler := selected.(adapter.ConnectionHandler); isHandler {
+		outboundHandler.NewConnection(ctx, conn, metadata, onClose)
 	} else {
 		s.connection.NewConnection(ctx, selected, conn, metadata, onClose)
 	}
 }
 
-func (s *Selector) NewPacketConnectionEx(ctx context.Context, conn N.PacketConn, metadata adapter.InboundContext, onClose N.CloseHandlerFunc) {
+func (s *Selector) NewPacketConnection(ctx context.Context, conn N.PacketConn, metadata adapter.InboundContext, onClose N.CloseHandlerFunc) {
 	ctx = interrupt.ContextWithIsExternalConnection(ctx)
 	selected := s.selected.Load()
-	if outboundHandler, isHandler := selected.(adapter.PacketConnectionHandlerEx); isHandler {
-		outboundHandler.NewPacketConnectionEx(ctx, conn, metadata, onClose)
+	if outboundHandler, isHandler := selected.(adapter.PacketConnectionHandler); isHandler {
+		outboundHandler.NewPacketConnection(ctx, conn, metadata, onClose)
 	} else {
 		s.connection.NewPacketConnection(ctx, selected, conn, metadata, onClose)
 	}
 }
 
-func (s *Selector) NewDirectRouteConnection(metadata adapter.InboundContext, routeContext tun.DirectRouteContext, timeout time.Duration) (tun.DirectRouteDestination, error) {
-	selected := s.selected.Load()
-	if !common.Contains(selected.Network(), metadata.Network) {
-		return nil, E.New(metadata.Network, " is not supported by outbound: ", selected.Tag())
+func RealTag(outboundManager adapter.OutboundManager, detour adapter.Outbound) string {
+	tag := detour.Tag()
+	for {
+		group, isGroup := detour.(adapter.OutboundGroup)
+		if !isGroup {
+			return tag
+		}
+		tag = group.Now()
+		var loaded bool
+		detour, loaded = outboundManager.Outbound(tag)
+		if !loaded {
+			return tag
+		}
 	}
-	return selected.(adapter.DirectRouteOutbound).NewDirectRouteConnection(metadata, routeContext, timeout)
-}
-
-func RealTag(detour adapter.Outbound) string {
-	if group, isGroup := detour.(adapter.OutboundGroup); isGroup {
-		return group.Now()
-	}
-	return detour.Tag()
 }

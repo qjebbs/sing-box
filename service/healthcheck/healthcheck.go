@@ -36,7 +36,7 @@ type HealthCheck struct {
 	mergedProviders *mergedProvider
 	cancel          context.CancelFunc
 	detourOf        []adapter.Outbound
-	globalHistory   adapter.URLTestHistoryStorage
+	globalHistory   *urltest.HistoryStorage
 
 	loopCtx     context.Context
 	loopStarted bool
@@ -79,6 +79,7 @@ func NewHealthCheck(
 		logger:          logger,
 		mergedProviders: newMergedProvider(),
 		options:         options,
+		globalHistory:   service.PtrFromContext[urltest.HistoryStorage](ctx),
 		Storage: NewStorages(
 			options.Sampling,
 			time.Duration(options.Sampling+1)*time.Duration(options.Interval),
@@ -113,9 +114,6 @@ func (h *HealthCheck) RemoveProviders(namespace string) error {
 func (h *HealthCheck) Start() error {
 	if h.cancel != nil {
 		return nil
-	}
-	if clashServer := service.FromContext[adapter.ClashServer](h.ctx); clashServer != nil {
-		h.globalHistory = clashServer.HistoryStorage()
 	}
 	if len(h.options.DetourOf) > 0 {
 		if h.om == nil {
@@ -170,12 +168,12 @@ func (h *HealthCheck) Close() error {
 }
 
 // InterfaceUpdated implements adapter.InterfaceUpdateListener
-func (h *HealthCheck) InterfaceUpdated() {
+func (h *HealthCheck) InterfaceUpdated(ctx context.Context) {
 	if h == nil {
 		return
 	}
 	// h.logger.Info("[InterfaceUpdated]: CheckAll()")
-	go h.checkAll(context.Background(), true, "")
+	go h.checkAll(ctx, true, "")
 }
 
 // ReportFailure reports a failure of the node

@@ -34,10 +34,6 @@ type DefaultHeadlessRule struct {
 	abstractDefaultRule
 }
 
-func (r *DefaultHeadlessRule) matchStates(metadata *adapter.InboundContext) ruleMatchStateSet {
-	return r.abstractDefaultRule.matchStates(metadata)
-}
-
 func NewDefaultHeadlessRule(ctx context.Context, options option.DefaultHeadlessRule) (*DefaultHeadlessRule, error) {
 	networkManager := service.FromContext[adapter.NetworkManager](ctx)
 	rule := &DefaultHeadlessRule{
@@ -153,6 +149,14 @@ func NewDefaultHeadlessRule(ctx context.Context, options option.DefaultHeadlessR
 		rule.items = append(rule.items, item)
 		rule.allItems = append(rule.allItems, item)
 	}
+	if len(options.PackageNameRegex) > 0 {
+		item, err := NewPackageNameRegexItem(options.PackageNameRegex)
+		if err != nil {
+			return nil, E.Cause(err, "package_name_regex")
+		}
+		rule.items = append(rule.items, item)
+		rule.allItems = append(rule.allItems, item)
+	}
 	if networkManager != nil {
 		if len(options.NetworkType) > 0 {
 			item := NewNetworkTypeItem(networkManager, common.Map(options.NetworkType, option.InterfaceType.Build))
@@ -206,10 +210,6 @@ var _ adapter.HeadlessRule = (*LogicalHeadlessRule)(nil)
 
 type LogicalHeadlessRule struct {
 	abstractLogicalRule
-}
-
-func (r *LogicalHeadlessRule) matchStates(metadata *adapter.InboundContext) ruleMatchStateSet {
-	return r.abstractLogicalRule.matchStates(metadata)
 }
 
 func NewLogicalHeadlessRule(ctx context.Context, options option.LogicalHeadlessRule) (*LogicalHeadlessRule, error) {

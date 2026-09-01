@@ -58,7 +58,9 @@ func (l *TrojanQt5) Outbound() (*option.Outbound, error) {
 				},
 			},
 			DialerOptions: option.DialerOptions{
-				TCPFastOpen: l.TFO,
+				AbstractDialerOptions: option.AbstractDialerOptions{
+					TCPFastOpen: l.TFO,
+				},
 			},
 		},
 	}, nil

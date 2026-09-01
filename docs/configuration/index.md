@@ -1,15 +1,18 @@
 # Introduction
 
 sing-box uses JSON for configuration files.
-
 ### Structure
 
 ```json
 {
+  "$schema": "https://sing-box.sagernet.org/schema.json",
   "log": {},
   "dns": {},
   "ntp": {},
   "certificate": {},
+  "certificate_providers": [],
+  "http_clients": [],
+  "network_namespaces": [],
   "endpoints": [],
   "inbounds": [],
   "outbounds": [],
@@ -23,10 +26,14 @@ sing-box uses JSON for configuration files.
 
 | Key            | Format                          |
 |----------------|---------------------------------|
+| `$schema`      | [JSON Schema](./schema/)        |
 | `log`          | [Log](./log/)                   |
 | `dns`          | [DNS](./dns/)                   |
 | `ntp`          | [NTP](./ntp/)                   |
 | `certificate`  | [Certificate](./certificate/)   |
+| `certificate_providers` | [Certificate Provider](./shared/certificate-provider/) |
+| `http_clients` | [HTTP Client](./shared/http-client/) |
+| `network_namespaces` | [Network Namespace](./network-namespace/) |
 | `endpoints`    | [Endpoint](./endpoint/)         |
 | `inbounds`     | [Inbound](./inbound/)           |
 | `outbounds`    | [Outbound](./outbound/)         |

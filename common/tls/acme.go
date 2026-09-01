@@ -5,6 +5,8 @@ package tls
 import (
 	"context"
 	"crypto/tls"
+	"os"
+	"slices"
 	"strings"
 
 	"github.com/sagernet/sing-box/adapter"
@@ -12,6 +14,7 @@ import (
 	"github.com/sagernet/sing-box/option"
 	E "github.com/sagernet/sing/common/exceptions"
 	"github.com/sagernet/sing/common/logger"
+	"github.com/sagernet/sing/service/filemanager"
 
 	"github.com/caddyserver/certmagic"
 	"github.com/libdns/acmedns"
@@ -23,50 +26,43 @@ import (
 )
 
 type acmeWrapper struct {
-	ctx    context.Context
-	cfg    *certmagic.Config
-	cache  *certmagic.Cache
-	domain []string
+	ctx           context.Context
+	cfg           *certmagic.Config
+	cache         *certmagic.Cache
+	zapLogger     *zap.Logger
+	dataDirectory string
+	domain        []string
 }
 
 func (w *acmeWrapper) Start() error {
+	if w.dataDirectory != "" {
+		err := filemanager.MkdirAll(w.ctx, w.dataDirectory, 0o700)
+		if err != nil {
+			return E.Cause(err, "create ACME data directory")
+		}
+	}
+	config := w.cfg
+	cache := certmagic.NewCache(certmagic.CacheOptions{
+		GetConfigForCert: func(certificate certmagic.Certificate) (*certmagic.Config, error) {
+			return config, nil
+		},
+		Logger: w.zapLogger,
+	})
+	config = certmagic.New(cache, *config)
+	w.cfg = config
+	w.cache = cache
 	return w.cfg.ManageSync(w.ctx, w.domain)
 }
 
 func (w *acmeWrapper) Close() error {
-	w.cache.Stop()
-	return nil
-}
-
-type acmeLogWriter struct {
-	logger logger.Logger
-}
-
-func (w *acmeLogWriter) Write(p []byte) (n int, err error) {
-	logLine := strings.ReplaceAll(string(p), "	", ": ")
-	switch {
-	case strings.HasPrefix(logLine, "error: "):
-		w.logger.Error(logLine[7:])
-	case strings.HasPrefix(logLine, "warn: "):
-		w.logger.Warn(logLine[6:])
-	case strings.HasPrefix(logLine, "info: "):
-		w.logger.Info(logLine[6:])
-	case strings.HasPrefix(logLine, "debug: "):
-		w.logger.Debug(logLine[7:])
-	default:
-		w.logger.Debug(logLine)
+	if w.cache != nil {
+		w.cache.Stop()
 	}
-	return len(p), nil
-}
-
-func (w *acmeLogWriter) Sync() error {
 	return nil
 }
 
-func encoderConfig() zapcore.EncoderConfig {
-	config := zap.NewProductionEncoderConfig()
-	config.TimeKey = zapcore.OmitKey
-	return config
+func (w *acmeWrapper) GetCertificate(hello *tls.ClientHelloInfo) (*tls.Certificate, error) {
+	return w.cfg.GetCertificate(hello)
 }
 
 func startACME(ctx context.Context, logger logger.Logger, options option.InboundACMEOptions) (*tls.Config, adapter.SimpleLifecycle, error) {
@@ -82,17 +78,21 @@ func startACME(ctx context.Context, logger logger.Logger, options option.Inbound
 		}
 		acmeServer = options.Provider
 	}
-	var storage certmagic.Storage
+	var (
+		storage       certmagic.Storage
+		dataDirectory string
+	)
 	if options.DataDirectory != "" {
+		dataDirectory = filemanager.BasePath(ctx, os.ExpandEnv(options.DataDirectory))
 		storage = &certmagic.FileStorage{
-			Path: options.DataDirectory,
+			Path: dataDirectory,
 		}
 	} else {
 		storage = certmagic.Default.Storage
 	}
 	zapLogger := zap.New(zapcore.NewCore(
-		zapcore.NewConsoleEncoder(encoderConfig()),
-		&acmeLogWriter{logger: logger},
+		zapcore.NewConsoleEncoder(ACMEEncoderConfig()),
+		&ACMELogWriter{Logger: logger},
 		zap.DebugLevel,
 	))
 	config := &certmagic.Config{
@@ -100,10 +100,16 @@ func startACME(ctx context.Context, logger logger.Logger, options option.Inbound
 		Storage:           storage,
 		Logger:            zapLogger,
 	}
+	profile := options.Profile
+	if profile == "" && acmeServer == certmagic.LetsEncryptProductionCA && slices.ContainsFunc(options.Domain, certmagic.SubjectIsIP) {
+		profile = "shortlived"
+	}
+
 	acmeConfig := certmagic.ACMEIssuer{
 		CA:                      acmeServer,
 		Email:                   options.Email,
 		Agreed:                  true,
+		Profile:                 profile,
 		DisableHTTPChallenge:    options.DisableHTTPChallenge,
 		DisableTLSALPNChallenge: options.DisableTLSALPNChallenge,
 		AltHTTPPort:             int(options.AlternativeHTTPPort),
@@ -143,23 +149,23 @@ func startACME(ctx context.Context, logger logger.Logger, options option.Inbound
 		acmeConfig.ExternalAccount = (*acme.EAB)(options.ExternalAccount)
 	}
 	config.Issuers = []certmagic.Issuer{certmagic.NewACMEIssuer(config, acmeConfig)}
-	cache := certmagic.NewCache(certmagic.CacheOptions{
-		GetConfigForCert: func(certificate certmagic.Certificate) (*certmagic.Config, error) {
-			return config, nil
-		},
-		Logger: zapLogger,
-	})
-	config = certmagic.New(cache, *config)
+	wrapper := &acmeWrapper{
+		ctx:           ctx,
+		cfg:           config,
+		zapLogger:     zapLogger,
+		dataDirectory: dataDirectory,
+		domain:        options.Domain,
+	}
 	var tlsConfig *tls.Config
 	if acmeConfig.DisableTLSALPNChallenge || acmeConfig.DNS01Solver != nil {
 		tlsConfig = &tls.Config{
-			GetCertificate: config.GetCertificate,
+			GetCertificate: wrapper.GetCertificate,
 		}
 	} else {
 		tlsConfig = &tls.Config{
-			GetCertificate: config.GetCertificate,
-			NextProtos:     []string{ACMETLS1Protocol},
+			GetCertificate: wrapper.GetCertificate,
+			NextProtos:     []string{C.ACMETLS1Protocol},
 		}
 	}
-	return tlsConfig, &acmeWrapper{ctx: ctx, cfg: config, cache: cache, domain: options.Domain}, nil
+	return tlsConfig, wrapper, nil
 }

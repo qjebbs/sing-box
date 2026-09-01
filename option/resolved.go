@@ -3,7 +3,9 @@ package option
 import (
 	"context"
 	"net/netip"
+	"reflect"
 
+	"github.com/sagernet/sing-box/schema"
 	"github.com/sagernet/sing/common"
 	"github.com/sagernet/sing/common/json"
 	"github.com/sagernet/sing/common/json/badoption"
@@ -16,7 +18,7 @@ type _ResolvedServiceOptions struct {
 type ResolvedServiceOptions _ResolvedServiceOptions
 
 func (r ResolvedServiceOptions) MarshalJSONContext(ctx context.Context) ([]byte, error) {
-	if r.Listen != nil && netip.Addr(*r.Listen) == (netip.AddrFrom4([4]byte{127, 0, 0, 53})) {
+	if r.Listen != nil && netip.Addr(*r.Listen) == netip.AddrFrom4([4]byte{127, 0, 0, 53}) {
 		r.Listen = nil
 	}
 	if r.ListenPort == 53 {
@@ -37,6 +39,15 @@ func (r *ResolvedServiceOptions) UnmarshalJSONContext(ctx context.Context, bytes
 		r.ListenPort = 53
 	}
 	return nil
+}
+
+func (r ResolvedServiceOptions) DescribeSchema(builder schema.Builder) (*schema.Node, error) {
+	node := schema.StrictObject()
+	err := builder.FlattenStruct(node, reflect.TypeFor[ResolvedServiceOptions]())
+	if err != nil {
+		return nil, err
+	}
+	return node, nil
 }
 
 type ResolvedDNSServerOptions struct {

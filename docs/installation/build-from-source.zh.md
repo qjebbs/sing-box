@@ -65,6 +65,7 @@ go build -tags "tag_a tag_b" ./cmd/sing-box
 | `with_ccm`                         | :material-check:  | 构建 Claude Code Multiplexer 服务支持。                                                                                                                                                                                                                                                                                              |
 | `with_ocm`                         | :material-check:  | 构建 OpenAI Codex Multiplexer 服务支持。                                                                                                                                                                                                                                                                                             |
 | `with_naive_outbound`              | :material-check:  | 构建 NaiveProxy 出站支持，参阅 [NaiveProxy 出站](/zh/configuration/outbound/naive/)。                                                                                                                                                                                                                                                         |
+| `with_cloudflared`                 | :material-check:  | 构建 Cloudflare Tunnel 入站支持，参阅 [Cloudflared 入站](/zh/configuration/inbound/cloudflared/)。                                                                                                                                                                                                                                              |
 | `badlinkname`                      | :material-check:  | 启用 `go:linkname` 以访问标准库内部函数。Go 标准库未提供本项目需要的许多底层 API，且在外部重新实现不切实际。用于 kTLS（内核 TLS 卸载）和原始 TLS 记录操作。                                                                                                                                                                                                                           |
 | `tfogo_checklinkname0`             | :material-check:  | `badlinkname` 的伴随标记。Go 1.23+ 链接器强制限制 `go:linkname` 使用；此标记表示构建使用 `-checklinkname=0` 以绕过该限制。                                                                                                                                                                                                                                |
 
@@ -72,11 +73,10 @@ go build -tags "tag_a tag_b" ./cmd/sing-box
 
 ## :material-wrench: 链接器标志
 
-以下 `-ldflags` 在官方构建中使用：
+官方构建所需的链接器标志维护在 `release/LDFLAGS` 中。下游构建应原样使用该文件。
 
 | 标志                                                          | 说明                                                                                                                                                         |
 |-------------------------------------------------------------|------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `-X 'internal/godebug.defaultGODEBUG=multipathtcp=0'`      | Go 1.24 默认为监听器启用 Multipath TCP（`multipathtcp=2`）。这可能在底层 socket 上导致错误，且 sing-box 有自己的 MPTCP 控制（`tcp_multi_path` 选项）。此标志禁用 Go 的默认行为。                             |
 | `-checklinkname=0`                                          | Go 1.23+ 链接器拒绝未授权的 `go:linkname` 使用。此标志禁用该检查，需要与 `badlinkname` 构建标记一起使用。                                                                                   |
 
 ## :material-package-variant: 下游打包者

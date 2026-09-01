@@ -6,6 +6,8 @@ import (
 	"context"
 	"net/netip"
 	"os"
+	"slices"
+	"strconv"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -31,7 +33,11 @@ func RegisterTransport(registry *dns.TransportRegistry) {
 	dns.RegisterTransport[option.ResolvedDNSServerOptions](registry, C.TypeResolved, NewTransport)
 }
 
-var _ adapter.DNSTransport = (*Transport)(nil)
+var (
+	_ adapter.DNSTransport                    = (*Transport)(nil)
+	_ adapter.DNSTransportWithPreferredDomain = (*Transport)(nil)
+	_ adapter.DNSTransportWithEnvironment     = (*Transport)(nil)
+)
 
 type Transport struct {
 	dns.TransportAdapter
@@ -119,6 +125,48 @@ func (t *Transport) Reset() {
 	}
 }
 
+func (t *Transport) Environment() []string {
+	if t.service == nil {
+		return nil
+	}
+	t.service.linkAccess.RLock()
+	defer t.service.linkAccess.RUnlock()
+	linkIndexes := make([]int32, 0, len(t.service.links))
+	for linkIndex := range t.service.links {
+		linkIndexes = append(linkIndexes, linkIndex)
+	}
+	slices.Sort(linkIndexes)
+	var environment []string
+	for _, linkIndex := range linkIndexes {
+		link := t.service.links[linkIndex]
+		linkEntry := "link:" + strconv.Itoa(int(linkIndex))
+		if link.dnsOverTLS {
+			linkEntry += ":tls"
+		}
+		environment = append(environment, linkEntry)
+		for _, address := range link.address {
+			serverAddr, ok := netip.AddrFromSlice(address.Address)
+			if ok {
+				environment = append(environment, serverAddr.String())
+			}
+		}
+		for _, address := range link.addressEx {
+			serverAddr, ok := netip.AddrFromSlice(address.Address)
+			if ok {
+				environment = append(environment, M.SocksaddrFrom(serverAddr, address.Port).String()+"/"+address.Name)
+			}
+		}
+		for _, domain := range link.domain {
+			if domain.RoutingOnly {
+				environment = append(environment, "routing-only:"+domain.Domain)
+			} else {
+				environment = append(environment, domain.Domain)
+			}
+		}
+	}
+	return environment
+}
+
 func (t *Transport) updateTransports(link *TransportLink) error {
 	t.linkAccess.Lock()
 	defer t.linkAccess.Unlock()
@@ -128,8 +176,10 @@ func (t *Transport) updateTransports(link *TransportLink) error {
 		}
 	}
 	serverDialer := common.Must1(dialer.NewDefault(t.ctx, option.DialerOptions{
-		BindInterface:      link.iif.Name,
-		UDPFragmentDefault: true,
+		AbstractDialerOptions: option.AbstractDialerOptions{
+			BindInterface:      link.iif.Name,
+			UDPFragmentDefault: true,
+		},
 	}))
 	var transports []adapter.DNSTransport
 	for _, address := range link.address {
@@ -190,7 +240,38 @@ func (t *Transport) deleteTransport(link *TransportLink) {
 	delete(t.linkServers, link)
 }
 
+func (t *Transport) PreferredDomain(domain string) bool {
+	t.service.linkAccess.RLock()
+	defer t.service.linkAccess.RUnlock()
+	for _, link := range t.service.links {
+		for _, linkDomain := range link.domain {
+			if linkDomain.Domain == "." {
+				continue
+			}
+			if mDNS.IsSubDomain(linkDomain.Domain, domain) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 func (t *Transport) Exchange(ctx context.Context, message *mDNS.Msg) (*mDNS.Msg, error) {
+	done := make(chan struct{})
+	var (
+		response *mDNS.Msg
+		err      error
+	)
+	t.ExchangeAsync(ctx, message, func(callbackResponse *mDNS.Msg, callbackErr error) {
+		response = callbackResponse
+		err = callbackErr
+		close(done)
+	})
+	<-done
+	return response, err
+}
+
+func (t *Transport) ExchangeAsync(ctx context.Context, message *mDNS.Msg, callback func(response *mDNS.Msg, err error)) {
 	question := message.Question[0]
 	var selectedLink *TransportLink
 	t.service.linkAccess.RLock()
@@ -214,93 +295,52 @@ func (t *Transport) Exchange(ctx context.Context, message *mDNS.Msg) (*mDNS.Msg,
 	}
 	t.service.linkAccess.RUnlock()
 	if selectedLink == nil {
-		return dns.FixedResponseStatus(message, mDNS.RcodeNameError), nil
+		callback(dns.FixedResponseStatus(message, mDNS.RcodeNameError), nil)
+		return
 	}
 	t.linkAccess.RLock()
 	servers := t.linkServers[selectedLink]
 	t.linkAccess.RUnlock()
-	if len(servers.Servers) == 0 {
-		return dns.FixedResponseStatus(message, mDNS.RcodeNameError), nil
+	if servers == nil || len(servers.Servers) == 0 {
+		callback(dns.FixedResponseStatus(message, mDNS.RcodeNameError), nil)
+		return
 	}
-	if question.Qtype == mDNS.TypeA || question.Qtype == mDNS.TypeAAAA {
-		return t.exchangeParallel(ctx, servers, message)
-	} else {
-		return t.exchangeSingleRequest(ctx, servers, message)
+	names := servers.Link.nameList(t.ndots, question.Name)
+	if len(names) == 0 {
+		callback(nil, E.New("invalid domain: ", question.Name))
+		return
 	}
+	transport.ExchangeNames(ctx, names, question, func(fqdn string) transport.AsyncExchanger {
+		return t.newNameExchanger(servers, message, fqdn)
+	}, callback)
 }
 
-func (t *Transport) exchangeSingleRequest(ctx context.Context, servers *LinkServers, message *mDNS.Msg) (*mDNS.Msg, error) {
-	var lastErr error
-	for _, fqdn := range servers.Link.nameList(t.ndots, message.Question[0].Name) {
-		response, err := t.tryOneName(ctx, servers, message, fqdn)
-		if err != nil {
-			lastErr = err
-			continue
-		}
-		return response, nil
-	}
-	return nil, lastErr
-}
-
-func (t *Transport) tryOneName(ctx context.Context, servers *LinkServers, message *mDNS.Msg, fqdn string) (*mDNS.Msg, error) {
+func (t *Transport) newNameExchanger(servers *LinkServers, message *mDNS.Msg, fqdn string) transport.AsyncExchanger {
 	serverOffset := servers.ServerOffset(t.rotate)
-	sLen := uint32(len(servers.Servers))
-	var lastErr error
+	serverCount := uint32(len(servers.Servers))
+	attemptExchangers := make([]transport.AsyncExchanger, 0, t.attempts*int(serverCount))
 	for i := 0; i < t.attempts; i++ {
-		for j := range sLen {
-			server := servers.Servers[(serverOffset+j)%sLen]
-			question := message.Question[0]
-			question.Name = fqdn
-			exchangeMessage := *message
-			exchangeMessage.Question = []mDNS.Question{question}
-			exchangeCtx, cancel := context.WithTimeout(ctx, t.timeout)
-			response, err := server.Exchange(exchangeCtx, &exchangeMessage)
-			cancel()
+		for j := range serverCount {
+			server := servers.Servers[(serverOffset+j)%serverCount]
+			attemptExchangers = append(attemptExchangers, func(ctx context.Context, callback func(response *mDNS.Msg, err error)) {
+				question := message.Question[0]
+				question.Name = fqdn
+				exchangeMessage := *message
+				exchangeMessage.Question = []mDNS.Question{question}
+				exchangeCtx, cancel := context.WithTimeout(ctx, t.timeout)
+				server.ExchangeAsync(exchangeCtx, &exchangeMessage, func(response *mDNS.Msg, err error) {
+					cancel()
+					callback(response, err)
+				})
+			})
+		}
+	}
+	return func(ctx context.Context, callback func(response *mDNS.Msg, err error)) {
+		transport.ExchangeSequential(ctx, attemptExchangers, nil, func(response *mDNS.Msg, err error) {
 			if err != nil {
-				lastErr = err
-				continue
+				err = E.Cause(err, fqdn)
 			}
-			return response, nil
-		}
-	}
-	return nil, E.Cause(lastErr, fqdn)
-}
-
-func (t *Transport) exchangeParallel(ctx context.Context, servers *LinkServers, message *mDNS.Msg) (*mDNS.Msg, error) {
-	returned := make(chan struct{})
-	defer close(returned)
-	type queryResult struct {
-		response *mDNS.Msg
-		err      error
-	}
-	results := make(chan queryResult)
-	startRacer := func(ctx context.Context, fqdn string) {
-		response, err := t.tryOneName(ctx, servers, message, fqdn)
-		select {
-		case results <- queryResult{response, err}:
-		case <-returned:
-		}
-	}
-	queryCtx, queryCancel := context.WithCancel(ctx)
-	defer queryCancel()
-	var nameCount int
-	for _, fqdn := range servers.Link.nameList(t.ndots, message.Question[0].Name) {
-		nameCount++
-		go startRacer(queryCtx, fqdn)
-	}
-	var errors []error
-	for {
-		select {
-		case <-ctx.Done():
-			return nil, ctx.Err()
-		case result := <-results:
-			if result.err == nil {
-				return result.response, nil
-			}
-			errors = append(errors, result.err)
-			if len(errors) == nameCount {
-				return nil, E.Errors(errors...)
-			}
-		}
+			callback(response, err)
+		})
 	}
 }

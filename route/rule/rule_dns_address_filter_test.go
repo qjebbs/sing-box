@@ -2,7 +2,7 @@ package rule
 
 import (
 	"context"
-	"net/netip"
+	"net"
 	"testing"
 
 	"github.com/sagernet/sing-box/adapter"
@@ -13,6 +13,7 @@ import (
 	M "github.com/sagernet/sing/common/metadata"
 	"github.com/sagernet/sing/service"
 
+	"github.com/miekg/dns"
 	"github.com/stretchr/testify/require"
 )
 
@@ -34,8 +35,7 @@ func addressFilterContext(t *testing.T, ruleSetConfigs map[string]string) contex
 		var plainOptions option.PlainRuleSetCompat
 		err := json.UnmarshalContext(ctx, []byte(config), &plainOptions)
 		require.NoError(t, err)
-		ruleSet, err := NewLocalRuleSet(ctx, log.NewNOPFactory().Logger(), option.RuleSet{
-			Tag:           tag,
+		ruleSet, err := NewLocalRuleSet(ctx, log.NewNOPFactory().Logger(), tag, option.RuleSet{
 			Type:          C.RuleSetTypeInline,
 			InlineOptions: plainOptions.Options,
 		})
@@ -50,23 +50,33 @@ func addressFilterDNSRule(t *testing.T, ctx context.Context, config string) adap
 	var ruleOptions option.DNSRule
 	err := json.UnmarshalContext(ctx, []byte(config), &ruleOptions)
 	require.NoError(t, err)
-	rule, err := NewDNSRule(ctx, log.NewNOPFactory().NewLogger("test"), ruleOptions, true)
+	rule, err := NewDNSRule(ctx, log.NewNOPFactory().NewLogger("test"), ruleOptions, true, true)
 	require.NoError(t, err)
 	require.NoError(t, rule.Start())
 	return rule
 }
 
-// addressFilterFlow mirrors dns/router.go: pre-lookup Match under
+func addressFilterResponse(address string) *dns.Msg {
+	response := &dns.Msg{}
+	response.Rcode = dns.RcodeSuccess
+	response.Answer = append(response.Answer, &dns.A{
+		Hdr: dns.RR_Header{Rrtype: dns.TypeA, Class: dns.ClassINET},
+		A:   net.ParseIP(address).To4(),
+	})
+	return response
+}
+
+// addressFilterFlow mirrors dns/router.go: LegacyPreMatch under
 // IgnoreDestinationIPCIDRMatch, then addressLimitResponseCheck against the
-// response addresses.
+// response.
 func addressFilterFlow(rule adapter.DNSRule, domain string, responseAddress string) (preMatched bool, routed bool) {
 	metadata := adapter.InboundContext{
 		Domain:    domain,
-		QueryType: 1,
+		QueryType: dns.TypeA,
 		Source:    M.ParseSocksaddrHostPort("192.168.1.10", 5353),
 	}
 	metadata.ResetRuleCache()
-	preMatched = rule.Match(&metadata)
+	preMatched = rule.LegacyPreMatch(&metadata)
 	if !preMatched {
 		return false, false
 	}
@@ -74,8 +84,7 @@ func addressFilterFlow(rule adapter.DNSRule, domain string, responseAddress stri
 		return true, true
 	}
 	checkMetadata := metadata
-	checkMetadata.DestinationAddresses = []netip.Addr{netip.MustParseAddr(responseAddress)}
-	return true, rule.MatchAddressLimit(&checkMetadata)
+	return true, rule.MatchAddressLimit(&checkMetadata, addressFilterResponse(responseAddress))
 }
 
 func TestDNSAddressFilterInvert(t *testing.T) {
@@ -218,21 +227,6 @@ func TestDNSAddressFilterInvert(t *testing.T) {
 			expectRouted:    true,
 		},
 		{
-			name:            "query type with ip invert, ip miss",
-			rule:            `{"query_type": ["A"], "ip_cidr": ["1.1.1.0/24"], "invert": true, "action": "route", "server": "proxy"}`,
-			domain:          "lookup.example",
-			responseAddress: "8.8.8.8",
-			expectPreMatch:  true,
-			expectRouted:    true,
-		},
-		{
-			name:            "query type with ip invert, ip hit",
-			rule:            `{"query_type": ["A"], "ip_cidr": ["1.1.1.0/24"], "invert": true, "action": "route", "server": "proxy"}`,
-			domain:          "lookup.example",
-			responseAddress: "1.1.1.5",
-			expectPreMatch:  true,
-		},
-		{
 			name:            "source ip with ip invert, source hit ip miss",
 			rule:            `{"source_ip_cidr": ["192.168.1.0/24"], "ip_cidr": ["1.1.1.0/24"], "invert": true, "action": "route", "server": "proxy"}`,
 			domain:          "lookup.example",
@@ -301,6 +295,36 @@ func TestDNSAddressFilterInvert(t *testing.T) {
 			expectPreMatch:  true,
 		},
 		{
+			name:            "nested logical invert, ip miss",
+			rule:            `{"type": "logical", "mode": "or", "invert": true, "rules": [{"type": "logical", "mode": "or", "rules": [{"rule_set": ["cn-ip"]}]}], "action": "route", "server": "proxy"}`,
+			domain:          "lookup.example",
+			responseAddress: "8.8.8.8",
+			expectPreMatch:  true,
+			expectRouted:    true,
+		},
+		{
+			name:            "nested logical invert, ip hit",
+			rule:            `{"type": "logical", "mode": "or", "invert": true, "rules": [{"type": "logical", "mode": "or", "rules": [{"rule_set": ["cn-ip"]}]}], "action": "route", "server": "proxy"}`,
+			domain:          "lookup.example",
+			responseAddress: "1.1.1.5",
+			expectPreMatch:  true,
+		},
+		{
+			name:            "nested logical and invert, domain hit ip miss",
+			rule:            `{"type": "logical", "mode": "or", "invert": true, "rules": [{"type": "logical", "mode": "and", "rules": [{"domain_suffix": ["lookup.example"]}, {"rule_set": ["cn-ip"]}]}], "action": "route", "server": "proxy"}`,
+			domain:          "lookup.example",
+			responseAddress: "8.8.8.8",
+			expectPreMatch:  true,
+			expectRouted:    true,
+		},
+		{
+			name:            "nested logical and invert, domain hit ip hit",
+			rule:            `{"type": "logical", "mode": "or", "invert": true, "rules": [{"type": "logical", "mode": "and", "rules": [{"domain_suffix": ["lookup.example"]}, {"rule_set": ["cn-ip"]}]}], "action": "route", "server": "proxy"}`,
+			domain:          "lookup.example",
+			responseAddress: "1.1.1.5",
+			expectPreMatch:  true,
+		},
+		{
 			name:            "match-source rule-set invert, source in set",
 			rule:            `{"rule_set": ["lan-ip"], "rule_set_ip_cidr_match_source": true, "invert": true, "action": "route", "server": "proxy"}`,
 			domain:          "lookup.example",
@@ -346,36 +370,6 @@ func TestDNSAddressFilterInvert(t *testing.T) {
 			name:            "direct ip with domain rule-set invert, ip hit",
 			rule:            `{"ip_cidr": ["1.1.1.0/24"], "rule_set": ["cn-domain"], "invert": true, "action": "route", "server": "proxy"}`,
 			domain:          "other.example",
-			responseAddress: "1.1.1.5",
-			expectPreMatch:  true,
-		},
-		{
-			name:            "nested logical invert, ip miss",
-			rule:            `{"type": "logical", "mode": "or", "invert": true, "rules": [{"type": "logical", "mode": "or", "rules": [{"rule_set": ["cn-ip"]}]}], "action": "route", "server": "proxy"}`,
-			domain:          "lookup.example",
-			responseAddress: "8.8.8.8",
-			expectPreMatch:  true,
-			expectRouted:    true,
-		},
-		{
-			name:            "nested logical invert, ip hit",
-			rule:            `{"type": "logical", "mode": "or", "invert": true, "rules": [{"type": "logical", "mode": "or", "rules": [{"rule_set": ["cn-ip"]}]}], "action": "route", "server": "proxy"}`,
-			domain:          "lookup.example",
-			responseAddress: "1.1.1.5",
-			expectPreMatch:  true,
-		},
-		{
-			name:            "nested logical and invert, domain hit ip miss",
-			rule:            `{"type": "logical", "mode": "or", "invert": true, "rules": [{"type": "logical", "mode": "and", "rules": [{"domain_suffix": ["lookup.example"]}, {"rule_set": ["cn-ip"]}]}], "action": "route", "server": "proxy"}`,
-			domain:          "lookup.example",
-			responseAddress: "8.8.8.8",
-			expectPreMatch:  true,
-			expectRouted:    true,
-		},
-		{
-			name:            "nested logical and invert, domain hit ip hit",
-			rule:            `{"type": "logical", "mode": "or", "invert": true, "rules": [{"type": "logical", "mode": "and", "rules": [{"domain_suffix": ["lookup.example"]}, {"rule_set": ["cn-ip"]}]}], "action": "route", "server": "proxy"}`,
-			domain:          "lookup.example",
 			responseAddress: "1.1.1.5",
 			expectPreMatch:  true,
 		},

@@ -14,24 +14,15 @@ import (
 
 type ClashServer interface {
 	LifecycleService
-	ConnectionTracker
 	Mode() string
 	ModeList() []string
-	SetModeUpdateHook(hook *observable.Subscriber[struct{}])
-	HistoryStorage() URLTestHistoryStorage
+	SetMode(mode string)
+	AddModeUpdateHook(hook *observable.Subscriber[struct{}])
 }
 
 type URLTestHistory struct {
 	Time  time.Time `json:"time"`
 	Delay uint16    `json:"delay"`
-}
-
-type URLTestHistoryStorage interface {
-	SetHook(hook *observable.Subscriber[struct{}])
-	LoadURLTestHistory(tag string) *URLTestHistory
-	DeleteURLTestHistory(tag string)
-	StoreURLTestHistory(tag string, history *URLTestHistory)
-	Close() error
 }
 
 type V2RayServer interface {
@@ -42,11 +33,19 @@ type V2RayServer interface {
 type CacheFile interface {
 	LifecycleService
 
+	CacheID() string
+
 	StoreFakeIP() bool
 	FakeIPStorage
 
 	StoreRDRC() bool
 	RDRCStore
+
+	StoreDNS() bool
+	DNSCacheStore
+
+	SetDisableExpire(disableExpire bool)
+	SetOptimisticTimeout(timeout time.Duration)
 
 	LoadMode() string
 	StoreMode(mode string) error
@@ -62,11 +61,12 @@ type SavedBinary struct {
 	Content     []byte
 	LastUpdated time.Time
 	LastEtag    string
+	URLHash     []byte
 }
 
 func (s *SavedBinary) MarshalBinary() ([]byte, error) {
 	var buffer bytes.Buffer
-	err := binary.Write(&buffer, binary.BigEndian, uint8(1))
+	err := binary.Write(&buffer, binary.BigEndian, uint8(2))
 	if err != nil {
 		return nil, err
 	}
@@ -87,6 +87,14 @@ func (s *SavedBinary) MarshalBinary() ([]byte, error) {
 		return nil, err
 	}
 	_, err = buffer.WriteString(s.LastEtag)
+	if err != nil {
+		return nil, err
+	}
+	_, err = varbin.WriteUvarint(&buffer, uint64(len(s.URLHash)))
+	if err != nil {
+		return nil, err
+	}
+	_, err = buffer.Write(s.URLHash)
 	if err != nil {
 		return nil, err
 	}
@@ -131,6 +139,21 @@ func (s *SavedBinary) UnmarshalBinary(data []byte) error {
 		return err
 	}
 	s.LastEtag = string(etagBytes)
+	if version < 2 {
+		return nil
+	}
+	urlHashLength, err := binary.ReadUvarint(reader)
+	if err != nil {
+		return err
+	}
+	if urlHashLength > uint64(reader.Len()) {
+		return E.New("invalid url hash length: ", urlHashLength)
+	}
+	s.URLHash = make([]byte, urlHashLength)
+	_, err = io.ReadFull(reader, s.URLHash)
+	if err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -169,16 +192,4 @@ func RealOutbound(outbound Outbound) (Outbound, error) {
 			return nil, E.New("outbound not found:", now)
 		}
 	}
-}
-
-// RealOutboundTag returns the real tag of the outbound, if the outbound is a group, it will return the tag of the selected outbound.
-func RealOutboundTag(outbound Outbound) string {
-	if outbound == nil {
-		return ""
-	}
-	real, err := RealOutbound(outbound)
-	if err != nil {
-		return ""
-	}
-	return real.Tag()
 }

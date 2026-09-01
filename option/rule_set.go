@@ -4,8 +4,10 @@ import (
 	"net/url"
 	"path/filepath"
 	"reflect"
+	"strings"
 
 	C "github.com/sagernet/sing-box/constant"
+	"github.com/sagernet/sing-box/schema"
 	"github.com/sagernet/sing/common"
 	"github.com/sagernet/sing/common/domain"
 	E "github.com/sagernet/sing/common/exceptions"
@@ -18,12 +20,12 @@ import (
 )
 
 type _RuleSet struct {
-	Type          string        `json:"type,omitempty"`
-	Tag           string        `json:"tag"`
-	Format        string        `json:"format,omitempty"`
-	InlineOptions PlainRuleSet  `json:"-"`
-	LocalOptions  LocalRuleSet  `json:"-"`
-	RemoteOptions RemoteRuleSet `json:"-"`
+	Type          string                     `json:"type,omitempty" enum:"inline,local,remote"`
+	Tag           badoption.Listable[string] `json:"tag"`
+	Format        string                     `json:"format,omitempty" enum:"source,binary"`
+	InlineOptions PlainRuleSet               `json:"-"`
+	LocalOptions  LocalRuleSet               `json:"-"`
+	RemoteOptions RemoteRuleSet              `json:"-"`
 }
 
 type RuleSet _RuleSet
@@ -53,7 +55,7 @@ func (r RuleSet) MarshalJSON() ([]byte, error) {
 	default:
 		return nil, E.New("unknown rule-set type: " + r.Type)
 	}
-	return badjson.MarshallObjects((_RuleSet)(r), v)
+	return badjson.MarshallObjects(_RuleSet(r), v)
 }
 
 func (r *RuleSet) UnmarshalJSON(bytes []byte) error {
@@ -61,7 +63,7 @@ func (r *RuleSet) UnmarshalJSON(bytes []byte) error {
 	if err != nil {
 		return err
 	}
-	if r.Tag == "" {
+	if len(r.Tag) == 0 || common.Any(r.Tag, func(tag string) bool { return tag == "" }) {
 		return E.New("missing tag")
 	}
 	var v any
@@ -99,6 +101,23 @@ func (r *RuleSet) UnmarshalJSON(bytes []byte) error {
 	} else {
 		r.Format = ""
 	}
+	if len(r.Tag) > 1 {
+		switch r.Type {
+		case C.RuleSetTypeInline:
+			return E.New("inline rule-set does not support multiple tags")
+		case C.RuleSetTypeLocal:
+			if !strings.Contains(r.LocalOptions.Path, C.RuleSetTagPlaceholder) {
+				return E.New("missing ", C.RuleSetTagPlaceholder, " placeholder in path")
+			}
+		case C.RuleSetTypeRemote:
+			if !strings.Contains(r.RemoteOptions.URL, C.RuleSetTagPlaceholder) {
+				return E.New("missing ", C.RuleSetTagPlaceholder, " placeholder in url")
+			}
+			if r.RemoteOptions.InitialPath != "" && !strings.Contains(r.RemoteOptions.InitialPath, C.RuleSetTagPlaceholder) {
+				return E.New("missing ", C.RuleSetTagPlaceholder, " placeholder in initial_path")
+			}
+		}
+	}
 	return nil
 }
 
@@ -116,18 +135,60 @@ func ruleSetDefaultFormat(path string) string {
 	}
 }
 
+func (r RuleSet) DescribeSchema(builder schema.Builder) (*schema.Node, error) {
+	return builder.Define("RuleSet", func() (*schema.Node, error) {
+		headlessRef, err := builder.Describe(reflect.TypeFor[HeadlessRule]())
+		if err != nil {
+			return nil, err
+		}
+		tagNode := schema.ListableOf(schema.StringNode())
+		formatNode := schema.StringEnum(C.RuleSetFormatSource, C.RuleSetFormatBinary)
+
+		inlineVariant := schema.StrictObject()
+		inlineVariant.Properties.Put("type", schema.StringEnum(C.RuleSetTypeInline, ""))
+		inlineVariant.Properties.Put("tag", tagNode)
+		inlineVariant.Properties.Put("rules", &schema.Node{Type: "array", Items: headlessRef})
+		inlineVariant.Required = []string{"tag"}
+
+		localVariant := schema.StrictObject()
+		localVariant.Properties.Put("type", schema.StringConst(C.RuleSetTypeLocal))
+		localVariant.Properties.Put("tag", tagNode)
+		localVariant.Properties.Put("format", formatNode)
+		err = builder.FlattenStruct(localVariant, reflect.TypeFor[LocalRuleSet]())
+		if err != nil {
+			return nil, err
+		}
+		localVariant.Required = []string{"type", "tag"}
+
+		remoteVariant := schema.StrictObject()
+		remoteVariant.Properties.Put("type", schema.StringConst(C.RuleSetTypeRemote))
+		remoteVariant.Properties.Put("tag", tagNode)
+		remoteVariant.Properties.Put("format", formatNode)
+		err = builder.FlattenStruct(remoteVariant, reflect.TypeFor[RemoteRuleSet]())
+		if err != nil {
+			return nil, err
+		}
+		remoteVariant.Required = []string{"type", "tag"}
+
+		return schema.OneOf(inlineVariant, localVariant, remoteVariant), nil
+	})
+}
+
 type LocalRuleSet struct {
 	Path string `json:"path,omitempty"`
 }
 
 type RemoteRuleSet struct {
 	URL            string             `json:"url"`
-	DownloadDetour string             `json:"download_detour,omitempty"`
+	InitialPath    string             `json:"initial_path,omitempty"`
+	HTTPClient     *HTTPClientOptions `json:"http_client,omitempty"`
 	UpdateInterval badoption.Duration `json:"update_interval,omitempty"`
+	// Deprecated: use http_client instead
+	DownloadDetour string `json:"download_detour,omitempty" reference:"outbound" schema:"omit"`
 }
 
 type _HeadlessRule struct {
-	Type           string              `json:"type,omitempty"`
+	Type           string              `json:"type,omitempty" enum:"default,logical"`
 	DefaultOptions DefaultHeadlessRule `json:"-"`
 	LogicalOptions LogicalHeadlessRule `json:"-"`
 }
@@ -145,7 +206,7 @@ func (r HeadlessRule) MarshalJSON() ([]byte, error) {
 	default:
 		return nil, E.New("unknown rule type: " + r.Type)
 	}
-	return badjson.MarshallObjects((_HeadlessRule)(r), v)
+	return badjson.MarshallObjects(_HeadlessRule(r), v)
 }
 
 func (r *HeadlessRule) UnmarshalJSON(bytes []byte) error {
@@ -181,9 +242,15 @@ func (r HeadlessRule) IsValid() bool {
 	}
 }
 
+func (r HeadlessRule) DescribeSchema(builder schema.Builder) (*schema.Node, error) {
+	return builder.Define("HeadlessRule", func() (*schema.Node, error) {
+		return nestedRuleUnion(builder, reflect.TypeFor[DefaultHeadlessRule](), "HeadlessRule")
+	})
+}
+
 type DefaultHeadlessRule struct {
 	QueryType               badoption.Listable[DNSQueryType]                                            `json:"query_type,omitempty"`
-	Network                 badoption.Listable[string]                                                  `json:"network,omitempty"`
+	Network                 badoption.Listable[string]                                                  `json:"network,omitempty" enum:"tcp,udp,icmp"`
 	Domain                  badoption.Listable[string]                                                  `json:"domain,omitempty"`
 	DomainSuffix            badoption.Listable[string]                                                  `json:"domain_suffix,omitempty"`
 	DomainKeyword           badoption.Listable[string]                                                  `json:"domain_keyword,omitempty"`
@@ -198,6 +265,7 @@ type DefaultHeadlessRule struct {
 	ProcessPath             badoption.Listable[string]                                                  `json:"process_path,omitempty"`
 	ProcessPathRegex        badoption.Listable[string]                                                  `json:"process_path_regex,omitempty"`
 	PackageName             badoption.Listable[string]                                                  `json:"package_name,omitempty"`
+	PackageNameRegex        badoption.Listable[string]                                                  `json:"package_name_regex,omitempty"`
 	NetworkType             badoption.Listable[InterfaceType]                                           `json:"network_type,omitempty"`
 	NetworkIsExpensive      bool                                                                        `json:"network_is_expensive,omitempty"`
 	NetworkIsConstrained    bool                                                                        `json:"network_is_constrained,omitempty"`
@@ -223,7 +291,7 @@ func (r DefaultHeadlessRule) IsValid() bool {
 }
 
 type LogicalHeadlessRule struct {
-	Mode   string         `json:"mode"`
+	Mode   string         `json:"mode" enum:"and,or"`
 	Rules  []HeadlessRule `json:"rules,omitempty"`
 	Invert bool           `json:"invert,omitempty"`
 }
@@ -233,7 +301,7 @@ func (r LogicalHeadlessRule) IsValid() bool {
 }
 
 type _PlainRuleSetCompat struct {
-	Version    uint8           `json:"version"`
+	Version    uint8           `json:"version" enum:"1,2,3,4,5"`
 	Options    PlainRuleSet    `json:"-"`
 	RawMessage json.RawMessage `json:"-"`
 }
@@ -243,12 +311,12 @@ type PlainRuleSetCompat _PlainRuleSetCompat
 func (r PlainRuleSetCompat) MarshalJSON() ([]byte, error) {
 	var v any
 	switch r.Version {
-	case C.RuleSetVersion1, C.RuleSetVersion2, C.RuleSetVersion3, C.RuleSetVersion4:
+	case C.RuleSetVersion1, C.RuleSetVersion2, C.RuleSetVersion3, C.RuleSetVersion4, C.RuleSetVersion5:
 		v = r.Options
 	default:
 		return nil, E.New("unknown rule-set version: ", r.Version)
 	}
-	return badjson.MarshallObjects((_PlainRuleSetCompat)(r), v)
+	return badjson.MarshallObjects(_PlainRuleSetCompat(r), v)
 }
 
 func (r *PlainRuleSetCompat) UnmarshalJSON(bytes []byte) error {
@@ -258,7 +326,7 @@ func (r *PlainRuleSetCompat) UnmarshalJSON(bytes []byte) error {
 	}
 	var v any
 	switch r.Version {
-	case C.RuleSetVersion1, C.RuleSetVersion2, C.RuleSetVersion3, C.RuleSetVersion4:
+	case C.RuleSetVersion1, C.RuleSetVersion2, C.RuleSetVersion3, C.RuleSetVersion4, C.RuleSetVersion5:
 		v = &r.Options
 	case 0:
 		return E.New("missing rule-set version")
@@ -275,7 +343,7 @@ func (r *PlainRuleSetCompat) UnmarshalJSON(bytes []byte) error {
 
 func (r PlainRuleSetCompat) Upgrade() (PlainRuleSet, error) {
 	switch r.Version {
-	case C.RuleSetVersion1, C.RuleSetVersion2, C.RuleSetVersion3, C.RuleSetVersion4:
+	case C.RuleSetVersion1, C.RuleSetVersion2, C.RuleSetVersion3, C.RuleSetVersion4, C.RuleSetVersion5:
 	default:
 		return PlainRuleSet{}, E.New("unknown rule-set version: " + F.ToString(r.Version))
 	}

@@ -3,7 +3,6 @@ package group
 import (
 	"context"
 	"net"
-	"time"
 
 	"github.com/sagernet/sing-box/adapter"
 	"github.com/sagernet/sing-box/adapter/outbound"
@@ -13,7 +12,6 @@ import (
 	"github.com/sagernet/sing-box/option"
 	"github.com/sagernet/sing-box/protocol/group/balancer"
 	"github.com/sagernet/sing-box/service/healthcheck"
-	tun "github.com/sagernet/sing-tun"
 	"github.com/sagernet/sing/common"
 	E "github.com/sagernet/sing/common/exceptions"
 	M "github.com/sagernet/sing/common/metadata"
@@ -28,7 +26,6 @@ func RegisterLoadBalance(registry *outbound.Registry) {
 var (
 	_ adapter.Outbound                = (*LoadBalance)(nil)
 	_ adapter.URLTestGroup            = (*LoadBalance)(nil)
-	_ adapter.DirectRouteOutbound     = (*LoadBalance)(nil)
 	_ adapter.SimpleLifecycle         = (*LoadBalance)(nil)
 	_ adapter.InterfaceUpdateListener = (*LoadBalance)(nil)
 )
@@ -135,54 +132,6 @@ func (s *LoadBalance) ListenPacket(ctx context.Context, destination M.Socksaddr)
 	return nil, lastErr
 }
 
-// NewConnectionEx implements adapter.TCPInjectableInbound
-func (s *LoadBalance) NewConnectionEx(ctx context.Context, conn net.Conn, metadata adapter.InboundContext, onClose N.CloseHandlerFunc) {
-	selected := s.Pick(ctx, N.NetworkTCP, metadata.Destination)
-	if selected == nil {
-		s.connection.NewConnection(ctx, newErrDailer(E.New("no outbound available")), conn, metadata, onClose)
-		return
-	}
-	ctx = interrupt.ContextWithIsExternalConnection(ctx)
-	if outboundHandler, isHandler := selected.(adapter.ConnectionHandlerEx); isHandler {
-		outboundHandler.NewConnectionEx(ctx, conn, metadata, onClose)
-	} else {
-		s.connection.NewConnection(ctx, selected, conn, metadata, onClose)
-	}
-}
-
-// NewPacketConnectionEx implements adapter.UDPInjectableInbound
-func (s *LoadBalance) NewPacketConnectionEx(ctx context.Context, conn N.PacketConn, metadata adapter.InboundContext, onClose N.CloseHandlerFunc) {
-	selected := s.Pick(ctx, N.NetworkUDP, metadata.Destination)
-	if selected == nil {
-		s.connection.NewPacketConnection(ctx, newErrDailer(E.New("no outbound available")), conn, metadata, onClose)
-		return
-	}
-	ctx = interrupt.ContextWithIsExternalConnection(ctx)
-	if outboundHandler, isHandler := selected.(adapter.PacketConnectionHandlerEx); isHandler {
-		outboundHandler.NewPacketConnectionEx(ctx, conn, metadata, onClose)
-	} else {
-		s.connection.NewPacketConnection(ctx, selected, conn, metadata, onClose)
-	}
-}
-
-// NewDirectRouteConnection implements adapter.DirectRouteOutbound
-func (s *LoadBalance) NewDirectRouteConnection(metadata adapter.InboundContext, routeContext tun.DirectRouteContext, timeout time.Duration) (tun.DirectRouteDestination, error) {
-	ctx := adapter.WithContext(context.Background(), &metadata)
-	destination := metadata.Destination
-	picked := s.Pick(ctx, N.NetworkICMP, destination)
-	if picked == nil {
-		return nil, E.New("no outbound available for network: ", metadata.Network)
-	}
-	if !common.Contains(picked.Network(), metadata.Network) {
-		return nil, E.New(metadata.Network, " is not supported by outbound: ", picked.Tag())
-	}
-	dro, ok := picked.(adapter.DirectRouteOutbound)
-	if !ok {
-		return nil, E.New("outbound does not support direct route: ", picked.Tag())
-	}
-	return dro.NewDirectRouteConnection(metadata, routeContext, timeout)
-}
-
 // Close implements adapter.Service
 func (s *LoadBalance) Close() error {
 	if s.Balancer != nil {
@@ -233,10 +182,10 @@ func (s *LoadBalance) URLTest(ctx context.Context) (map[string]uint16, error) {
 }
 
 // InterfaceUpdated implements adapter.InterfaceUpdateListener
-func (s *LoadBalance) InterfaceUpdated() {
+func (s *LoadBalance) InterfaceUpdated(ctx context.Context) {
 	// b can be nil if the parent struct has not initialized it yet.
 	if s.Balancer == nil || s.Balancer.HealthCheck == nil {
 		return
 	}
-	go s.Balancer.HealthCheck.CheckAll(context.Background(), s.Tag())
+	go s.Balancer.HealthCheck.CheckAll(ctx, s.Tag())
 }

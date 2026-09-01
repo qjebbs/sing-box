@@ -1,6 +1,7 @@
 package libbox
 
 import (
+	"github.com/sagernet/sing-box/service/powerreport"
 	tun "github.com/sagernet/sing-tun"
 	"github.com/sagernet/sing/common/control"
 	E "github.com/sagernet/sing/common/exceptions"
@@ -15,9 +16,10 @@ var (
 
 type platformDefaultInterfaceMonitor struct {
 	*platformInterfaceWrapper
-	logger       logger.Logger
-	callbacks    list.List[tun.DefaultInterfaceUpdateCallback]
-	myInterfaces []string
+	logger                      logger.Logger
+	callbacks                   list.List[tun.DefaultInterfaceUpdateCallback]
+	myInterfaces                []string
+	defaultInterfaceInitialized bool
 }
 
 func (m *platformDefaultInterfaceMonitor) Start() error {
@@ -68,6 +70,24 @@ func (m *platformDefaultInterfaceMonitor) UpdateDefaultInterface(interfaceName s
 }
 
 func (m *platformDefaultInterfaceMonitor) updateDefaultInterface(interfaceName string, interfaceIndex32 int32, isExpensive bool, isConstrained bool) {
+	var recorder *powerreport.Recorder
+	if m.powerManager != nil {
+		recorder = m.powerManager.Recorder()
+	}
+	if recorder != nil {
+		networkType := interfaceName
+		if interfaceIndex32 == -1 {
+			networkType = "none"
+		} else {
+			if isExpensive {
+				networkType += ",expensive"
+			}
+			if isConstrained {
+				networkType += ",constrained"
+			}
+		}
+		recorder.UpdateNetworkType(networkType)
+	}
 	m.isExpensive = isExpensive
 	m.isConstrained = isConstrained
 	err := m.networkManager.UpdateInterfaces()
@@ -77,6 +97,7 @@ func (m *platformDefaultInterfaceMonitor) updateDefaultInterface(interfaceName s
 	m.defaultInterfaceAccess.Lock()
 	if interfaceIndex32 == -1 {
 		m.defaultInterface = nil
+		m.defaultInterfaceInitialized = true
 		callbacks := m.callbacks.Array()
 		m.defaultInterfaceAccess.Unlock()
 		for _, callback := range callbacks {
@@ -92,10 +113,11 @@ func (m *platformDefaultInterfaceMonitor) updateDefaultInterface(interfaceName s
 		return
 	}
 	m.defaultInterface = newInterface
-	if oldInterface != nil && oldInterface.Name == m.defaultInterface.Name && oldInterface.Index == m.defaultInterface.Index {
+	if m.defaultInterfaceInitialized && oldInterface != nil && oldInterface.Name == m.defaultInterface.Name && oldInterface.Index == m.defaultInterface.Index {
 		m.defaultInterfaceAccess.Unlock()
 		return
 	}
+	m.defaultInterfaceInitialized = true
 	callbacks := m.callbacks.Array()
 	m.defaultInterfaceAccess.Unlock()
 	for _, callback := range callbacks {

@@ -61,6 +61,7 @@ go build -tags "tag_a tag_b" ./cmd/sing-box
 | `with_ccm`                         | :material-check:     | Build with Claude Code Multiplexer service support.                                                                                                                                                                                                                                                                            |
 | `with_ocm`                         | :material-check:     | Build with OpenAI Codex Multiplexer service support.                                                                                                                                                                                                                                                                           |
 | `with_naive_outbound`              | :material-check:     | Build with NaiveProxy outbound support, see [NaiveProxy outbound](/configuration/outbound/naive/).                                                                                                                                                                                                                             |
+| `with_cloudflared`                 | :material-check:     | Build with Cloudflare Tunnel inbound support, see [Cloudflared inbound](/configuration/inbound/cloudflared/).                                                                                                                                                                                                                  |
 | `badlinkname`                      | :material-check:     | Enable `go:linkname` access to internal standard library functions. Required because the Go standard library does not expose many low-level APIs needed by this project, and reimplementing them externally is impractical. Used for kTLS (kernel TLS offload) and raw TLS record manipulation.                                 |
 | `tfogo_checklinkname0`             | :material-check:     | Companion to `badlinkname`. Go 1.23+ enforces `go:linkname` restrictions via the linker; this tag signals the build uses `-checklinkname=0` to bypass that enforcement.                                                                                                                                                       |
 
@@ -68,11 +69,10 @@ It is not recommended to change the default build tag list unless you really kno
 
 ## :material-wrench: Linker Flags
 
-The following `-ldflags` are used in official builds:
+The required linker flags for official builds are maintained in `release/LDFLAGS`. Downstream builds should use that file unchanged.
 
 | Flag                                                        | Description                                                                                                                                                                                                             |
 |-------------------------------------------------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `-X 'internal/godebug.defaultGODEBUG=multipathtcp=0'`      | Go 1.24 enabled Multipath TCP for listeners by default (`multipathtcp=2`). This may cause errors on low-level sockets, and sing-box has its own MPTCP control (`tcp_multi_path` option). This flag disables the Go default. |
 | `-checklinkname=0`                                          | Go 1.23+ linker rejects unauthorized `go:linkname` usage. This flag disables the check, required together with the `badlinkname` build tag.                                                                            |
 
 ## :material-package-variant: For Downstream Packagers

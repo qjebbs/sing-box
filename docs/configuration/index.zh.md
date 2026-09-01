@@ -1,15 +1,18 @@
 # 引言
 
 sing-box 使用 JSON 作为配置文件格式。
-
 ### 结构
 
 ```json
 {
+  "$schema": "https://sing-box.sagernet.org/schema.json",
   "log": {},
   "dns": {},
   "ntp": {},
   "certificate": {},
+  "certificate_providers": [],
+  "http_clients": [],
+  "network_namespaces": [],
   "endpoints": [],
   "inbounds": [],
   "outbounds": [],
@@ -23,10 +26,14 @@ sing-box 使用 JSON 作为配置文件格式。
 
 | Key            | Format                 |
 |----------------|------------------------|
+| `$schema`      | [JSON Schema](./schema/) |
 | `log`          | [日志](./log/)           |
 | `dns`          | [DNS](./dns/)          |
 | `ntp`          | [NTP](./ntp/)          |
 | `certificate`  | [证书](./certificate/)   |
+| `certificate_providers` | [证书提供者](./shared/certificate-provider/) |
+| `http_clients` | [HTTP 客户端](./shared/http-client/) |
+| `network_namespaces` | [网络命名空间](./network-namespace/) |
 | `endpoints`    | [端点](./endpoint/)      |
 | `inbounds`     | [入站](./inbound/)       |
 | `outbounds`    | [出站](./outbound/)      |

@@ -4,6 +4,7 @@ import (
 	"github.com/hashicorp/go-version"
 	"github.com/sagernet/sing-box/common/badversion"
 	"github.com/sagernet/sing/common"
+	F "github.com/sagernet/sing/common/format"
 	"github.com/sagernet/sing/common/shell"
 )
 
@@ -43,4 +44,8 @@ func ReadTagVersion() (badversion.Version, error) {
 		}
 	}
 	return version, nil
+}
+
+func TestFlightVersion(version badversion.Version) string {
+	return F.ToString(version.Major, ".", version.Minor, ".10")
 }

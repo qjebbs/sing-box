@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"fmt"
 	"io"
 	"os"
 	"os/signal"
@@ -14,7 +13,6 @@ import (
 	"time"
 
 	box "github.com/sagernet/sing-box"
-	"github.com/sagernet/sing-box/common/jsonsmerge"
 	C "github.com/sagernet/sing-box/constant"
 	"github.com/sagernet/sing-box/log"
 	"github.com/sagernet/sing-box/option"
@@ -59,9 +57,12 @@ func readConfigAt(path string) (*OptionsEntry, error) {
 	if err != nil {
 		return nil, E.Cause(err, "read config at ", path)
 	}
-	options, err := json.UnmarshalExtendedContext[option.Options](globalCtx, configContent)
-	if err != nil {
-		return nil, E.Cause(err, "decode config at ", path)
+	var options option.Options
+	if !configMergeExtended {
+		options, err = json.UnmarshalExtendedContext[option.Options](globalCtx, configContent)
+		if err != nil {
+			return nil, E.Cause(err, "decode config at ", path)
+		}
 	}
 	return &OptionsEntry{
 		content: configContent,
@@ -71,6 +72,13 @@ func readConfigAt(path string) (*OptionsEntry, error) {
 }
 
 func readConfig() ([]*OptionsEntry, error) {
+	if configMergeExtended {
+		return readConfigExtended()
+	}
+	return readConfigBadJSON()
+}
+
+func readConfigBadJSON() ([]*OptionsEntry, error) {
 	var optionsList []*OptionsEntry
 	for _, path := range configPaths {
 		if !strings.HasSuffix(path, ".json") {
@@ -105,24 +113,31 @@ func readConfig() ([]*OptionsEntry, error) {
 }
 
 func readConfigAndMerge() (option.Options, error) {
-	if configMergeExtended {
-		return jsonsMerge()
-	}
-	return badjsonMerge()
-}
-
-func badjsonMerge() (option.Options, error) {
 	optionsList, err := readConfig()
 	if err != nil {
 		return option.Options{}, err
 	}
-	if len(optionsList) == 0 {
+	if len(optionsList) == 0 && !configMergeExtended {
 		return option.Options{}, E.New("no config files (*.json) found, use -E flag for more file formats such as .jsonc and .yml")
 	}
+	return mergeOptionsList(optionsList)
+}
+
+func mergeOptionsList(optionsList []*OptionsEntry) (option.Options, error) {
+	if configMergeExtended {
+		return mergeOptionsListExtended(optionsList)
+	}
+	return mergeOptionsListBadJSON(optionsList)
+}
+
+func mergeOptionsListBadJSON(optionsList []*OptionsEntry) (option.Options, error) {
 	if len(optionsList) == 1 {
 		return optionsList[0].options, nil
 	}
-	var mergedMessage json.RawMessage
+	var (
+		mergedMessage json.RawMessage
+		err           error
+	)
 	for _, options := range optionsList {
 		mergedMessage, err = badjson.MergeJSON(globalCtx, options.options.RawMessage, mergedMessage, false)
 		if err != nil {
@@ -137,24 +152,7 @@ func badjsonMerge() (option.Options, error) {
 	return mergedOptions, nil
 }
 
-func jsonsMerge() (option.Options, error) {
-	c, err := jsonsmerge.Files(configPaths, configDirectories)
-	if err != nil {
-		return option.Options{}, err
-	}
-	var options option.Options
-	err = options.UnmarshalJSONContext(globalCtx, c)
-	if err != nil {
-		return option.Options{}, fmt.Errorf("decode config: %w\n%s", err, string(c))
-	}
-	return options, nil
-}
-
-func create() (*box.Box, context.CancelFunc, error) {
-	options, err := readConfigAndMerge()
-	if err != nil {
-		return nil, nil, err
-	}
+func create(options option.Options) (*box.Box, context.CancelFunc, error) {
 	if disableColor {
 		if options.Log == nil {
 			options.Log = &option.LogOptions{}
@@ -163,8 +161,9 @@ func create() (*box.Box, context.CancelFunc, error) {
 	}
 	ctx, cancel := context.WithCancel(globalCtx)
 	instance, err := box.New(box.Options{
-		Context: ctx,
-		Options: options,
+		Context:                    ctx,
+		Options:                    options,
+		NetworkNamespaceHolderArgs: []string{"/proc/self/exe", commandNetnsHolder.Use},
 	})
 	if err != nil {
 		cancel()
@@ -195,13 +194,25 @@ func create() (*box.Box, context.CancelFunc, error) {
 }
 
 func run() error {
+	optionsList, err := readConfig()
+	if err != nil {
+		return err
+	}
+	options, err := mergeOptionsList(optionsList)
+	if err != nil {
+		return err
+	}
+	err = runInUserNamespaceIfNeeded(options, optionsList)
+	if err != nil {
+		return err
+	}
 	osSignals := make(chan os.Signal, 1)
 	signal.Notify(osSignals, os.Interrupt, syscall.SIGTERM, syscall.SIGHUP)
 	defer signal.Stop(osSignals)
 	for {
-		instance, cancel, err := create()
-		if err != nil {
-			return err
+		instance, cancel, createErr := create(options)
+		if createErr != nil {
+			return createErr
 		}
 		runtimeDebug.FreeOSMemory()
 		for {
@@ -225,6 +236,10 @@ func run() error {
 				return nil
 			}
 			break
+		}
+		options, err = readConfigAndMerge()
+		if err != nil {
+			return err
 		}
 	}
 }

@@ -9,10 +9,13 @@ import (
 	"github.com/sagernet/sing-box/adapter"
 	C "github.com/sagernet/sing-box/constant"
 	"github.com/sagernet/sing-box/dns"
+	"github.com/sagernet/sing-box/dns/transport/local"
+	"github.com/sagernet/sing-box/log"
 	"github.com/sagernet/sing-box/option"
 	"github.com/sagernet/sing/common"
 	E "github.com/sagernet/sing/common/exceptions"
 	M "github.com/sagernet/sing/common/metadata"
+	"github.com/sagernet/sing/service"
 
 	mDNS "github.com/miekg/dns"
 )
@@ -23,21 +26,28 @@ type LocalDNSTransport interface {
 	Exchange(ctx *ExchangeContext, message []byte) error
 }
 
-var _ adapter.DNSTransport = (*platformTransport)(nil)
-
 type platformTransport struct {
 	dns.TransportAdapter
-	iif LocalDNSTransport
+	iif               LocalDNSTransport
+	preferredResolver *local.PreferredDomainResolver
+	networkManager    adapter.NetworkManager
 }
 
-func newPlatformTransport(iif LocalDNSTransport, tag string, options option.LocalDNSServerOptions) *platformTransport {
-	return &platformTransport{
-		TransportAdapter: dns.NewTransportAdapterWithLocalOptions(C.DNSTypeLocal, tag, options),
-		iif:              iif,
+func newPlatformTransport(ctx context.Context, logger log.ContextLogger, iif LocalDNSTransport, tag string, options option.LocalDNSServerOptions) (*platformTransport, error) {
+	preferredResolver, err := local.NewPreferredDomainResolver(ctx, logger, options)
+	if err != nil {
+		return nil, err
 	}
+	return &platformTransport{
+		TransportAdapter:  dns.NewTransportAdapterWithLocalOptions(C.DNSTypeLocal, tag, options),
+		iif:               iif,
+		preferredResolver: preferredResolver,
+		networkManager:    service.FromContext[adapter.NetworkManager](ctx),
+	}, nil
 }
 
 func (p *platformTransport) Start(stage adapter.StartStage) error {
+	p.preferredResolver.Start(stage)
 	return nil
 }
 
@@ -48,7 +58,26 @@ func (p *platformTransport) Close() error {
 func (p *platformTransport) Reset() {
 }
 
+func (p *platformTransport) PreferredDomain(domain string) bool {
+	return p.preferredResolver.PreferredDomain(domain)
+}
+
+func (p *platformTransport) Environment() []string {
+	if p.networkManager == nil {
+		return nil
+	}
+	defaultInterface := p.networkManager.DefaultNetworkInterface()
+	if defaultInterface == nil {
+		return nil
+	}
+	return defaultInterface.DNSServers
+}
+
 func (p *platformTransport) Exchange(ctx context.Context, message *mDNS.Msg) (*mDNS.Msg, error) {
+	localResponse := p.preferredResolver.Lookup(message)
+	if localResponse != nil {
+		return localResponse, nil
+	}
 	response := &ExchangeContext{
 		context: ctx,
 	}
@@ -105,6 +134,12 @@ func (p *platformTransport) Exchange(ctx context.Context, message *mDNS.Msg) (*m
 	}
 }
 
+func (p *platformTransport) ExchangeAsync(ctx context.Context, message *mDNS.Msg, callback func(response *mDNS.Msg, err error)) {
+	go func() {
+		callback(p.Exchange(ctx, message))
+	}()
+}
+
 type Func interface {
 	Invoke() error
 }
@@ -145,3 +180,9 @@ func (c *ExchangeContext) ErrorCode(code int32) {
 func (c *ExchangeContext) ErrnoCode(code int32) {
 	c.error = syscall.Errno(code)
 }
+
+var (
+	_ adapter.DNSTransport                    = (*platformTransport)(nil)
+	_ adapter.DNSTransportWithPreferredDomain = (*platformTransport)(nil)
+	_ adapter.DNSTransportWithEnvironment     = (*platformTransport)(nil)
+)

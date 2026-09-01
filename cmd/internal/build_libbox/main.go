@@ -60,10 +60,10 @@ func init() {
 	if err != nil {
 		currentTag = "unknown"
 	}
-	sharedFlags = append(sharedFlags, "-ldflags", "-X github.com/sagernet/sing-box/constant.Version="+currentTag+" -X internal/godebug.defaultGODEBUG=multipathtcp=0 -s -w -buildid=  -checklinkname=0")
-	debugFlags = append(debugFlags, "-ldflags", "-X github.com/sagernet/sing-box/constant.Version="+currentTag+" -X internal/godebug.defaultGODEBUG=multipathtcp=0 -checklinkname=0")
+	sharedFlags = append(sharedFlags, "-ldflags", build_shared.LinkerFlags(currentTag, false))
+	debugFlags = append(debugFlags, "-ldflags", build_shared.LinkerFlags(currentTag, true))
 
-	sharedTags = append(sharedTags, "with_gvisor", "with_quic", "with_wireguard", "with_utls", "with_naive_outbound", "with_clash_api", "badlinkname", "tfogo_checklinkname0")
+	sharedTags = append(sharedTags, "with_gvisor", "with_quic", "with_wireguard", "with_utls", "with_naive_outbound", "with_clash_api", "with_usbip", "with_openvpn", "with_openconnect", "badlinkname", "tfogo_checklinkname0")
 	darwinTags = append(darwinTags, "with_dhcp", "grpcnotrace")
 	// memcTags = append(memcTags, "with_tailscale")
 	sharedTags = append(sharedTags, "with_tailscale", "ts_omit_logtail", "ts_omit_ssh", "ts_omit_drive", "ts_omit_taildrop", "ts_omit_webclient", "ts_omit_doctor", "ts_omit_capture", "ts_omit_kube", "ts_omit_aws", "ts_omit_synology", "ts_omit_bird")
@@ -163,14 +163,14 @@ func buildAndroid() {
 
 	bindTarget := getAndroidBindTarget()
 
-	// Build main variant (SDK 23)
+	// Build main variant (SDK 24)
 	mainTags := append([]string{}, sharedTags...)
 	// mainTags = append(mainTags, memcTags...)
 	if debugEnabled {
 		mainTags = append(mainTags, debugTags...)
 	}
 	buildAndroidVariant(AndroidBuildConfig{
-		AndroidAPI: 23,
+		AndroidAPI: 24,
 		OutputName: "libbox.aar",
 		Tags:       mainTags,
 	}, bindTarget)
@@ -204,6 +204,9 @@ func buildApple() {
 		"-target", bindTarget,
 		"-libname=box",
 		"-tags-not-macos=with_low_memory",
+		"-iosversion=15.0",
+		"-macosversion=13.0",
+		"-tvosversion=17.0",
 	}
 	//if !withTailscale {
 	//	args = append(args, "-tags-macos="+strings.Join(memcTags, ","))

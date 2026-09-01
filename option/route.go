@@ -3,12 +3,14 @@ package option
 import "github.com/sagernet/sing/common/json/badoption"
 
 type RouteOptions struct {
-	GeoIP                      *GeoIPOptions                     `json:"geoip,omitempty"`
-	Geosite                    *GeositeOptions                   `json:"geosite,omitempty"`
+	GeoIP                      *GeoIPOptions                     `json:"geoip,omitempty" schema:"omit"`
+	Geosite                    *GeositeOptions                   `json:"geosite,omitempty" schema:"omit"`
 	Rules                      []Rule                            `json:"rules,omitempty"`
 	RuleSet                    []RuleSet                         `json:"rule_set,omitempty"`
-	Final                      string                            `json:"final,omitempty"`
+	Final                      string                            `json:"final,omitempty" reference:"outbound"`
 	FindProcess                bool                              `json:"find_process,omitempty"`
+	FindNeighbor               bool                              `json:"find_neighbor,omitempty"`
+	DHCPLeaseFiles             badoption.Listable[string]        `json:"dhcp_lease_files,omitempty"`
 	AutoDetectInterface        bool                              `json:"auto_detect_interface,omitempty"`
 	OverrideAndroidVPN         bool                              `json:"override_android_vpn,omitempty"`
 	DefaultInterface           string                            `json:"default_interface,omitempty"`
@@ -18,16 +20,17 @@ type RouteOptions struct {
 	DefaultNetworkType         badoption.Listable[InterfaceType] `json:"default_network_type,omitempty"`
 	DefaultFallbackNetworkType badoption.Listable[InterfaceType] `json:"default_fallback_network_type,omitempty"`
 	DefaultFallbackDelay       badoption.Duration                `json:"default_fallback_delay,omitempty"`
+	DefaultHTTPClient          string                            `json:"default_http_client,omitempty"`
 }
 
 type GeoIPOptions struct {
 	Path           string `json:"path,omitempty"`
 	DownloadURL    string `json:"download_url,omitempty"`
-	DownloadDetour string `json:"download_detour,omitempty"`
+	DownloadDetour string `json:"download_detour,omitempty" reference:"outbound"`
 }
 
 type GeositeOptions struct {
 	Path           string `json:"path,omitempty"`
 	DownloadURL    string `json:"download_url,omitempty"`
-	DownloadDetour string `json:"download_detour,omitempty"`
+	DownloadDetour string `json:"download_detour,omitempty" reference:"outbound"`
 }

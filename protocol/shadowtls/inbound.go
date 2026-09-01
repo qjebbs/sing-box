@@ -71,7 +71,7 @@ func NewInbound(ctx context.Context, router adapter.Router, logger log.ContextLo
 		Version:  options.Version,
 		Password: options.Password,
 		Users: common.Map(options.Users, func(it option.ShadowTLSUser) shadowtls.User {
-			return (shadowtls.User)(it)
+			return shadowtls.User(it)
 		}),
 		Handshake: shadowtls.HandshakeConfig{
 			Server: options.Handshake.ServerOptions.Build(),
@@ -108,7 +108,7 @@ func (h *Inbound) Close() error {
 	return h.listener.Close()
 }
 
-func (h *Inbound) NewConnectionEx(ctx context.Context, conn net.Conn, metadata adapter.InboundContext, onClose N.CloseHandlerFunc) {
+func (h *Inbound) NewConnection(ctx context.Context, conn net.Conn, metadata adapter.InboundContext, onClose N.CloseHandlerFunc) {
 	err := h.service.NewConnection(adapter.WithContext(log.ContextWithNewID(ctx), &metadata), conn, metadata.Source, metadata.Destination, onClose)
 	N.CloseOnHandshakeFailure(conn, onClose, err)
 	if err != nil {
