@@ -9,12 +9,13 @@ import (
 func TestTrojanQt5(t *testing.T) {
 	runTests(t, link.ParseTrojanQt5, TestCases[*link.TrojanQt5]{
 		{
-			Link: "trojan://password-%E5%AF%86%E7%A0%81@192.168.1.1:443?allowInsecure=1&tfo=1#remarks",
+			Link: "trojan://0de72799-270c-4ca7-8d12-73b8959dbf31@sdv3-hk.kunlun04dns.com:6602?allowInsecure=1&peer=openssl.nodesni.com&tfo=1#remarks",
 			Want: &link.TrojanQt5{
 				Remarks:       "remarks",
-				Server:        "192.168.1.1",
-				Port:          443,
-				Password:      "password-密码",
+				Server:        "sdv3-hk.kunlun04dns.com",
+				Port:          6602,
+				Password:      "0de72799-270c-4ca7-8d12-73b8959dbf31",
+				SNI:           "openssl.nodesni.com",
 				AllowInsecure: true,
 				TFO:           true,
 			},

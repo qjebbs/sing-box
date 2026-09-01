@@ -81,20 +81,22 @@ func ParseShadowSocks(u *url.URL) (*ShadowSocks, error) {
 }
 
 // Outbound implements Link
-func (l *ShadowSocks) Outbound() (*option.Outbound, error) {
-	return &option.Outbound{
-		Type: C.TypeShadowsocks,
-		Tag:  l.Ps,
-		Options: &option.ShadowsocksOutboundOptions{
-			ServerOptions: option.ServerOptions{
-				Server:     l.Address,
-				ServerPort: l.Port,
-			},
-			Method:        l.Method,
-			Password:      l.Password,
-			Plugin:        l.Plugin,
-			PluginOptions: l.PluginOpts,
+func (l *ShadowSocks) Outbound(opt option.ProviderOutboundsOptions) (*option.Outbound, error) {
+	o := &option.ShadowsocksOutboundOptions{
+		DialerOptions: opt.DialerOptions,
+		ServerOptions: option.ServerOptions{
+			Server:     l.Address,
+			ServerPort: l.Port,
 		},
+		Method:        l.Method,
+		Password:      l.Password,
+		Plugin:        l.Plugin,
+		PluginOptions: l.PluginOpts,
+	}
+	return &option.Outbound{
+		Type:    C.TypeShadowsocks,
+		Tag:     l.Ps,
+		Options: o,
 	}, nil
 }
 

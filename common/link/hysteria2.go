@@ -94,7 +94,7 @@ func ParseHysteria2(u *url.URL) (*Hysteria2, error) {
 }
 
 // Outbound implements the Link interface
-func (l *Hysteria2) Outbound() (*option.Outbound, error) {
+func (l *Hysteria2) Outbound(opt option.ProviderOutboundsOptions) (*option.Outbound, error) {
 	password := l.Auth
 	if l.User != "" {
 		password = fmt.Sprintf("%s:%s", l.User, l.Auth)
@@ -114,26 +114,28 @@ func (l *Hysteria2) Outbound() (*option.Outbound, error) {
 		}
 		certPin = [][]byte{pin}
 	}
-	return &option.Outbound{
-		Type: C.TypeHysteria2,
-		Tag:  l.Remarks,
-		Options: &option.Hysteria2OutboundOptions{
-			ServerOptions: option.ServerOptions{
-				Server:     l.Host,
-				ServerPort: l.Port,
-			},
-			ServerPorts: l.Ports.SingBoxPorts(),
-			Password:    password,
-			Obfs:        obfs,
-			OutboundTLSOptionsContainer: option.OutboundTLSOptionsContainer{
-				TLS: &option.OutboundTLSOptions{
-					Enabled:           true,
-					ServerName:        l.SNI,
-					Insecure:          l.Insecure,
-					CertificateSHA256: certPin,
-				},
+	o := &option.Hysteria2OutboundOptions{
+		DialerOptions: opt.DialerOptions,
+		ServerOptions: option.ServerOptions{
+			Server:     l.Host,
+			ServerPort: l.Port,
+		},
+		ServerPorts: l.Ports.SingBoxPorts(),
+		Password:    password,
+		Obfs:        obfs,
+		OutboundTLSOptionsContainer: option.OutboundTLSOptionsContainer{
+			TLS: &option.OutboundTLSOptions{
+				Enabled:           true,
+				ServerName:        l.SNI,
+				Insecure:          l.Insecure,
+				CertificateSHA256: certPin,
 			},
 		},
+	}
+	return &option.Outbound{
+		Type:    C.TypeHysteria2,
+		Tag:     l.Remarks,
+		Options: o,
 	}, nil
 }
 

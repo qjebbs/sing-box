@@ -60,6 +60,7 @@ type Remote struct {
 	dedupHostPort  bool
 	userAgent      string
 	disableUA      bool
+	defaultOptions option.ProviderOutboundsOptions
 
 	sync.Mutex
 	*adapter.ProviderInfo
@@ -126,6 +127,7 @@ func NewRemote(ctx context.Context, router adapter.Router, logFactory log.Factor
 		include:        include,
 		dedupHost:      options.DedupHost,
 		dedupHostPort:  options.DedupHostPort,
+		defaultOptions: options.OutboundsDefault,
 
 		ctx:     ctx,
 		chReady: make(chan struct{}),
@@ -363,7 +365,7 @@ func (s *Remote) parseLinks(content string, dedupHost, dedupHostPort bool) []*pa
 }
 
 func (s *Remote) createOutbound(lnk *parsedLink) (adapter.Outbound, error) {
-	opt, err := lnk.Link.Outbound()
+	opt, err := lnk.Link.Outbound(s.defaultOptions)
 	if err != nil {
 		return nil, E.New("line ", lnk.Line, ": make options:", err)
 	}

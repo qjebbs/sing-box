@@ -110,7 +110,7 @@ func ParseHysteria(u *url.URL) (*Hysteria, error) {
 }
 
 // Outbound implements the Link interface
-func (l *Hysteria) Outbound() (*option.Outbound, error) {
+func (l *Hysteria) Outbound(opt option.ProviderOutboundsOptions) (*option.Outbound, error) {
 	switch l.Protocol {
 	case "", "udp":
 	default:
@@ -122,28 +122,30 @@ func (l *Hysteria) Outbound() (*option.Outbound, error) {
 	if l.DownMpbs == 0 {
 		return nil, E.New("downmbps is required")
 	}
-	return &option.Outbound{
-		Type: C.TypeHysteria,
-		Tag:  l.Remarks,
-		Options: &option.HysteriaOutboundOptions{
-			ServerOptions: option.ServerOptions{
-				Server:     l.Host,
-				ServerPort: l.Port,
-			},
-			ServerPorts: l.Ports.SingBoxPorts(),
-			AuthString:  l.Auth,
-			OutboundTLSOptionsContainer: option.OutboundTLSOptionsContainer{
-				TLS: &option.OutboundTLSOptions{
-					Enabled:    true,
-					ALPN:       []string{l.ALPN},
-					ServerName: l.Peer,
-					Insecure:   l.Insecure,
-				},
-			},
-			UpMbps:   int(l.UpMpbs),
-			DownMbps: int(l.DownMpbs),
-			Obfs:     l.ObfsParam,
+	o := &option.HysteriaOutboundOptions{
+		DialerOptions: opt.DialerOptions,
+		ServerOptions: option.ServerOptions{
+			Server:     l.Host,
+			ServerPort: l.Port,
 		},
+		ServerPorts: l.Ports.SingBoxPorts(),
+		AuthString:  l.Auth,
+		OutboundTLSOptionsContainer: option.OutboundTLSOptionsContainer{
+			TLS: &option.OutboundTLSOptions{
+				Enabled:    true,
+				ALPN:       []string{l.ALPN},
+				ServerName: l.Peer,
+				Insecure:   l.Insecure,
+			},
+		},
+		UpMbps:   int(l.UpMpbs),
+		DownMbps: int(l.DownMpbs),
+		Obfs:     l.ObfsParam,
+	}
+	return &option.Outbound{
+		Type:    C.TypeHysteria,
+		Tag:     l.Remarks,
+		Options: o,
 	}, nil
 }
 

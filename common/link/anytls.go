@@ -75,25 +75,27 @@ func ParseAnyTLS(u *url.URL) (*AnyTLS, error) {
 }
 
 // Outbound implements the Link interface
-func (l *AnyTLS) Outbound() (*option.Outbound, error) {
+func (l *AnyTLS) Outbound(opt option.ProviderOutboundsOptions) (*option.Outbound, error) {
 	password := l.Auth
-	return &option.Outbound{
-		Type: C.TypeAnyTLS,
-		Tag:  l.Remarks,
-		Options: &option.AnyTLSOutboundOptions{
-			ServerOptions: option.ServerOptions{
-				Server:     l.Host,
-				ServerPort: l.Port,
-			},
-			Password: password,
-			OutboundTLSOptionsContainer: option.OutboundTLSOptionsContainer{
-				TLS: &option.OutboundTLSOptions{
-					Enabled:    true,
-					ServerName: l.SNI,
-					Insecure:   l.Insecure,
-				},
+	o := &option.AnyTLSOutboundOptions{
+		DialerOptions: opt.DialerOptions,
+		ServerOptions: option.ServerOptions{
+			Server:     l.Host,
+			ServerPort: l.Port,
+		},
+		Password: password,
+		OutboundTLSOptionsContainer: option.OutboundTLSOptionsContainer{
+			TLS: &option.OutboundTLSOptions{
+				Enabled:    true,
+				ServerName: l.SNI,
+				Insecure:   l.Insecure,
 			},
 		},
+	}
+	return &option.Outbound{
+		Type:    C.TypeAnyTLS,
+		Tag:     l.Remarks,
+		Options: o,
 	}, nil
 }
 

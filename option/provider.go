@@ -58,4 +58,11 @@ type RemoteProviderOptions struct {
 
 	DedupHost     bool `json:"dedup_host,omitempty"`
 	DedupHostPort bool `json:"dedup_host_port,omitempty"`
+
+	OutboundsDefault ProviderOutboundsOptions `json:"outbounds_default,omitempty"`
+}
+
+// ProviderOutboundsOptions is the default options for outbounds of a provider.
+type ProviderOutboundsOptions struct {
+	DialerOptions
 }

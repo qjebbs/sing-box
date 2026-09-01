@@ -95,7 +95,7 @@ func runPing() (*ping.Statistics, error) {
 		if err != nil {
 			return nil, err
 		}
-		out, err := link.Outbound()
+		out, err := link.Outbound(option.ProviderOutboundsOptions{})
 		if err != nil {
 			return nil, err
 		}

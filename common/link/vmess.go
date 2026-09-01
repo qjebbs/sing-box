@@ -27,8 +27,9 @@ type Vmess struct {
 }
 
 // Outbound implements Link
-func (v *Vmess) Outbound() (*option.Outbound, error) {
-	opt := &option.VMessOutboundOptions{
+func (v *Vmess) Outbound(opt option.ProviderOutboundsOptions) (*option.Outbound, error) {
+	o := &option.VMessOutboundOptions{
+		DialerOptions: opt.DialerOptions,
 		ServerOptions: option.ServerOptions{
 			Server:     v.Server,
 			ServerPort: v.Port,
@@ -39,14 +40,14 @@ func (v *Vmess) Outbound() (*option.Outbound, error) {
 	}
 
 	if v.TLS {
-		opt.TLS = &option.OutboundTLSOptions{
+		o.TLS = &option.OutboundTLSOptions{
 			Enabled:    true,
 			Insecure:   v.AllowInsecure,
 			ServerName: v.SNI,
 			ALPN:       v.ALPN,
 		}
 		if len(v.ALPN) > 0 {
-			opt.TLS.UTLS = &option.OutboundUTLSOptions{
+			o.TLS.UTLS = &option.OutboundUTLSOptions{
 				Enabled:     true,
 				Fingerprint: v.Fingerprint,
 			}
@@ -81,11 +82,11 @@ func (v *Vmess) Outbound() (*option.Outbound, error) {
 		topt.GRPCOptions.ServiceName = v.Host
 	}
 
-	opt.Transport = topt
+	o.Transport = topt
 	return &option.Outbound{
 		Type:    C.TypeVMess,
 		Tag:     v.Tag,
-		Options: opt,
+		Options: o,
 	}, nil
 }
 

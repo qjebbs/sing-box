@@ -36,33 +36,31 @@ type TrojanQt5 struct {
 }
 
 // Outbound implements Link
-func (l *TrojanQt5) Outbound() (*option.Outbound, error) {
+func (l *TrojanQt5) Outbound(opt option.ProviderOutboundsOptions) (*option.Outbound, error) {
 	sni := l.SNI
 	if sni == "" {
 		sni = l.Server
 	}
-	return &option.Outbound{
-		Type: C.TypeTrojan,
-		Tag:  l.Remarks,
-		Options: &option.TrojanOutboundOptions{
-			ServerOptions: option.ServerOptions{
-				Server:     l.Server,
-				ServerPort: l.Port,
-			},
-			Password: l.Password,
-			OutboundTLSOptionsContainer: option.OutboundTLSOptionsContainer{
-				TLS: &option.OutboundTLSOptions{
-					Enabled:    true,
-					ServerName: sni,
-					Insecure:   l.AllowInsecure,
-				},
-			},
-			DialerOptions: option.DialerOptions{
-				AbstractDialerOptions: option.AbstractDialerOptions{
-					TCPFastOpen: l.TFO,
-				},
+	o := &option.TrojanOutboundOptions{
+		ServerOptions: option.ServerOptions{
+			Server:     l.Server,
+			ServerPort: l.Port,
+		},
+		Password: l.Password,
+		OutboundTLSOptionsContainer: option.OutboundTLSOptionsContainer{
+			TLS: &option.OutboundTLSOptions{
+				Enabled:    true,
+				ServerName: sni,
+				Insecure:   l.AllowInsecure,
 			},
 		},
+		DialerOptions: opt.DialerOptions,
+	}
+	o.DialerOptions.AbstractDialerOptions.TCPFastOpen = l.TFO
+	return &option.Outbound{
+		Type:    C.TypeTrojan,
+		Tag:     l.Remarks,
+		Options: o,
 	}, nil
 }
 
@@ -94,7 +92,7 @@ func ParseTrojanQt5(u *url.URL) (*TrojanQt5, error) {
 			default:
 				link.AllowInsecure = true
 			}
-		case "sni":
+		case "sni", "peer":
 			link.SNI = values[0]
 		case "tfo":
 			switch values[0] {

@@ -21,7 +21,7 @@ type Link interface {
 	// URL returns the url representation of the link
 	URL() (string, error)
 	// Outbound returns equivalent outbound options of the link
-	Outbound() (*option.Outbound, error)
+	Outbound(defaultOptions option.ProviderOutboundsOptions) (*option.Outbound, error)
 }
 
 // Parse parses a link string to Link

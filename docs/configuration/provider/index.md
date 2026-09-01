@@ -16,7 +16,10 @@ List of subscription providers.
       "include": "",
       "download_detour": "",
       "disable_user_agent": false,
-      "cache_file": "provider.txt"
+      "cache_file": "provider.txt",
+      "outbounds_default": {
+        ... // Dial Fields
+      }
     }
   ],
   {
@@ -90,3 +93,9 @@ Server may not provide usage information when user agent is disabled.
 Downloaded content will be cached in this file.
 
 > When `sing-box` is running as a system service, it may not have network access when it starts. Using cache file can avoid the fetch failing for the first time.
+
+#### outbounds_default
+
+The default settings for all nodes. May be overridden by the node's own settings.
+
+See [Dial Fields](/configuration/shared/dial/) for details.

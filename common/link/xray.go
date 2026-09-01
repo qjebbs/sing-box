@@ -75,21 +75,22 @@ func ParseXray(u *url.URL) (*Xray, error) {
 }
 
 // Outbound implements Link
-func (v *Xray) Outbound() (*option.Outbound, error) {
+func (v *Xray) Outbound(opt option.ProviderOutboundsOptions) (*option.Outbound, error) {
 	if err := v.compatiblily(); err != nil {
 		return nil, err
 	}
 	switch v.Scheme {
 	case "vmess":
-		return v.outboundVmess()
+		return v.outboundVmess(opt)
 	case "vless":
-		return v.outboundVless()
+		return v.outboundVless(opt)
 	}
 	return nil, E.New("unknown type: ", v.Scheme)
 }
 
-func (v *Xray) outboundVmess() (*option.Outbound, error) {
-	opt := &option.VMessOutboundOptions{
+func (v *Xray) outboundVmess(opt option.ProviderOutboundsOptions) (*option.Outbound, error) {
+	o := &option.VMessOutboundOptions{
+		DialerOptions: opt.DialerOptions,
 		ServerOptions: option.ServerOptions{
 			Server:     v.Server,
 			ServerPort: v.Port,
@@ -99,17 +100,18 @@ func (v *Xray) outboundVmess() (*option.Outbound, error) {
 		Security: v.Encryption,
 	}
 
-	opt.TLS = v.tlsOption()
-	opt.Transport = v.transportOption()
+	o.TLS = v.tlsOption()
+	o.Transport = v.transportOption()
 	return &option.Outbound{
 		Type:    C.TypeVMess,
 		Tag:     v.Tag,
-		Options: opt,
+		Options: o,
 	}, nil
 }
 
-func (v *Xray) outboundVless() (*option.Outbound, error) {
-	opt := &option.VLESSOutboundOptions{
+func (v *Xray) outboundVless(opt option.ProviderOutboundsOptions) (*option.Outbound, error) {
+	o := &option.VLESSOutboundOptions{
+		DialerOptions: opt.DialerOptions,
 		ServerOptions: option.ServerOptions{
 			Server:     v.Server,
 			ServerPort: v.Port,
@@ -117,12 +119,12 @@ func (v *Xray) outboundVless() (*option.Outbound, error) {
 		UUID: v.UUID,
 		Flow: v.Flow,
 	}
-	opt.TLS = v.tlsOption()
-	opt.Transport = v.transportOption()
+	o.TLS = v.tlsOption()
+	o.Transport = v.transportOption()
 	return &option.Outbound{
 		Type:    C.TypeVLESS,
 		Tag:     v.Tag,
-		Options: opt,
+		Options: o,
 	}, nil
 
 }
