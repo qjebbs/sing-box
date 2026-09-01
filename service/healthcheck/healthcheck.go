@@ -327,14 +327,31 @@ func (h *HealthCheck) checkOutbound(ctx context.Context, outbound adapter.Outbou
 		testCtx = contextWithDetourVar(testCtx, outbound)
 		outbound = h.detourOf[0]
 	}
-	t, err := urltest.URLTest(testCtx, h.options.Destination, outbound)
-	if err != nil {
-		h.logger.Debug("outbound ", tag, " unavailable: ", err)
-		return 0, err
+	// Run the test in a goroutine and race it against the context timeout,
+	// so a single check can never hang longer than C.TCPTimeout even if the
+	// outbound ignores context cancellation (e.g. a stuck SSH handshake).
+	type checkResult struct {
+		delay uint16
+		err   error
 	}
-	rtt := RTT(t)
+	testChan := make(chan checkResult, 1)
+	go func() {
+		delay, err := urltest.URLTest(testCtx, h.options.Destination, outbound)
+		testChan <- checkResult{delay, err}
+	}()
+	var result checkResult
+	select {
+	case result = <-testChan:
+	case <-testCtx.Done():
+		result.err = testCtx.Err()
+	}
+	if result.err != nil {
+		h.logger.Debug("outbound ", tag, " unavailable: ", result.err)
+		return 0, result.err
+	}
+	rtt := RTT(result.delay)
 	h.logger.Debug("outbound ", tag, " available: ", rtt)
-	return t, nil
+	return result.delay, nil
 }
 
 func (h *HealthCheck) waitProcessResult(batch *batch.Batch[uint16], meta *MetaData) (map[string]uint16, error) {
