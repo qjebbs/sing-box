@@ -32,7 +32,6 @@ icon: material/new-box
 | `ssm-api`         | [SSM API](./ssm-api)                  |
 | `usbip-server`    | [USB/IP Server](./usbip-server)       |
 | `usbip-client`    | [USB/IP Client](./usbip-client)       |
-| `health-checker` | [Health Checker](./health-checker) |
 
 #### tag
 

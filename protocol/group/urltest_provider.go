@@ -7,11 +7,11 @@ import (
 
 	"github.com/sagernet/sing-box/adapter"
 	"github.com/sagernet/sing-box/adapter/outbound"
+	"github.com/sagernet/sing-box/common/healthcheck"
 	"github.com/sagernet/sing-box/common/interrupt"
 	C "github.com/sagernet/sing-box/constant"
 	"github.com/sagernet/sing-box/log"
 	"github.com/sagernet/sing-box/option"
-	"github.com/sagernet/sing-box/service/healthcheck"
 	"github.com/sagernet/sing/common"
 	E "github.com/sagernet/sing/common/exceptions"
 	M "github.com/sagernet/sing/common/metadata"
@@ -33,15 +33,15 @@ type URLTestProvider struct {
 	outbound.GroupAdapter
 	*healthcheck.HealthCheck
 
-	ctx        context.Context
-	router     adapter.Router
-	logger     log.ContextLogger
-	outbound   adapter.OutboundManager
-	provider   adapter.ProviderManager
-	connection adapter.ConnectionManager
-	serviceMgr adapter.ServiceManager
+	ctx            context.Context
+	router         adapter.Router
+	logger         log.ContextLogger
+	outbound       adapter.OutboundManager
+	provider       adapter.ProviderManager
+	connection     adapter.ConnectionManager
+	healthCheckMgr adapter.HealthCheckManager
 
-	checker   string
+	checker   *option.HealthCheckOptions
 	tolerance healthcheck.RTT
 
 	interruptGroup               *interrupt.Group
@@ -61,8 +61,8 @@ func NewURLTestProvider(ctx context.Context, router adapter.Router, logger log.C
 		outbound:                     service.FromContext[adapter.OutboundManager](ctx),
 		connection:                   service.FromContext[adapter.ConnectionManager](ctx),
 		provider:                     service.FromContext[adapter.ProviderManager](ctx),
-		serviceMgr:                   service.FromContext[adapter.ServiceManager](ctx),
-		checker:                      options.Checker,
+		healthCheckMgr:               service.FromContext[adapter.HealthCheckManager](ctx),
+		checker:                      options.HealthCheck,
 		tolerance:                    tolerance,
 		interruptGroup:               interrupt.NewGroup(),
 		interruptExternalConnections: options.InterruptExistConnections,
@@ -73,32 +73,31 @@ func (s *URLTestProvider) Start() error {
 	if err := s.InitProviders(s.outbound, s.provider); err != nil {
 		return err
 	}
-	if s.checker == "" {
-		s.checker = healthcheck.DefaultServiceTag
-		// return E.New("urltest requires a checker service, set 'checker' in options")
+	if s.checker == nil || s.checker.IsEmpty() {
+		return E.New("urltest requires 'health_check' in options")
 	}
-	svc, ok := s.serviceMgr.Get(C.TypeHealthChecker, s.checker)
-	if !ok {
-		return E.New("health checker service not found: ", s.checker)
-	}
-	checker, ok := svc.(*healthcheck.Service)
-	if !ok {
-		return E.New("service [", s.checker, "] is not a health checker service")
-	}
-	checker.RegisterPostCheckListener(s.interruptOutdatedConnections)
-	if err := checker.HealthCheck.SetProviders(s.Tag(), s.Providers()); err != nil {
+	checker, err := s.healthCheckMgr.Get(s.ctx, s.logger, *s.checker)
+	if err != nil {
 		return err
 	}
-	s.HealthCheck = checker.HealthCheck
+	checker.RegisterPostCheckListener(s.interruptOutdatedConnections)
+	if err := checker.SetProviders(s.Tag(), s.Providers()); err != nil {
+		return err
+	}
+	healthCheck, ok := checker.(*healthcheck.HealthCheck)
+	if !ok {
+		return E.New("health check is not a health check")
+	}
+	s.HealthCheck = healthCheck
 	return nil
 }
 
 func (s URLTestProvider) Close() error {
-	s.HealthCheck.UnregisterPostCheckListener(s.interruptOutdatedConnections)
-	s.HealthCheck.RemoveProviders(s.Tag())
 	if s.HealthCheck == nil {
 		return nil
 	}
+	s.HealthCheck.UnregisterPostCheckListener(s.interruptOutdatedConnections)
+	s.HealthCheck.RemoveProviders(s.Tag())
 	return nil
 }
 

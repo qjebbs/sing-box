@@ -5,7 +5,7 @@ import "github.com/sagernet/sing/common/json/badoption"
 // LoadBalanceOutboundOptions is the options for balancer outbound
 type LoadBalanceOutboundOptions struct {
 	ProviderGroupCommonOption
-	Checker                   string                      `json:"checker,omitempty"`
+	HealthCheck               *HealthCheckOptions         `json:"health_check,omitempty"`
 	Pick                      LoadBalancePickOptions      `json:"pick,omitempty"`
 	Profiles                  []LoadBalanceProfileOptions `json:"profiles,omitempty"`
 	LogHealth                 bool                        `json:"log_health,omitempty"`

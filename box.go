@@ -18,6 +18,7 @@ import (
 	boxService "github.com/sagernet/sing-box/adapter/service"
 	"github.com/sagernet/sing-box/common/certificate"
 	"github.com/sagernet/sing-box/common/dialer"
+	"github.com/sagernet/sing-box/common/healthcheck"
 	"github.com/sagernet/sing-box/common/httpclient"
 	"github.com/sagernet/sing-box/common/netns"
 	"github.com/sagernet/sing-box/common/taskmonitor"
@@ -33,7 +34,6 @@ import (
 	"github.com/sagernet/sing-box/option"
 	"github.com/sagernet/sing-box/protocol/direct"
 	"github.com/sagernet/sing-box/route"
-	"github.com/sagernet/sing-box/service/healthcheck"
 	"github.com/sagernet/sing/common"
 	E "github.com/sagernet/sing/common/exceptions"
 	F "github.com/sagernet/sing/common/format"
@@ -63,6 +63,7 @@ type Box struct {
 	connection          *route.ConnectionManager
 	router              *route.Router
 	httpClientService   adapter.LifecycleService
+	healthCheckService  adapter.LifecycleService
 	internalService     []adapter.LifecycleService
 	done                chan struct{}
 }
@@ -255,6 +256,10 @@ func New(options Options) (*Box, error) {
 	if err != nil {
 		return nil, E.Cause(err, "initialize router")
 	}
+	// Must register after Router: the health check manager resolves the router from the context when it is constructed.
+	healthCheckManager := healthcheck.NewManager(ctx, logFactory.NewLogger("healthcheck"), options.HealthChecks)
+	service.MustRegister[adapter.HealthCheckManager](ctx, healthCheckManager)
+	healthCheckService := adapter.LifecycleService(healthCheckManager)
 	if needClashAPI || needAPIService {
 		trafficManager := trafficcontrol.NewManager(outboundManager)
 		service.MustRegisterPtr(ctx, trafficManager)
@@ -351,10 +356,6 @@ func New(options Options) (*Box, error) {
 		if err != nil {
 			return nil, E.Cause(err, "initialize service[", i, "]")
 		}
-	}
-	err = healthcheck.RegisterDefaultService(ctx, serviceManager, logFactory)
-	if err != nil {
-		return nil, E.Cause(err, "initialize default health check service")
 	}
 	for i, outboundOptions := range options.Outbounds {
 		var tag string
@@ -511,6 +512,7 @@ func New(options Options) (*Box, error) {
 		connection:          connectionManager,
 		router:              router,
 		httpClientService:   httpClientService,
+		healthCheckService:  healthCheckService,
 		createdAt:           createdAt,
 		debugOptions:        debugOptions,
 		logFactory:          logFactory,
@@ -584,7 +586,7 @@ func (s *Box) preStart() error {
 	if err != nil {
 		return err
 	}
-	err = adapter.StartNamed(s.ctx, s.logger, adapter.StartStateStart, []adapter.LifecycleService{s.httpClientService})
+	err = adapter.StartNamed(s.ctx, s.logger, adapter.StartStateStart, []adapter.LifecycleService{s.httpClientService, s.healthCheckService})
 	if err != nil {
 		return err
 	}
@@ -678,6 +680,14 @@ func (s *Box) Close() error {
 			return E.Cause(err, "close ", s.httpClientService.Name())
 		})
 		s.logger.Trace("close ", s.httpClientService.Name(), " completed (", F.Seconds(time.Since(startTime).Seconds()), "s)")
+	}
+	if s.healthCheckService != nil {
+		s.logger.Trace("close ", s.healthCheckService.Name())
+		startTime := time.Now()
+		err = E.Append(err, s.healthCheckService.Close(), func(err error) error {
+			return E.Cause(err, "close ", s.healthCheckService.Name())
+		})
+		s.logger.Trace("close ", s.healthCheckService.Name(), " completed (", F.Seconds(time.Since(startTime).Seconds()), "s)")
 	}
 	for _, lifecycleService := range s.internalService {
 		done := adapter.LogElapsed(s.logger, "close ", lifecycleService.Name())

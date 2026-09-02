@@ -17,7 +17,7 @@
   ],
   "exclude": "",
   "include": "",
-  "checker": "default",
+  "health_check": "",
   "tolerance": 50,
   "interrupt_exist_connections": false
 }
@@ -45,9 +45,11 @@
 
 包含 `providers` 节点的正则表达式。
 
-#### checker
+#### health_check
 
-健康检查服务的标签。可选，未配置时使用默认健康检查服务。
+用于测试节点的[健康检查](/zh/configuration/shared/health-check/)。可以是顶层 `health_checks` 条目的字符串标签，也可以是内联的健康检查对象。
+
+必填，不存在隐式的默认健康检查。
 
 #### tolerance
 

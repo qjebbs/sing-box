@@ -21,6 +21,7 @@ type _Options struct {
 	Certificate          *CertificateOptions   `json:"certificate,omitempty"`
 	CertificateProviders []CertificateProvider `json:"certificate_providers,omitempty"`
 	HTTPClients          []HTTPClient          `json:"http_clients,omitempty"`
+	HealthChecks         []HealthCheck         `json:"health_checks,omitempty"`
 	NetworkNamespaces    []NetworkNamespace    `json:"network_namespaces,omitempty"`
 	Endpoints            []Endpoint            `json:"endpoints,omitempty"`
 	Inbounds             []Inbound             `json:"inbounds,omitempty"`
@@ -93,6 +94,24 @@ func checkOptions(options *Options) error {
 	err = checkHTTPClients(options.HTTPClients)
 	if err != nil {
 		return err
+	}
+	err = checkHealthChecks(options.HealthChecks)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func checkHealthChecks(checks []HealthCheck) error {
+	seen := make(map[string]bool)
+	for _, check := range checks {
+		if check.Tag == "" {
+			return E.New("missing health check tag")
+		}
+		if seen[check.Tag] {
+			return E.New("duplicate health check tag: ", check.Tag)
+		}
+		seen[check.Tag] = true
 	}
 	return nil
 }

@@ -12,6 +12,7 @@ sing-box 使用 JSON 作为配置文件格式。
   "certificate": {},
   "certificate_providers": [],
   "http_clients": [],
+  "health_checks": [],
   "network_namespaces": [],
   "endpoints": [],
   "inbounds": [],
@@ -33,6 +34,7 @@ sing-box 使用 JSON 作为配置文件格式。
 | `certificate`  | [证书](./certificate/)   |
 | `certificate_providers` | [证书提供者](./shared/certificate-provider/) |
 | `http_clients` | [HTTP 客户端](./shared/http-client/) |
+| `health_checks` | [健康检查](./shared/health-check/) |
 | `network_namespaces` | [网络命名空间](./network-namespace/) |
 | `endpoints`    | [端点](./endpoint/)      |
 | `inbounds`     | [入站](./inbound/)       |

@@ -4,8 +4,8 @@ import (
 	"errors"
 	"regexp"
 
+	"github.com/sagernet/sing-box/common/healthcheck"
 	"github.com/sagernet/sing-box/option"
-	"github.com/sagernet/sing-box/service/healthcheck"
 )
 
 type balancerConfig struct {

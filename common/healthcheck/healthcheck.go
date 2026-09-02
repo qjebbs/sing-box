@@ -21,6 +21,7 @@ import (
 var (
 	_ adapter.SimpleLifecycle         = (*HealthCheck)(nil)
 	_ adapter.InterfaceUpdateListener = (*HealthCheck)(nil)
+	_ adapter.HealthCheck             = (*HealthCheck)(nil)
 )
 
 // HealthCheck is the health checker for balancers

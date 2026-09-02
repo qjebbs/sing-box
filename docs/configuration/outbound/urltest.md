@@ -17,7 +17,7 @@
   ],
   "exclude": "",
   "include": "",
-  "checker": "default",
+  "health_check": "",
   "tolerance": 50,
   "interrupt_exist_connections": false
 }
@@ -45,9 +45,11 @@ Exclude regular expression to filter `providers` nodes. The priority of the excl
 
 Include regular expression to filter `providers` nodes.
 
-#### checker
+#### health_check
 
-The tag of the health check service. Optional, if not configured, the default health check service will be used.
+The [Health Check](/configuration/shared/health-check/) used to test the nodes. A string tag of a top-level `health_checks` entry, or an inline health check object.
+
+Required. There is no implicit default health check.
 
 #### tolerance
 

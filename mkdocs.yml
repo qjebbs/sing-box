@@ -131,6 +131,7 @@ nav:
           - Dial Fields: configuration/shared/dial.md
           - TLS: configuration/shared/tls.md
           - HTTP Client: configuration/shared/http-client.md
+          - Health Check: configuration/shared/health-check.md
           - HTTP2 Fields: configuration/shared/http2.md
           - QUIC Fields: configuration/shared/quic.md
           - Certificate Provider:

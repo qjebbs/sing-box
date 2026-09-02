@@ -41,7 +41,6 @@ import (
 	"github.com/sagernet/sing-box/protocol/vmess"
 	"github.com/sagernet/sing-box/provider/remote"
 	"github.com/sagernet/sing-box/service/api"
-	"github.com/sagernet/sing-box/service/healthcheck"
 	originca "github.com/sagernet/sing-box/service/origin_ca"
 	"github.com/sagernet/sing-box/service/resolved"
 	"github.com/sagernet/sing-box/service/ssmapi"
@@ -158,7 +157,6 @@ func ServiceRegistry() *service.Registry {
 	api.RegisterService(registry)
 	resolved.RegisterService(registry)
 	ssmapi.RegisterService(registry)
-	healthcheck.RegisterService(registry)
 
 	registerQUICServices(registry)
 	registerDERPService(registry)

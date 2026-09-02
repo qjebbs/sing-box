@@ -1,29 +1,44 @@
-# Health Checker
-
-Health checker service is used to check and provide health status information of nodes for outbound groups. 
-It can be shared by multiple outbound groups to avoid redundant health check overhead.
-
-The program will automatically create a default health checker service with the tag `default`. You can explicitly override it or create a new service.
-
 ### Structure
+
+A string or an object.
+
+When string, the tag of a shared health check defined in the top-level [`health_checks`](/configuration/#health_checks) option.
+
+When object:
 
 ```json
 {
-  "services": [
+  "interval": "5m",
+  "sampling": 10,
+  "destination": "https://www.gstatic.com/generate_204",
+  "detour_of": [
+    "proxy-a",
+    "proxy-b"
+  ]
+}
+```
+
+Health checks are used to check and provide health status information of nodes for outbound groups.
+They can be shared by multiple outbound groups to avoid redundant health check overhead.
+
+Each entry of the top-level `health_checks` uses the same object structure, with an additional `tag` field:
+
+```json
+{
+  "health_checks": [
     {
-      "type": "health-checker",
       "tag": "default",
       "interval": "5m",
       "sampling": 10,
-      "destination": "https://www.gstatic.com/generate_204",
-      "detour_of": [
-        "proxy-a",
-        "proxy-b"
-      ]
+      "destination": "https://www.gstatic.com/generate_204"
     }
   ]
 }
 ```
+
+!!! warning ""
+
+    A health check must be configured explicitly on each outbound group. There is no implicit default health check.
 
 ### Fields
 
@@ -37,7 +52,7 @@ The number of recent health check results to sample. Must be greater than `0`, d
 
 #### destination
 
-The destination URL for health check. Default is `http://www.gstatic.com/generate_204`.
+The destination URL for health check. Default is `https://www.gstatic.com/generate_204`.
 
 #### detour_of
 

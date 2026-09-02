@@ -6,12 +6,12 @@ import (
 
 	"github.com/sagernet/sing-box/adapter"
 	"github.com/sagernet/sing-box/adapter/outbound"
+	"github.com/sagernet/sing-box/common/healthcheck"
 	"github.com/sagernet/sing-box/common/interrupt"
 	C "github.com/sagernet/sing-box/constant"
 	"github.com/sagernet/sing-box/log"
 	"github.com/sagernet/sing-box/option"
 	"github.com/sagernet/sing-box/protocol/group/balancer"
-	"github.com/sagernet/sing-box/service/healthcheck"
 	"github.com/sagernet/sing/common"
 	E "github.com/sagernet/sing/common/exceptions"
 	M "github.com/sagernet/sing/common/metadata"
@@ -41,7 +41,7 @@ type LoadBalance struct {
 	outbound       adapter.OutboundManager
 	provider       adapter.ProviderManager
 	connection     adapter.ConnectionManager
-	serviceMgr     adapter.ServiceManager
+	healthCheckMgr adapter.HealthCheckManager
 	options        option.LoadBalanceOutboundOptions
 	interruptGroup *interrupt.Group
 }
@@ -59,7 +59,7 @@ func NewLoadBalance(ctx context.Context, router adapter.Router, logger log.Conte
 		outbound:       service.FromContext[adapter.OutboundManager](ctx),
 		provider:       service.FromContext[adapter.ProviderManager](ctx),
 		connection:     service.FromContext[adapter.ConnectionManager](ctx),
-		serviceMgr:     service.FromContext[adapter.ServiceManager](ctx),
+		healthCheckMgr: service.FromContext[adapter.HealthCheckManager](ctx),
 		options:        options,
 		interruptGroup: interrupt.NewGroup(),
 	}, nil
@@ -147,24 +147,23 @@ func (s *LoadBalance) Start() error {
 	if err := s.InitProviders(s.outbound, s.provider); err != nil {
 		return err
 	}
-	if s.options.Checker == "" {
-		s.options.Checker = healthcheck.DefaultServiceTag
-		// return E.New("loadbalance requires a checker service, set 'checker' in options")
+	if s.options.HealthCheck == nil || s.options.HealthCheck.IsEmpty() {
+		return E.New("loadbalance requires 'health_check' in options")
 	}
-	svc, ok := s.serviceMgr.Get(C.TypeHealthChecker, s.options.Checker)
-	if !ok {
-		return E.New("health checker service not found: ", s.options.Checker)
-	}
-	checker, ok := svc.(*healthcheck.Service)
-	if !ok {
-		return E.New("service [", s.options.Checker, "] is not a health checker service")
+	checker, err := s.healthCheckMgr.Get(s.ctx, s.logger, *s.options.HealthCheck)
+	if err != nil {
+		return err
 	}
 	checker.RegisterPostCheckListener(s.interruptOutdatedConnections)
 	// Submit all providers to the shared checker.
-	if err := checker.HealthCheck.SetProviders(s.Tag(), s.Providers()); err != nil {
+	if err := checker.SetProviders(s.Tag(), s.Providers()); err != nil {
 		return err
 	}
-	b, err := balancer.New(s.logger, &s.GroupAdapter, checker.HealthCheck, s.options.Pick)
+	healthCheck, ok := checker.(*healthcheck.HealthCheck)
+	if !ok {
+		return E.New("health check is not a health check")
+	}
+	b, err := balancer.New(s.logger, &s.GroupAdapter, healthCheck, s.options.Pick)
 	if err != nil {
 		return err
 	}
