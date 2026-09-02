@@ -17,13 +17,13 @@ type ProviderURLTestOptions struct {
 
 // ChainOptions is the chain of outbounds
 type ChainOptions struct {
-	Outbounds []string `json:"outbounds"`
+	Outbounds []string `json:"outbounds" reference:"outbound"`
 }
 
 // ProviderGroupCommonOption is the common options for group outbounds with providers support
 type ProviderGroupCommonOption struct {
 	Outbounds    []string `json:"outbounds" reference:"outbound"`
-	Providers    []string `json:"providers"`
+	Providers    []string `json:"providers" reference:"provider"`
 	AllProviders bool     `json:"all_providers,omitempty"`
 	Exclude      string   `json:"exclude,omitempty"`
 	Include      string   `json:"include,omitempty"`

@@ -11082,7 +11082,8 @@
             "outbounds": {
               "type": "array",
               "items": {
-                "type": "string"
+                "type": "string",
+                "x-tag-reference": "outbound"
               }
             }
           },
@@ -11877,7 +11878,8 @@
             "providers": {
               "type": "array",
               "items": {
-                "type": "string"
+                "type": "string",
+                "x-tag-reference": "provider"
               }
             },
             "all_providers": {
@@ -12128,7 +12130,8 @@
             "providers": {
               "type": "array",
               "items": {
-                "type": "string"
+                "type": "string",
+                "x-tag-reference": "provider"
               }
             },
             "all_providers": {
@@ -13743,7 +13746,8 @@
             "providers": {
               "type": "array",
               "items": {
-                "type": "string"
+                "type": "string",
+                "x-tag-reference": "provider"
               }
             },
             "all_providers": {
