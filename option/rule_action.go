@@ -355,6 +355,7 @@ func actionUnion(builder schema.Builder, variants []actionVariant) (*schema.Node
 	variantNodes := make([]*schema.Node, 0, len(variants))
 	for _, variant := range variants {
 		variantNode := schema.LooseObject()
+		variantNode.AddAuxiliary()
 		variantNode.Properties.Put("action", schema.StringConst(variant.action))
 		if !variant.actionOptional {
 			variantNode.Required = []string{"action"}

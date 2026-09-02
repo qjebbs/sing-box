@@ -35,10 +35,15 @@ func StrictObject() *Node {
 		Properties:           new(badjson.TypedMap[string, *Node]),
 		AdditionalProperties: false,
 	}
-	// Allow the auxiliary metadata fields `_tag` and `_order` at any level.
-	node.Properties.Put("_tag", StringNode())
-	node.Properties.Put("_order", IntegerNode())
+	node.AddAuxiliary()
 	return node
+}
+
+// AddAuxiliary adds the auxiliary metadata fields `_tag` and `_order`, which
+// are allowed on any object level of the configuration.
+func (n *Node) AddAuxiliary() {
+	n.Properties.Put("_tag", StringNode())
+	n.Properties.Put("_order", IntegerNode())
 }
 
 func LooseObject() *Node {

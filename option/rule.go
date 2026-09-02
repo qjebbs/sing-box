@@ -89,6 +89,7 @@ func (r Rule) DescribeSchema(builder schema.Builder) (*schema.Node, error) {
 // composition in DefaultRule / LogicalRule.
 func ruleUnion(builder schema.Builder, matchType reflect.Type, nestedRef *schema.Node, actionRef *schema.Node) (*schema.Node, error) {
 	defaultMatch := schema.LooseObject()
+	defaultMatch.AddAuxiliary()
 	defaultMatch.Properties.Put("type", schema.StringEnum(C.RuleTypeDefault, ""))
 	err := builder.FlattenStruct(defaultMatch, matchType)
 	if err != nil {
@@ -101,6 +102,7 @@ func ruleUnion(builder schema.Builder, matchType reflect.Type, nestedRef *schema
 	}
 
 	logicalMatch := schema.LooseObject()
+	logicalMatch.AddAuxiliary()
 	logicalMatch.Properties.Put("type", schema.StringConst(C.RuleTypeLogical))
 	logicalProperties(logicalMatch, nestedRef)
 	logicalMatch.Required = []string{"type", "mode", "rules"}

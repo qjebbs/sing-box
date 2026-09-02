@@ -1172,6 +1172,12 @@
             {
               "type": "object",
               "properties": {
+                "_tag": {
+                  "type": "string"
+                },
+                "_order": {
+                  "type": "integer"
+                },
                 "type": {
                   "type": "string",
                   "enum": [
@@ -1761,6 +1767,12 @@
             {
               "type": "object",
               "properties": {
+                "_tag": {
+                  "type": "string"
+                },
+                "_order": {
+                  "type": "integer"
+                },
                 "type": {
                   "const": "logical"
                 },
@@ -1799,6 +1811,12 @@
         {
           "type": "object",
           "properties": {
+            "_tag": {
+              "type": "string"
+            },
+            "_order": {
+              "type": "integer"
+            },
             "action": {
               "const": "route"
             },
@@ -1837,6 +1855,12 @@
         {
           "type": "object",
           "properties": {
+            "_tag": {
+              "type": "string"
+            },
+            "_order": {
+              "type": "integer"
+            },
             "action": {
               "const": "evaluate"
             },
@@ -1881,6 +1905,12 @@
         {
           "type": "object",
           "properties": {
+            "_tag": {
+              "type": "string"
+            },
+            "_order": {
+              "type": "integer"
+            },
             "action": {
               "const": "respond"
             },
@@ -1895,6 +1925,12 @@
         {
           "type": "object",
           "properties": {
+            "_tag": {
+              "type": "string"
+            },
+            "_order": {
+              "type": "integer"
+            },
             "action": {
               "const": "route-options"
             },
@@ -1929,6 +1965,12 @@
         {
           "type": "object",
           "properties": {
+            "_tag": {
+              "type": "string"
+            },
+            "_order": {
+              "type": "integer"
+            },
             "action": {
               "const": "reject"
             },
@@ -1955,6 +1997,12 @@
         {
           "type": "object",
           "properties": {
+            "_tag": {
+              "type": "string"
+            },
+            "_order": {
+              "type": "integer"
+            },
             "action": {
               "const": "predefined"
             },
@@ -15680,6 +15728,12 @@
             {
               "type": "object",
               "properties": {
+                "_tag": {
+                  "type": "string"
+                },
+                "_order": {
+                  "type": "integer"
+                },
                 "type": {
                   "type": "string",
                   "enum": [
@@ -16200,6 +16254,12 @@
             {
               "type": "object",
               "properties": {
+                "_tag": {
+                  "type": "string"
+                },
+                "_order": {
+                  "type": "integer"
+                },
                 "type": {
                   "const": "logical"
                 },
@@ -16238,6 +16298,12 @@
         {
           "type": "object",
           "properties": {
+            "_tag": {
+              "type": "string"
+            },
+            "_order": {
+              "type": "integer"
+            },
             "action": {
               "const": "route"
             },
@@ -16302,6 +16368,12 @@
         {
           "type": "object",
           "properties": {
+            "_tag": {
+              "type": "string"
+            },
+            "_order": {
+              "type": "integer"
+            },
             "action": {
               "const": "route-options"
             },
@@ -16365,6 +16437,12 @@
         {
           "type": "object",
           "properties": {
+            "_tag": {
+              "type": "string"
+            },
+            "_order": {
+              "type": "integer"
+            },
             "action": {
               "const": "direct"
             },
@@ -16471,6 +16549,12 @@
         {
           "type": "object",
           "properties": {
+            "_tag": {
+              "type": "string"
+            },
+            "_order": {
+              "type": "integer"
+            },
             "action": {
               "const": "bypass"
             },
@@ -16538,6 +16622,12 @@
         {
           "type": "object",
           "properties": {
+            "_tag": {
+              "type": "string"
+            },
+            "_order": {
+              "type": "integer"
+            },
             "action": {
               "const": "reject"
             },
@@ -16561,6 +16651,12 @@
         {
           "type": "object",
           "properties": {
+            "_tag": {
+              "type": "string"
+            },
+            "_order": {
+              "type": "integer"
+            },
             "action": {
               "const": "hijack-dns"
             }
@@ -16572,6 +16668,12 @@
         {
           "type": "object",
           "properties": {
+            "_tag": {
+              "type": "string"
+            },
+            "_order": {
+              "type": "integer"
+            },
             "action": {
               "const": "sniff"
             },
@@ -16623,6 +16725,12 @@
         {
           "type": "object",
           "properties": {
+            "_tag": {
+              "type": "string"
+            },
+            "_order": {
+              "type": "integer"
+            },
             "action": {
               "const": "resolve"
             },
