@@ -9,7 +9,6 @@ import (
 	"sync/atomic"
 
 	"github.com/sagernet/sing-box/adapter"
-	C "github.com/sagernet/sing-box/constant"
 	usbip "github.com/sagernet/sing-usbip"
 	"github.com/sagernet/sing/common"
 	E "github.com/sagernet/sing/common/exceptions"
@@ -204,7 +203,7 @@ func usbSharedDevicesToProto(devices []usbip.ControlDeviceInfo) []*USBSharedDevi
 }
 
 func addUSBDevice(ctx context.Context, serviceManager adapter.ServiceManager, send func(*USBServerMessage) error, attach *USBDeviceAttach) (*usbProvidedDevice, error) {
-	serverService, found := serviceManager.Get(C.TypeUSBIPServer, attach.GetServerTag())
+	serverService, found := serviceManager.Get(attach.GetServerTag())
 	if !found {
 		return nil, E.New("usbip-server not found: ", attach.GetServerTag())
 	}

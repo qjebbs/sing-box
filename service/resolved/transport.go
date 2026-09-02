@@ -90,7 +90,7 @@ func (t *Transport) Start(stage adapter.StartStage) error {
 		return nil
 	}
 	serviceManager := service.FromContext[adapter.ServiceManager](t.ctx)
-	service, loaded := serviceManager.Get(C.TypeResolved, t.serviceTag)
+	service, loaded := serviceManager.Get(t.serviceTag)
 	if !loaded {
 		return E.New("service not found: ", t.serviceTag)
 	}
