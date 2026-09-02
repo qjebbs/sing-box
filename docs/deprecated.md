@@ -13,6 +13,13 @@ use `http_client` instead.
 
 Old field will be removed in sing-box 1.16.0.
 
+#### Legacy `download_detour` remote provider option
+
+Legacy `download_detour` remote provider option is deprecated,
+use `http_client` instead.
+
+Old field will be removed in sing-box 1.16.0.
+
 #### Implicit default HTTP client
 
 Implicit default HTTP client using the default outbound for remote rule-sets is deprecated.

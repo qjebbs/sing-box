@@ -14,7 +14,7 @@ List of subscription providers.
       "interval": "24h",
       "exclude": "",
       "include": "",
-      "download_detour": "",
+      "http_client": "",
       "disable_user_agent": false,
       "cache_file": "provider.txt",
       "outbounds_default": {
@@ -77,9 +77,32 @@ Whether to deduplicate nodes with the same protocol and host. The default value 
 
 Whether to deduplicate nodes with the same protocol, host and port. The default value is `false`.
 
+#### http_client
+
+!!! question "Since sing-box 1.14.0"
+
+HTTP Client for downloading provider.
+
+See [HTTP Client Fields](/configuration/shared/http-client/) for details.
+
+When empty, the default HTTP client is used: the one named by
+[`default_http_client`](/configuration/route/#default_http_client), or the first top-level
+`http_clients` entry when `default_http_client` is empty.
+
+!!! failure "Implicit default deprecated in sing-box 1.14.0"
+
+    When neither `http_clients` nor `default_http_client` is configured, an implicit HTTP
+    client connecting through the default outbound is used. This implicit default is
+    deprecated in sing-box 1.14.0 and will be removed in sing-box 1.16.0; define
+    `http_clients` instead.
+
 #### download_detour
 
-The tag of the outbound used to download from the provider.
+!!! failure "Deprecated in sing-box 1.14.0"
+
+    `download_detour` is deprecated in sing-box 1.14.0 and will be removed in sing-box 1.16.0, use `http_client` instead.
+
+Tag of the outbound used to download from the provider.
 
 Default outbound will be used if empty.
 

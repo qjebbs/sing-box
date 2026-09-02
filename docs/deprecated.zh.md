@@ -13,6 +13,13 @@ icon: material/delete-alert
 
 旧字段将在 sing-box 1.16.0 中被移除。
 
+#### 旧版远程订阅 `download_detour` 选项
+
+旧版远程订阅 `download_detour` 选项已废弃，
+请使用 `http_client` 代替。
+
+旧字段将在 sing-box 1.16.0 中被移除。
+
 #### 隐式默认 HTTP 客户端
 
 使用默认出站为远程规则集隐式创建默认 HTTP 客户端的行为已废弃。

@@ -50,8 +50,10 @@ type RemoteProviderOptions struct {
 	URL              string             `json:"url"`
 	Interval         badoption.Duration `json:"interval,omitempty"`
 	CacheFile        string             `json:"cache_file,omitempty"`
-	DownloadDetour   string             `json:"download_detour,omitempty"`
+	HTTPClient       *HTTPClientOptions `json:"http_client,omitempty"`
 	DisableUserAgent bool               `json:"disable_user_agent,omitempty"`
+	// Deprecated: use http_client instead
+	DownloadDetour string `json:"download_detour,omitempty" reference:"outbound" schema:"omit"`
 
 	Exclude string `json:"exclude,omitempty"`
 	Include string `json:"include,omitempty"`

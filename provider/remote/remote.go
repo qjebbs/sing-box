@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/base64"
 	"io"
-	"net"
 	"net/http"
 	"net/url"
 	"regexp"
@@ -16,12 +15,12 @@ import (
 	"github.com/sagernet/sing-box/adapter/provider"
 	"github.com/sagernet/sing-box/common/link"
 	C "github.com/sagernet/sing-box/constant"
+	"github.com/sagernet/sing-box/experimental/deprecated"
 	"github.com/sagernet/sing-box/log"
 	"github.com/sagernet/sing-box/option"
 	"github.com/sagernet/sing/common"
 	E "github.com/sagernet/sing/common/exceptions"
 	F "github.com/sagernet/sing/common/format"
-	M "github.com/sagernet/sing/common/metadata"
 	"github.com/sagernet/sing/service"
 )
 
@@ -60,6 +59,7 @@ type Remote struct {
 	dedupHostPort  bool
 	userAgent      string
 	disableUA      bool
+	options        option.RemoteProviderOptions
 	defaultOptions option.ProviderOutboundsOptions
 
 	sync.Mutex
@@ -67,7 +67,7 @@ type Remote struct {
 	chReady        chan struct{}
 	ctx            context.Context
 	cancel         context.CancelFunc
-	detour         adapter.Outbound
+	httpClient     *http.Client
 	loadedHash     string
 	updatedAt      time.Time
 	outbounds      []adapter.Outbound
@@ -127,6 +127,7 @@ func NewRemote(ctx context.Context, router adapter.Router, logFactory log.Factor
 		include:        include,
 		dedupHost:      options.DedupHost,
 		dedupHostPort:  options.DedupHostPort,
+		options:        options,
 		defaultOptions: options.OutboundsDefault,
 
 		ctx:     ctx,
@@ -159,14 +160,13 @@ func (s *Remote) Start(stage adapter.StartStage) error {
 		if s.cancel != nil {
 			return nil
 		}
-		if s.downloadDetour != "" {
-			outbound, loaded := s.outbound.Outbound(s.downloadDetour)
-			if !loaded {
-				return E.New("detour outbound not found: ", s.downloadDetour)
-			}
-			s.detour = outbound
-		} else {
-			s.detour = s.outbound.Default()
+		transport, err := s.resolveTransport()
+		if err != nil {
+			return E.Cause(err, "create provider http client")
+		}
+		s.httpClient = &http.Client{
+			Timeout:   time.Second * 30,
+			Transport: transport,
 		}
 		s.ctx, s.cancel = context.WithCancel(s.ctx)
 		go s.refreshLoop()
@@ -183,6 +183,9 @@ func (s *Remote) Close() error {
 	}
 	s.Lock()
 	defer s.Unlock()
+	if s.httpClient != nil {
+		s.httpClient.CloseIdleConnections()
+	}
 	var err error
 	for _, ob := range s.outbounds {
 		if err2 := s.outbound.Remove(ob.Tag()); err2 != nil {
@@ -415,25 +418,10 @@ func (s *Remote) downloadWithCache() (*fileContent, error) {
 }
 
 func (s *Remote) download() (*fileContent, error) {
-	if s.detour == nil {
-		return nil, E.New("no detour available for download")
+	if s.httpClient == nil {
+		return nil, E.New("http client not initialized")
 	}
-	client := &http.Client{
-		Timeout: time.Second * 30,
-		Transport: &http.Transport{
-			DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
-				return s.detour.DialContext(ctx, network, M.ParseSocksaddr(addr))
-			},
-			// from http.DefaultTransport
-			MaxIdleConns:          100,
-			IdleConnTimeout:       90 * time.Second,
-			TLSHandshakeTimeout:   10 * time.Second,
-			ExpectContinueTimeout: 1 * time.Second,
-		},
-		CheckRedirect: func(req *http.Request, via []*http.Request) error {
-			return http.ErrUseLastResponse
-		},
-	}
+	defer s.httpClient.CloseIdleConnections()
 	req, err := http.NewRequestWithContext(s.ctx, http.MethodGet, s.url, nil)
 	if err != nil {
 		return nil, err
@@ -441,7 +429,7 @@ func (s *Remote) download() (*fileContent, error) {
 	if !s.disableUA {
 		req.Header.Set("User-Agent", s.userAgent)
 	}
-	resp, err := client.Do(req)
+	resp, err := s.httpClient.Do(req)
 	if err != nil {
 		return nil, err
 	}
@@ -454,6 +442,30 @@ func (s *Remote) download() (*fileContent, error) {
 		return nil, err
 	}
 	return parseFileContent(string(content), time.Now())
+}
+
+func (s *Remote) resolveTransport() (adapter.HTTPTransport, error) {
+	httpClientManager := service.FromContext[adapter.HTTPClientManager](s.ctx)
+	if s.options.HTTPClient != nil && !s.options.HTTPClient.IsEmpty() {
+		if s.downloadDetour != "" { //nolint:staticcheck
+			return nil, E.New("http_client is conflict with deprecated download_detour field")
+		}
+		return httpClientManager.ResolveTransport(s.ctx, s.logger, *s.options.HTTPClient)
+	}
+	if s.downloadDetour != "" { //nolint:staticcheck
+		deprecated.Report(s.ctx, deprecated.OptionLegacyProviderDownloadDetour)
+		return httpClientManager.ResolveTransport(s.ctx, s.logger, option.HTTPClientOptions{
+			DialerOptions: option.DialerOptions{
+				Detour: s.downloadDetour, //nolint:staticcheck
+			},
+			DisableEmptyDirectCheck: true,
+		})
+	}
+	defaultTransport := httpClientManager.DefaultTransport()
+	if defaultTransport == nil {
+		return nil, E.New("default http client transport is not initialized")
+	}
+	return defaultTransport, nil
 }
 
 func doBase64DecodeOrNothing(s string) string {
