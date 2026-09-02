@@ -3,6 +3,12 @@
   "$id": "https://sing-box.sagernet.org/schema.json",
   "type": "object",
   "properties": {
+    "_tag": {
+      "type": "string"
+    },
+    "_order": {
+      "type": "integer"
+    },
     "$schema": {
       "type": "string",
       "examples": [
@@ -21,6 +27,12 @@
     "certificate": {
       "type": "object",
       "properties": {
+        "_tag": {
+          "type": "string"
+        },
+        "_order": {
+          "type": "integer"
+        },
         "store": {
           "type": "string",
           "enum": [
@@ -138,6 +150,12 @@
     "ACMEExternalAccountOptions": {
       "type": "object",
       "properties": {
+        "_tag": {
+          "type": "string"
+        },
+        "_order": {
+          "type": "integer"
+        },
         "key_id": {
           "type": "string"
         },
@@ -152,6 +170,12 @@
         {
           "type": "object",
           "properties": {
+            "_tag": {
+              "type": "string"
+            },
+            "_order": {
+              "type": "integer"
+            },
             "provider": {
               "const": "alidns"
             },
@@ -201,6 +225,12 @@
         {
           "type": "object",
           "properties": {
+            "_tag": {
+              "type": "string"
+            },
+            "_order": {
+              "type": "integer"
+            },
             "provider": {
               "const": "cloudflare"
             },
@@ -244,6 +274,12 @@
         {
           "type": "object",
           "properties": {
+            "_tag": {
+              "type": "string"
+            },
+            "_order": {
+              "type": "integer"
+            },
             "provider": {
               "const": "acmedns"
             },
@@ -295,6 +331,12 @@
     "AnyTLSUser": {
       "type": "object",
       "properties": {
+        "_tag": {
+          "type": "string"
+        },
+        "_order": {
+          "type": "integer"
+        },
         "name": {
           "type": "string"
         },
@@ -307,6 +349,12 @@
     "BrutalOptions": {
       "type": "object",
       "properties": {
+        "_tag": {
+          "type": "string"
+        },
+        "_order": {
+          "type": "integer"
+        },
         "enabled": {
           "type": "boolean"
         },
@@ -322,6 +370,12 @@
     "CCMUser": {
       "type": "object",
       "properties": {
+        "_tag": {
+          "type": "string"
+        },
+        "_order": {
+          "type": "integer"
+        },
         "name": {
           "type": "string"
         },
@@ -334,6 +388,12 @@
     "CacheFileOptions": {
       "type": "object",
       "properties": {
+        "_tag": {
+          "type": "string"
+        },
+        "_order": {
+          "type": "integer"
+        },
         "enabled": {
           "type": "boolean"
         },
@@ -365,6 +425,12 @@
             },
             "tag": {
               "type": "string"
+            },
+            "_tag": {
+              "type": "string"
+            },
+            "_order": {
+              "type": "integer"
             },
             "domain": {
               "anyOf": [
@@ -447,6 +513,12 @@
             "tag": {
               "type": "string"
             },
+            "_tag": {
+              "type": "string"
+            },
+            "_order": {
+              "type": "integer"
+            },
             "domain": {
               "anyOf": [
                 {
@@ -509,6 +581,12 @@
             "tag": {
               "type": "string"
             },
+            "_tag": {
+              "type": "string"
+            },
+            "_order": {
+              "type": "integer"
+            },
             "endpoint": {
               "type": "string"
             }
@@ -533,6 +611,12 @@
               "properties": {
                 "type": {
                   "const": "acme"
+                },
+                "_tag": {
+                  "type": "string"
+                },
+                "_order": {
+                  "type": "integer"
                 },
                 "domain": {
                   "anyOf": [
@@ -612,6 +696,12 @@
                 "type": {
                   "const": "cloudflare-origin-ca"
                 },
+                "_tag": {
+                  "type": "string"
+                },
+                "_order": {
+                  "type": "integer"
+                },
                 "domain": {
                   "anyOf": [
                     {
@@ -671,6 +761,12 @@
                 "type": {
                   "const": "tailscale"
                 },
+                "_tag": {
+                  "type": "string"
+                },
+                "_order": {
+                  "type": "integer"
+                },
                 "endpoint": {
                   "type": "string"
                 }
@@ -687,6 +783,12 @@
     "ClashAPIOptions": {
       "type": "object",
       "properties": {
+        "_tag": {
+          "type": "string"
+        },
+        "_order": {
+          "type": "integer"
+        },
         "external_controller": {
           "type": "string"
         },
@@ -728,6 +830,12 @@
     "DERPMeshOptions": {
       "type": "object",
       "properties": {
+        "_tag": {
+          "type": "string"
+        },
+        "_order": {
+          "type": "integer"
+        },
         "server": {
           "type": "string"
         },
@@ -847,6 +955,12 @@
     "DNS": {
       "type": "object",
       "properties": {
+        "_tag": {
+          "type": "string"
+        },
+        "_order": {
+          "type": "integer"
+        },
         "servers": {
           "type": "array",
           "items": {
@@ -891,6 +1005,12 @@
             {
               "type": "object",
               "properties": {
+                "_tag": {
+                  "type": "string"
+                },
+                "_order": {
+                  "type": "integer"
+                },
                 "enabled": {
                   "type": "boolean"
                 },
@@ -1901,6 +2021,12 @@
             "tag": {
               "type": "string"
             },
+            "_tag": {
+              "type": "string"
+            },
+            "_order": {
+              "type": "integer"
+            },
             "detour": {
               "type": "string",
               "x-tag-reference": "outbound"
@@ -2034,6 +2160,12 @@
             "tag": {
               "type": "string"
             },
+            "_tag": {
+              "type": "string"
+            },
+            "_order": {
+              "type": "integer"
+            },
             "inet4_range": {
               "type": "string",
               "examples": [
@@ -2060,6 +2192,12 @@
             },
             "tag": {
               "type": "string"
+            },
+            "_tag": {
+              "type": "string"
+            },
+            "_order": {
+              "type": "integer"
             },
             "detour": {
               "type": "string",
@@ -2195,6 +2333,12 @@
             "tag": {
               "type": "string"
             },
+            "_tag": {
+              "type": "string"
+            },
+            "_order": {
+              "type": "integer"
+            },
             "path": {
               "anyOf": [
                 {
@@ -2238,6 +2382,12 @@
             },
             "tag": {
               "type": "string"
+            },
+            "_tag": {
+              "type": "string"
+            },
+            "_order": {
+              "type": "integer"
             },
             "detour": {
               "type": "string",
@@ -2373,6 +2523,12 @@
             "tag": {
               "type": "string"
             },
+            "_tag": {
+              "type": "string"
+            },
+            "_order": {
+              "type": "integer"
+            },
             "detour": {
               "type": "string",
               "x-tag-reference": "outbound"
@@ -2502,6 +2658,12 @@
             },
             "tag": {
               "type": "string"
+            },
+            "_tag": {
+              "type": "string"
+            },
+            "_order": {
+              "type": "integer"
             },
             "detour": {
               "type": "string",
@@ -2646,6 +2808,12 @@
             "tag": {
               "type": "string"
             },
+            "_tag": {
+              "type": "string"
+            },
+            "_order": {
+              "type": "integer"
+            },
             "endpoint": {
               "type": "string"
             },
@@ -2670,6 +2838,12 @@
             "tag": {
               "type": "string"
             },
+            "_tag": {
+              "type": "string"
+            },
+            "_order": {
+              "type": "integer"
+            },
             "endpoint": {
               "type": "string"
             },
@@ -2693,6 +2867,12 @@
             },
             "tag": {
               "type": "string"
+            },
+            "_tag": {
+              "type": "string"
+            },
+            "_order": {
+              "type": "integer"
             },
             "detour": {
               "type": "string",
@@ -2819,6 +2999,12 @@
             "tag": {
               "type": "string"
             },
+            "_tag": {
+              "type": "string"
+            },
+            "_order": {
+              "type": "integer"
+            },
             "service": {
               "type": "string"
             },
@@ -2839,6 +3025,12 @@
             },
             "tag": {
               "type": "string"
+            },
+            "_tag": {
+              "type": "string"
+            },
+            "_order": {
+              "type": "integer"
             },
             "endpoint": {
               "type": "string"
@@ -2863,6 +3055,12 @@
             },
             "tag": {
               "type": "string"
+            },
+            "_tag": {
+              "type": "string"
+            },
+            "_order": {
+              "type": "integer"
             },
             "detour": {
               "type": "string",
@@ -2985,6 +3183,12 @@
             },
             "tag": {
               "type": "string"
+            },
+            "_tag": {
+              "type": "string"
+            },
+            "_order": {
+              "type": "integer"
             },
             "detour": {
               "type": "string",
@@ -3111,6 +3315,12 @@
             "tag": {
               "type": "string"
             },
+            "_tag": {
+              "type": "string"
+            },
+            "_order": {
+              "type": "integer"
+            },
             "detour": {
               "type": "string",
               "x-tag-reference": "outbound"
@@ -3229,6 +3439,12 @@
     "DebugOptions": {
       "type": "object",
       "properties": {
+        "_tag": {
+          "type": "string"
+        },
+        "_order": {
+          "type": "integer"
+        },
         "listen": {
           "type": "string"
         },
@@ -3267,6 +3483,12 @@
     "DialerOptions": {
       "type": "object",
       "properties": {
+        "_tag": {
+          "type": "string"
+        },
+        "_order": {
+          "type": "integer"
+        },
         "detour": {
           "type": "string",
           "x-tag-reference": "outbound"
@@ -3378,6 +3600,12 @@
         {
           "type": "object",
           "properties": {
+            "_tag": {
+              "type": "string"
+            },
+            "_order": {
+              "type": "integer"
+            },
             "server": {
               "type": "string",
               "x-tag-reference": "dns_server"
@@ -3435,6 +3663,12 @@
             },
             "tag": {
               "type": "string"
+            },
+            "_tag": {
+              "type": "string"
+            },
+            "_order": {
+              "type": "integer"
             },
             "detour": {
               "type": "string",
@@ -3712,6 +3946,12 @@
             },
             "tag": {
               "type": "string"
+            },
+            "_tag": {
+              "type": "string"
+            },
+            "_order": {
+              "type": "integer"
             },
             "detour": {
               "type": "string",
@@ -4139,6 +4379,12 @@
             "tag": {
               "type": "string"
             },
+            "_tag": {
+              "type": "string"
+            },
+            "_order": {
+              "type": "integer"
+            },
             "listen": {
               "type": "string"
             },
@@ -4401,6 +4647,12 @@
             "tag": {
               "type": "string"
             },
+            "_tag": {
+              "type": "string"
+            },
+            "_order": {
+              "type": "integer"
+            },
             "detour": {
               "type": "string",
               "x-tag-reference": "outbound"
@@ -4584,6 +4836,12 @@
                 {
                   "type": "object",
                   "properties": {
+                    "_tag": {
+                      "type": "string"
+                    },
+                    "_order": {
+                      "type": "integer"
+                    },
                     "enabled": {
                       "type": "boolean"
                     },
@@ -4618,6 +4876,12 @@
             },
             "tag": {
               "type": "string"
+            },
+            "_tag": {
+              "type": "string"
+            },
+            "_order": {
+              "type": "integer"
             },
             "system": {
               "type": "boolean"
@@ -4796,6 +5060,12 @@
     "ExperimentalOptions": {
       "type": "object",
       "properties": {
+        "_tag": {
+          "type": "string"
+        },
+        "_order": {
+          "type": "integer"
+        },
         "cache_file": {
           "$ref": "#/$defs/CacheFileOptions"
         },
@@ -4814,6 +5084,12 @@
     "HTTPClient": {
       "type": "object",
       "properties": {
+        "_tag": {
+          "type": "string"
+        },
+        "_order": {
+          "type": "integer"
+        },
         "tag": {
           "type": "string"
         },
@@ -4990,6 +5266,12 @@
         {
           "type": "object",
           "properties": {
+            "_tag": {
+              "type": "string"
+            },
+            "_order": {
+              "type": "integer"
+            },
             "engine": {
               "type": "string",
               "enum": [
@@ -5175,6 +5457,12 @@
     "HTTPProxyOptions": {
       "type": "object",
       "properties": {
+        "_tag": {
+          "type": "string"
+        },
+        "_order": {
+          "type": "integer"
+        },
         "enabled": {
           "type": "boolean"
         },
@@ -5220,6 +5508,12 @@
         {
           "type": "object",
           "properties": {
+            "_tag": {
+              "type": "string"
+            },
+            "_order": {
+              "type": "integer"
+            },
             "type": {
               "type": "string",
               "enum": [
@@ -5552,6 +5846,12 @@
         {
           "type": "object",
           "properties": {
+            "_tag": {
+              "type": "string"
+            },
+            "_order": {
+              "type": "integer"
+            },
             "type": {
               "const": "logical"
             },
@@ -5584,6 +5884,12 @@
     "HealthCheck": {
       "type": "object",
       "properties": {
+        "_tag": {
+          "type": "string"
+        },
+        "_order": {
+          "type": "integer"
+        },
         "tag": {
           "type": "string"
         },
@@ -5615,6 +5921,12 @@
         {
           "type": "object",
           "properties": {
+            "_tag": {
+              "type": "string"
+            },
+            "_order": {
+              "type": "integer"
+            },
             "interval": {
               "$ref": "#/$defs/Duration"
             },
@@ -5639,6 +5951,12 @@
     "Hysteria2InboundRealm": {
       "type": "object",
       "properties": {
+        "_tag": {
+          "type": "string"
+        },
+        "_order": {
+          "type": "integer"
+        },
         "server_url": {
           "type": "string"
         },
@@ -5684,6 +6002,12 @@
     "Hysteria2Realm": {
       "type": "object",
       "properties": {
+        "_tag": {
+          "type": "string"
+        },
+        "_order": {
+          "type": "integer"
+        },
         "server_url": {
           "type": "string"
         },
@@ -5726,6 +6050,12 @@
     "Hysteria2RealmPortMapping": {
       "type": "object",
       "properties": {
+        "_tag": {
+          "type": "string"
+        },
+        "_order": {
+          "type": "integer"
+        },
         "enabled": {
           "type": "boolean"
         },
@@ -5741,6 +6071,12 @@
     "Hysteria2User": {
       "type": "object",
       "properties": {
+        "_tag": {
+          "type": "string"
+        },
+        "_order": {
+          "type": "integer"
+        },
         "name": {
           "type": "string"
         },
@@ -5753,6 +6089,12 @@
     "HysteriaRealmUser": {
       "type": "object",
       "properties": {
+        "_tag": {
+          "type": "string"
+        },
+        "_order": {
+          "type": "integer"
+        },
         "name": {
           "type": "string"
         },
@@ -5768,6 +6110,12 @@
     "HysteriaUser": {
       "type": "object",
       "properties": {
+        "_tag": {
+          "type": "string"
+        },
+        "_order": {
+          "type": "integer"
+        },
         "name": {
           "type": "string"
         },
@@ -5802,6 +6150,12 @@
             },
             "tag": {
               "type": "string"
+            },
+            "_tag": {
+              "type": "string"
+            },
+            "_order": {
+              "type": "integer"
             },
             "listen": {
               "type": "string"
@@ -5895,6 +6249,12 @@
             "tag": {
               "type": "string"
             },
+            "_tag": {
+              "type": "string"
+            },
+            "_order": {
+              "type": "integer"
+            },
             "token": {
               "type": "string"
             },
@@ -5954,6 +6314,12 @@
             },
             "tag": {
               "type": "string"
+            },
+            "_tag": {
+              "type": "string"
+            },
+            "_order": {
+              "type": "integer"
             },
             "listen": {
               "type": "string"
@@ -6054,6 +6420,12 @@
             "tag": {
               "type": "string"
             },
+            "_tag": {
+              "type": "string"
+            },
+            "_order": {
+              "type": "integer"
+            },
             "listen": {
               "type": "string"
             },
@@ -6138,6 +6510,12 @@
             },
             "tag": {
               "type": "string"
+            },
+            "_tag": {
+              "type": "string"
+            },
+            "_order": {
+              "type": "integer"
             },
             "listen": {
               "type": "string"
@@ -6286,6 +6664,12 @@
             "tag": {
               "type": "string"
             },
+            "_tag": {
+              "type": "string"
+            },
+            "_order": {
+              "type": "integer"
+            },
             "listen": {
               "type": "string"
             },
@@ -6352,6 +6736,12 @@
                 {
                   "type": "object",
                   "properties": {
+                    "_tag": {
+                      "type": "string"
+                    },
+                    "_order": {
+                      "type": "integer"
+                    },
                     "type": {
                       "const": "salamander"
                     },
@@ -6367,6 +6757,12 @@
                 {
                   "type": "object",
                   "properties": {
+                    "_tag": {
+                      "type": "string"
+                    },
+                    "_order": {
+                      "type": "integer"
+                    },
                     "type": {
                       "const": "gecko"
                     },
@@ -6446,6 +6842,12 @@
                     {
                       "type": "object",
                       "properties": {
+                        "_tag": {
+                          "type": "string"
+                        },
+                        "_order": {
+                          "type": "integer"
+                        },
                         "type": {
                           "const": "file"
                         },
@@ -6461,6 +6863,12 @@
                     {
                       "type": "object",
                       "properties": {
+                        "_tag": {
+                          "type": "string"
+                        },
+                        "_order": {
+                          "type": "integer"
+                        },
                         "type": {
                           "const": "proxy"
                         },
@@ -6479,6 +6887,12 @@
                     {
                       "type": "object",
                       "properties": {
+                        "_tag": {
+                          "type": "string"
+                        },
+                        "_order": {
+                          "type": "integer"
+                        },
                         "type": {
                           "const": "string"
                         },
@@ -6529,6 +6943,12 @@
             },
             "tag": {
               "type": "string"
+            },
+            "_tag": {
+              "type": "string"
+            },
+            "_order": {
+              "type": "integer"
             },
             "listen": {
               "type": "string"
@@ -6614,6 +7034,12 @@
             },
             "tag": {
               "type": "string"
+            },
+            "_tag": {
+              "type": "string"
+            },
+            "_order": {
+              "type": "integer"
             },
             "listen": {
               "type": "string"
@@ -6723,6 +7149,12 @@
             "tag": {
               "type": "string"
             },
+            "_tag": {
+              "type": "string"
+            },
+            "_order": {
+              "type": "integer"
+            },
             "listen": {
               "type": "string"
             },
@@ -6792,6 +7224,12 @@
             },
             "tag": {
               "type": "string"
+            },
+            "_tag": {
+              "type": "string"
+            },
+            "_order": {
+              "type": "integer"
             },
             "listen": {
               "type": "string"
@@ -6919,6 +7357,12 @@
             "tag": {
               "type": "string"
             },
+            "_tag": {
+              "type": "string"
+            },
+            "_order": {
+              "type": "integer"
+            },
             "listen": {
               "type": "string"
             },
@@ -7029,6 +7473,12 @@
                 "tag": {
                   "type": "string"
                 },
+                "_tag": {
+                  "type": "string"
+                },
+                "_order": {
+                  "type": "integer"
+                },
                 "version": {
                   "const": 5
                 },
@@ -7119,6 +7569,12 @@
                 },
                 "tag": {
                   "type": "string"
+                },
+                "_tag": {
+                  "type": "string"
+                },
+                "_order": {
+                  "type": "integer"
                 },
                 "version": {
                   "const": 6
@@ -7213,6 +7669,12 @@
             "tag": {
               "type": "string"
             },
+            "_tag": {
+              "type": "string"
+            },
+            "_order": {
+              "type": "integer"
+            },
             "listen": {
               "type": "string"
             },
@@ -7291,6 +7753,12 @@
             },
             "tag": {
               "type": "string"
+            },
+            "_tag": {
+              "type": "string"
+            },
+            "_order": {
+              "type": "integer"
             },
             "listen": {
               "type": "string"
@@ -7406,6 +7874,12 @@
             "tag": {
               "type": "string"
             },
+            "_tag": {
+              "type": "string"
+            },
+            "_order": {
+              "type": "integer"
+            },
             "listen": {
               "type": "string"
             },
@@ -7499,6 +7973,12 @@
             },
             "tag": {
               "type": "string"
+            },
+            "_tag": {
+              "type": "string"
+            },
+            "_order": {
+              "type": "integer"
             },
             "listen": {
               "type": "string"
@@ -7632,6 +8112,12 @@
             },
             "tag": {
               "type": "string"
+            },
+            "_tag": {
+              "type": "string"
+            },
+            "_order": {
+              "type": "integer"
             },
             "interface_name": {
               "type": "string"
@@ -8017,6 +8503,12 @@
             "tag": {
               "type": "string"
             },
+            "_tag": {
+              "type": "string"
+            },
+            "_order": {
+              "type": "integer"
+            },
             "listen": {
               "type": "string"
             },
@@ -8102,6 +8594,12 @@
             "tag": {
               "type": "string"
             },
+            "_tag": {
+              "type": "string"
+            },
+            "_order": {
+              "type": "integer"
+            },
             "listen": {
               "type": "string"
             },
@@ -8183,6 +8681,12 @@
     "InboundECHOptions": {
       "type": "object",
       "properties": {
+        "_tag": {
+          "type": "string"
+        },
+        "_order": {
+          "type": "integer"
+        },
         "enabled": {
           "type": "boolean"
         },
@@ -8208,6 +8712,12 @@
     "InboundMultiplexOptions": {
       "type": "object",
       "properties": {
+        "_tag": {
+          "type": "string"
+        },
+        "_order": {
+          "type": "integer"
+        },
         "enabled": {
           "type": "boolean"
         },
@@ -8223,6 +8733,12 @@
     "InboundRealityHandshakeOptions": {
       "type": "object",
       "properties": {
+        "_tag": {
+          "type": "string"
+        },
+        "_order": {
+          "type": "integer"
+        },
         "server": {
           "type": "string"
         },
@@ -8336,6 +8852,12 @@
     "InboundRealityOptions": {
       "type": "object",
       "properties": {
+        "_tag": {
+          "type": "string"
+        },
+        "_order": {
+          "type": "integer"
+        },
         "enabled": {
           "type": "boolean"
         },
@@ -8367,6 +8889,12 @@
     "InboundTLSOptions": {
       "type": "object",
       "properties": {
+        "_tag": {
+          "type": "string"
+        },
+        "_order": {
+          "type": "integer"
+        },
         "enabled": {
           "type": "boolean"
         },
@@ -8595,6 +9123,12 @@
     "LoadBalancePickBias": {
       "type": "object",
       "properties": {
+        "_tag": {
+          "type": "string"
+        },
+        "_order": {
+          "type": "integer"
+        },
         "contains": {
           "type": "string"
         },
@@ -8616,6 +9150,12 @@
     "LoadBalancePickOptions": {
       "type": "object",
       "properties": {
+        "_tag": {
+          "type": "string"
+        },
+        "_order": {
+          "type": "integer"
+        },
         "objective": {
           "type": "string"
         },
@@ -8651,6 +9191,12 @@
     "LoadBalanceProfileOptions": {
       "type": "object",
       "properties": {
+        "_tag": {
+          "type": "string"
+        },
+        "_order": {
+          "type": "integer"
+        },
         "tag": {
           "type": "string"
         },
@@ -8695,6 +9241,12 @@
     "LogOptions": {
       "type": "object",
       "properties": {
+        "_tag": {
+          "type": "string"
+        },
+        "_order": {
+          "type": "integer"
+        },
         "disabled": {
           "type": "boolean"
         },
@@ -8723,6 +9275,12 @@
     "NTPOptions": {
       "type": "object",
       "properties": {
+        "_tag": {
+          "type": "string"
+        },
+        "_order": {
+          "type": "integer"
+        },
         "enabled": {
           "type": "boolean"
         },
@@ -8847,6 +9405,12 @@
         {
           "type": "object",
           "properties": {
+            "_tag": {
+              "type": "string"
+            },
+            "_order": {
+              "type": "integer"
+            },
             "type": {
               "type": "string",
               "enum": [
@@ -9428,6 +9992,12 @@
         {
           "type": "object",
           "properties": {
+            "_tag": {
+              "type": "string"
+            },
+            "_order": {
+              "type": "integer"
+            },
             "type": {
               "const": "logical"
             },
@@ -9462,6 +10032,12 @@
         {
           "type": "object",
           "properties": {
+            "_tag": {
+              "type": "string"
+            },
+            "_order": {
+              "type": "integer"
+            },
             "type": {
               "type": "string",
               "enum": [
@@ -9974,6 +10550,12 @@
         {
           "type": "object",
           "properties": {
+            "_tag": {
+              "type": "string"
+            },
+            "_order": {
+              "type": "integer"
+            },
             "type": {
               "const": "logical"
             },
@@ -10008,6 +10590,12 @@
         {
           "type": "object",
           "properties": {
+            "_tag": {
+              "type": "string"
+            },
+            "_order": {
+              "type": "integer"
+            },
             "type": {
               "type": "string",
               "enum": [
@@ -10030,6 +10618,12 @@
         {
           "type": "object",
           "properties": {
+            "_tag": {
+              "type": "string"
+            },
+            "_order": {
+              "type": "integer"
+            },
             "type": {
               "const": "unshare"
             },
@@ -10051,6 +10645,12 @@
     "OCMUser": {
       "type": "object",
       "properties": {
+        "_tag": {
+          "type": "string"
+        },
+        "_order": {
+          "type": "integer"
+        },
         "name": {
           "type": "string"
         },
@@ -10063,6 +10663,12 @@
     "OpenConnectCSDOptions": {
       "type": "object",
       "properties": {
+        "_tag": {
+          "type": "string"
+        },
+        "_order": {
+          "type": "integer"
+        },
         "wrapper_path": {
           "type": "string"
         }
@@ -10072,6 +10678,12 @@
     "OpenConnectFormEntryOptions": {
       "type": "object",
       "properties": {
+        "_tag": {
+          "type": "string"
+        },
+        "_order": {
+          "type": "integer"
+        },
         "form_id": {
           "type": "string"
         },
@@ -10093,6 +10705,12 @@
     "OpenConnectFortinetHostCheckOptions": {
       "type": "object",
       "properties": {
+        "_tag": {
+          "type": "string"
+        },
+        "_order": {
+          "type": "integer"
+        },
         "hostcheck": {
           "type": "string"
         },
@@ -10105,6 +10723,12 @@
     "OpenConnectHIPOptions": {
       "type": "object",
       "properties": {
+        "_tag": {
+          "type": "string"
+        },
+        "_order": {
+          "type": "integer"
+        },
         "wrapper_path": {
           "type": "string"
         }
@@ -10114,6 +10738,12 @@
     "OpenConnectMobileOptions": {
       "type": "object",
       "properties": {
+        "_tag": {
+          "type": "string"
+        },
+        "_order": {
+          "type": "integer"
+        },
         "platform_version": {
           "type": "string"
         },
@@ -10129,6 +10759,12 @@
     "OpenConnectTLSOptions": {
       "type": "object",
       "properties": {
+        "_tag": {
+          "type": "string"
+        },
+        "_order": {
+          "type": "integer"
+        },
         "insecure": {
           "type": "boolean"
         },
@@ -10243,6 +10879,12 @@
     "OpenConnectTNCCCertificateOptions": {
       "type": "object",
       "properties": {
+        "_tag": {
+          "type": "string"
+        },
+        "_order": {
+          "type": "integer"
+        },
         "certificate": {
           "anyOf": [
             {
@@ -10265,6 +10907,12 @@
     "OpenConnectTNCCOptions": {
       "type": "object",
       "properties": {
+        "_tag": {
+          "type": "string"
+        },
+        "_order": {
+          "type": "integer"
+        },
         "wrapper_path": {
           "type": "string"
         },
@@ -10289,6 +10937,12 @@
     "OpenConnectTokenOptions": {
       "type": "object",
       "properties": {
+        "_tag": {
+          "type": "string"
+        },
+        "_order": {
+          "type": "integer"
+        },
         "mode": {
           "type": "string",
           "enum": [
@@ -10323,6 +10977,12 @@
     "OpenVPNControlWrapOptions": {
       "type": "object",
       "properties": {
+        "_tag": {
+          "type": "string"
+        },
+        "_order": {
+          "type": "integer"
+        },
         "type": {
           "type": "string",
           "enum": [
@@ -10360,6 +11020,12 @@
     "OpenVPNInboundControlWrapOptions": {
       "type": "object",
       "properties": {
+        "_tag": {
+          "type": "string"
+        },
+        "_order": {
+          "type": "integer"
+        },
         "type": {
           "type": "string",
           "enum": [
@@ -10400,6 +11066,12 @@
     "OpenVPNInboundTLSOptions": {
       "type": "object",
       "properties": {
+        "_tag": {
+          "type": "string"
+        },
+        "_order": {
+          "type": "integer"
+        },
         "certificate": {
           "anyOf": [
             {
@@ -10556,6 +11228,12 @@
     "OpenVPNOutboundTLSOptions": {
       "type": "object",
       "properties": {
+        "_tag": {
+          "type": "string"
+        },
+        "_order": {
+          "type": "integer"
+        },
         "server_name": {
           "type": "string"
         },
@@ -10704,6 +11382,12 @@
     "OpenVPNPullFilterOptions": {
       "type": "object",
       "properties": {
+        "_tag": {
+          "type": "string"
+        },
+        "_order": {
+          "type": "integer"
+        },
         "action": {
           "type": "string",
           "enum": [
@@ -10721,6 +11405,12 @@
     "OpenVPNPushDNSServerOptions": {
       "type": "object",
       "properties": {
+        "_tag": {
+          "type": "string"
+        },
+        "_order": {
+          "type": "integer"
+        },
         "priority": {
           "type": "integer"
         },
@@ -10775,6 +11465,12 @@
     "OpenVPNPushOptions": {
       "type": "object",
       "properties": {
+        "_tag": {
+          "type": "string"
+        },
+        "_order": {
+          "type": "integer"
+        },
         "routes": {
           "anyOf": [
             {
@@ -10864,6 +11560,12 @@
     "OpenVPNRemoteOptions": {
       "type": "object",
       "properties": {
+        "_tag": {
+          "type": "string"
+        },
+        "_order": {
+          "type": "integer"
+        },
         "server": {
           "type": "string"
         },
@@ -10896,6 +11598,12 @@
             },
             "tag": {
               "type": "string"
+            },
+            "_tag": {
+              "type": "string"
+            },
+            "_order": {
+              "type": "integer"
             },
             "detour": {
               "type": "string",
@@ -11036,6 +11744,12 @@
             },
             "tag": {
               "type": "string"
+            },
+            "_tag": {
+              "type": "string"
+            },
+            "_order": {
+              "type": "integer"
             }
           },
           "required": [
@@ -11051,6 +11765,12 @@
             },
             "tag": {
               "type": "string"
+            },
+            "_tag": {
+              "type": "string"
+            },
+            "_order": {
+              "type": "integer"
             },
             "interface": {
               "type": "string"
@@ -11079,6 +11799,12 @@
             "tag": {
               "type": "string"
             },
+            "_tag": {
+              "type": "string"
+            },
+            "_order": {
+              "type": "integer"
+            },
             "outbounds": {
               "type": "array",
               "items": {
@@ -11100,6 +11826,12 @@
             },
             "tag": {
               "type": "string"
+            },
+            "_tag": {
+              "type": "string"
+            },
+            "_order": {
+              "type": "integer"
             },
             "detour": {
               "type": "string",
@@ -11214,6 +11946,12 @@
             },
             "tag": {
               "type": "string"
+            },
+            "_tag": {
+              "type": "string"
+            },
+            "_order": {
+              "type": "integer"
             },
             "detour": {
               "type": "string",
@@ -11351,6 +12089,12 @@
             },
             "tag": {
               "type": "string"
+            },
+            "_tag": {
+              "type": "string"
+            },
+            "_order": {
+              "type": "integer"
             },
             "detour": {
               "type": "string",
@@ -11600,6 +12344,12 @@
             "tag": {
               "type": "string"
             },
+            "_tag": {
+              "type": "string"
+            },
+            "_order": {
+              "type": "integer"
+            },
             "detour": {
               "type": "string",
               "x-tag-reference": "outbound"
@@ -11737,6 +12487,12 @@
                 {
                   "type": "object",
                   "properties": {
+                    "_tag": {
+                      "type": "string"
+                    },
+                    "_order": {
+                      "type": "integer"
+                    },
                     "type": {
                       "const": "salamander"
                     },
@@ -11752,6 +12508,12 @@
                 {
                   "type": "object",
                   "properties": {
+                    "_tag": {
+                      "type": "string"
+                    },
+                    "_order": {
+                      "type": "integer"
+                    },
                     "type": {
                       "const": "gecko"
                     },
@@ -11868,6 +12630,12 @@
             "tag": {
               "type": "string"
             },
+            "_tag": {
+              "type": "string"
+            },
+            "_order": {
+              "type": "integer"
+            },
             "outbounds": {
               "type": "array",
               "items": {
@@ -11923,6 +12691,12 @@
             },
             "tag": {
               "type": "string"
+            },
+            "_tag": {
+              "type": "string"
+            },
+            "_order": {
+              "type": "integer"
             },
             "detour": {
               "type": "string",
@@ -12062,6 +12836,12 @@
                 {
                   "type": "object",
                   "properties": {
+                    "_tag": {
+                      "type": "string"
+                    },
+                    "_order": {
+                      "type": "integer"
+                    },
                     "enabled": {
                       "type": "boolean"
                     },
@@ -12120,6 +12900,12 @@
             "tag": {
               "type": "string"
             },
+            "_tag": {
+              "type": "string"
+            },
+            "_order": {
+              "type": "integer"
+            },
             "outbounds": {
               "type": "array",
               "items": {
@@ -12164,6 +12950,12 @@
             },
             "tag": {
               "type": "string"
+            },
+            "_tag": {
+              "type": "string"
+            },
+            "_order": {
+              "type": "integer"
             },
             "detour": {
               "type": "string",
@@ -12333,6 +13125,12 @@
                 {
                   "type": "object",
                   "properties": {
+                    "_tag": {
+                      "type": "string"
+                    },
+                    "_order": {
+                      "type": "integer"
+                    },
                     "enabled": {
                       "type": "boolean"
                     },
@@ -12367,6 +13165,12 @@
             },
             "tag": {
               "type": "string"
+            },
+            "_tag": {
+              "type": "string"
+            },
+            "_order": {
+              "type": "integer"
             },
             "detour": {
               "type": "string",
@@ -12505,6 +13309,12 @@
                 },
                 "tag": {
                   "type": "string"
+                },
+                "_tag": {
+                  "type": "string"
+                },
+                "_order": {
+                  "type": "integer"
                 },
                 "version": {
                   "const": 4
@@ -12673,6 +13483,12 @@
                 "tag": {
                   "type": "string"
                 },
+                "_tag": {
+                  "type": "string"
+                },
+                "_order": {
+                  "type": "integer"
+                },
                 "version": {
                   "const": 6
                 },
@@ -12839,6 +13655,12 @@
             "tag": {
               "type": "string"
             },
+            "_tag": {
+              "type": "string"
+            },
+            "_order": {
+              "type": "integer"
+            },
             "detour": {
               "type": "string",
               "x-tag-reference": "outbound"
@@ -12989,6 +13811,12 @@
                 {
                   "type": "object",
                   "properties": {
+                    "_tag": {
+                      "type": "string"
+                    },
+                    "_order": {
+                      "type": "integer"
+                    },
                     "enabled": {
                       "type": "boolean"
                     },
@@ -13020,6 +13848,12 @@
             },
             "tag": {
               "type": "string"
+            },
+            "_tag": {
+              "type": "string"
+            },
+            "_order": {
+              "type": "integer"
             },
             "detour": {
               "type": "string",
@@ -13236,6 +14070,12 @@
             "tag": {
               "type": "string"
             },
+            "_tag": {
+              "type": "string"
+            },
+            "_order": {
+              "type": "integer"
+            },
             "detour": {
               "type": "string",
               "x-tag-reference": "outbound"
@@ -13367,6 +14207,12 @@
             },
             "tag": {
               "type": "string"
+            },
+            "_tag": {
+              "type": "string"
+            },
+            "_order": {
+              "type": "integer"
             },
             "detour": {
               "type": "string",
@@ -13522,6 +14368,12 @@
             },
             "tag": {
               "type": "string"
+            },
+            "_tag": {
+              "type": "string"
+            },
+            "_order": {
+              "type": "integer"
             },
             "detour": {
               "type": "string",
@@ -13736,6 +14588,12 @@
             "tag": {
               "type": "string"
             },
+            "_tag": {
+              "type": "string"
+            },
+            "_order": {
+              "type": "integer"
+            },
             "outbounds": {
               "type": "array",
               "items": {
@@ -13784,6 +14642,12 @@
             },
             "tag": {
               "type": "string"
+            },
+            "_tag": {
+              "type": "string"
+            },
+            "_order": {
+              "type": "integer"
             },
             "detour": {
               "type": "string",
@@ -13945,6 +14809,12 @@
             },
             "tag": {
               "type": "string"
+            },
+            "_tag": {
+              "type": "string"
+            },
+            "_order": {
+              "type": "integer"
             },
             "detour": {
               "type": "string",
@@ -14124,6 +14994,12 @@
     "OutboundECHOptions": {
       "type": "object",
       "properties": {
+        "_tag": {
+          "type": "string"
+        },
+        "_order": {
+          "type": "integer"
+        },
         "enabled": {
           "type": "boolean"
         },
@@ -14152,6 +15028,12 @@
     "OutboundMultiplexOptions": {
       "type": "object",
       "properties": {
+        "_tag": {
+          "type": "string"
+        },
+        "_order": {
+          "type": "integer"
+        },
         "enabled": {
           "type": "boolean"
         },
@@ -14184,6 +15066,12 @@
     "OutboundRealityOptions": {
       "type": "object",
       "properties": {
+        "_tag": {
+          "type": "string"
+        },
+        "_order": {
+          "type": "integer"
+        },
         "enabled": {
           "type": "boolean"
         },
@@ -14199,6 +15087,12 @@
     "OutboundTLSOptions": {
       "type": "object",
       "properties": {
+        "_tag": {
+          "type": "string"
+        },
+        "_order": {
+          "type": "integer"
+        },
         "enabled": {
           "type": "boolean"
         },
@@ -14468,6 +15362,12 @@
     "OutboundUTLSOptions": {
       "type": "object",
       "properties": {
+        "_tag": {
+          "type": "string"
+        },
+        "_order": {
+          "type": "integer"
+        },
         "enabled": {
           "type": "boolean"
         },
@@ -14504,6 +15404,12 @@
             },
             "tag": {
               "type": "string"
+            },
+            "_tag": {
+              "type": "string"
+            },
+            "_order": {
+              "type": "integer"
             },
             "url": {
               "type": "string"
@@ -14546,6 +15452,12 @@
     "ProviderOutboundsOptions": {
       "type": "object",
       "properties": {
+        "_tag": {
+          "type": "string"
+        },
+        "_order": {
+          "type": "integer"
+        },
         "detour": {
           "type": "string",
           "x-tag-reference": "outbound"
@@ -14651,6 +15563,12 @@
     "RouteOptions": {
       "type": "object",
       "properties": {
+        "_tag": {
+          "type": "string"
+        },
+        "_order": {
+          "type": "integer"
+        },
         "rules": {
           "type": "array",
           "items": {
@@ -15744,6 +16662,12 @@
         {
           "type": "object",
           "properties": {
+            "_tag": {
+              "type": "string"
+            },
+            "_order": {
+              "type": "integer"
+            },
             "type": {
               "type": "string",
               "enum": [
@@ -15779,6 +16703,12 @@
         {
           "type": "object",
           "properties": {
+            "_tag": {
+              "type": "string"
+            },
+            "_order": {
+              "type": "integer"
+            },
             "type": {
               "const": "local"
             },
@@ -15815,6 +16745,12 @@
         {
           "type": "object",
           "properties": {
+            "_tag": {
+              "type": "string"
+            },
+            "_order": {
+              "type": "integer"
+            },
             "type": {
               "const": "remote"
             },
@@ -15862,6 +16798,12 @@
     "ServerOptions": {
       "type": "object",
       "properties": {
+        "_tag": {
+          "type": "string"
+        },
+        "_order": {
+          "type": "integer"
+        },
         "server": {
           "type": "string"
         },
@@ -15883,6 +16825,12 @@
             },
             "tag": {
               "type": "string"
+            },
+            "_tag": {
+              "type": "string"
+            },
+            "_order": {
+              "type": "integer"
             },
             "listen": {
               "type": "string"
@@ -15977,6 +16925,12 @@
                 {
                   "type": "object",
                   "properties": {
+                    "_tag": {
+                      "type": "string"
+                    },
+                    "_order": {
+                      "type": "integer"
+                    },
                     "enabled": {
                       "type": "boolean"
                     },
@@ -16014,6 +16968,12 @@
             },
             "tag": {
               "type": "string"
+            },
+            "_tag": {
+              "type": "string"
+            },
+            "_order": {
+              "type": "integer"
             },
             "listen": {
               "type": "string"
@@ -16103,6 +17063,12 @@
             "tag": {
               "type": "string"
             },
+            "_tag": {
+              "type": "string"
+            },
+            "_order": {
+              "type": "integer"
+            },
             "listen": {
               "type": "string"
             },
@@ -16187,6 +17153,12 @@
                     {
                       "type": "object",
                       "properties": {
+                        "_tag": {
+                          "type": "string"
+                        },
+                        "_order": {
+                          "type": "integer"
+                        },
                         "tag": {
                           "type": "string"
                         },
@@ -16369,6 +17341,12 @@
                       {
                         "type": "object",
                         "properties": {
+                          "_tag": {
+                            "type": "string"
+                          },
+                          "_order": {
+                            "type": "integer"
+                          },
                           "tag": {
                             "type": "string"
                           },
@@ -16576,6 +17554,12 @@
                 {
                   "type": "object",
                   "properties": {
+                    "_tag": {
+                      "type": "string"
+                    },
+                    "_order": {
+                      "type": "integer"
+                    },
                     "enabled": {
                       "type": "boolean"
                     },
@@ -16653,6 +17637,12 @@
             },
             "tag": {
               "type": "string"
+            },
+            "_tag": {
+              "type": "string"
+            },
+            "_order": {
+              "type": "integer"
             },
             "listen": {
               "type": "string"
@@ -16764,6 +17754,12 @@
             "tag": {
               "type": "string"
             },
+            "_tag": {
+              "type": "string"
+            },
+            "_order": {
+              "type": "integer"
+            },
             "listen": {
               "type": "string"
             },
@@ -16852,6 +17848,12 @@
             "tag": {
               "type": "string"
             },
+            "_tag": {
+              "type": "string"
+            },
+            "_order": {
+              "type": "integer"
+            },
             "memory_limit": {
               "anyOf": [
                 {
@@ -16894,6 +17896,12 @@
             },
             "tag": {
               "type": "string"
+            },
+            "_tag": {
+              "type": "string"
+            },
+            "_order": {
+              "type": "integer"
             },
             "listen": {
               "type": "string"
@@ -16964,6 +17972,12 @@
             },
             "tag": {
               "type": "string"
+            },
+            "_tag": {
+              "type": "string"
+            },
+            "_order": {
+              "type": "integer"
             },
             "listen": {
               "type": "string"
@@ -17046,6 +18060,12 @@
             },
             "tag": {
               "type": "string"
+            },
+            "_tag": {
+              "type": "string"
+            },
+            "_order": {
+              "type": "integer"
             },
             "detour": {
               "type": "string",
@@ -17177,6 +18197,12 @@
                 "tag": {
                   "type": "string"
                 },
+                "_tag": {
+                  "type": "string"
+                },
+                "_order": {
+                  "type": "integer"
+                },
                 "provider": {
                   "type": "string",
                   "enum": [
@@ -17260,6 +18286,12 @@
                 "tag": {
                   "type": "string"
                 },
+                "_tag": {
+                  "type": "string"
+                },
+                "_order": {
+                  "type": "integer"
+                },
                 "provider": {
                   "const": "dynamic"
                 },
@@ -17332,6 +18364,12 @@
     "ShadowTLSHandshakeOptions": {
       "type": "object",
       "properties": {
+        "_tag": {
+          "type": "string"
+        },
+        "_order": {
+          "type": "integer"
+        },
         "server": {
           "type": "string"
         },
@@ -17445,6 +18483,12 @@
     "ShadowTLSUser": {
       "type": "object",
       "properties": {
+        "_tag": {
+          "type": "string"
+        },
+        "_order": {
+          "type": "integer"
+        },
         "name": {
           "type": "string"
         },
@@ -17457,6 +18501,12 @@
     "ShadowsocksDestination": {
       "type": "object",
       "properties": {
+        "_tag": {
+          "type": "string"
+        },
+        "_order": {
+          "type": "integer"
+        },
         "name": {
           "type": "string"
         },
@@ -17477,6 +18527,12 @@
     "ShadowsocksUser": {
       "type": "object",
       "properties": {
+        "_tag": {
+          "type": "string"
+        },
+        "_order": {
+          "type": "integer"
+        },
         "name": {
           "type": "string"
         },
@@ -17489,6 +18545,12 @@
     "SnellUser": {
       "type": "object",
       "properties": {
+        "_tag": {
+          "type": "string"
+        },
+        "_order": {
+          "type": "integer"
+        },
         "name": {
           "type": "string"
         },
@@ -17501,6 +18563,12 @@
     "TUICUser": {
       "type": "object",
       "properties": {
+        "_tag": {
+          "type": "string"
+        },
+        "_order": {
+          "type": "integer"
+        },
         "name": {
           "type": "string"
         },
@@ -17516,6 +18584,12 @@
     "TrojanUser": {
       "type": "object",
       "properties": {
+        "_tag": {
+          "type": "string"
+        },
+        "_order": {
+          "type": "integer"
+        },
         "name": {
           "type": "string"
         },
@@ -17528,6 +18602,12 @@
     "TunPlatformOptions": {
       "type": "object",
       "properties": {
+        "_tag": {
+          "type": "string"
+        },
+        "_order": {
+          "type": "integer"
+        },
         "http_proxy": {
           "$ref": "#/$defs/HTTPProxyOptions"
         }
@@ -17550,6 +18630,12 @@
     "USBIPDeviceMatch": {
       "type": "object",
       "properties": {
+        "_tag": {
+          "type": "string"
+        },
+        "_order": {
+          "type": "integer"
+        },
         "bus_id": {
           "type": "string"
         },
@@ -17572,6 +18658,12 @@
     "User": {
       "type": "object",
       "properties": {
+        "_tag": {
+          "type": "string"
+        },
+        "_order": {
+          "type": "integer"
+        },
         "Username": {
           "type": "string"
         },
@@ -17584,6 +18676,12 @@
     "V2RayAPIOptions": {
       "type": "object",
       "properties": {
+        "_tag": {
+          "type": "string"
+        },
+        "_order": {
+          "type": "integer"
+        },
         "listen": {
           "type": "string"
         },
@@ -17596,6 +18694,12 @@
     "V2RayStatsServiceOptions": {
       "type": "object",
       "properties": {
+        "_tag": {
+          "type": "string"
+        },
+        "_order": {
+          "type": "integer"
+        },
         "enabled": {
           "type": "boolean"
         },
@@ -17625,6 +18729,12 @@
         {
           "type": "object",
           "properties": {
+            "_tag": {
+              "type": "string"
+            },
+            "_order": {
+              "type": "integer"
+            },
             "type": {
               "const": "http"
             },
@@ -17665,6 +18775,12 @@
         {
           "type": "object",
           "properties": {
+            "_tag": {
+              "type": "string"
+            },
+            "_order": {
+              "type": "integer"
+            },
             "type": {
               "const": "ws"
             },
@@ -17691,6 +18807,12 @@
         {
           "type": "object",
           "properties": {
+            "_tag": {
+              "type": "string"
+            },
+            "_order": {
+              "type": "integer"
+            },
             "type": {
               "const": "quic"
             }
@@ -17703,6 +18825,12 @@
         {
           "type": "object",
           "properties": {
+            "_tag": {
+              "type": "string"
+            },
+            "_order": {
+              "type": "integer"
+            },
             "type": {
               "const": "grpc"
             },
@@ -17727,6 +18855,12 @@
         {
           "type": "object",
           "properties": {
+            "_tag": {
+              "type": "string"
+            },
+            "_order": {
+              "type": "integer"
+            },
             "type": {
               "const": "httpupgrade"
             },
@@ -17750,6 +18884,12 @@
     "VLESSUser": {
       "type": "object",
       "properties": {
+        "_tag": {
+          "type": "string"
+        },
+        "_order": {
+          "type": "integer"
+        },
         "name": {
           "type": "string"
         },
@@ -17765,6 +18905,12 @@
     "VMessUser": {
       "type": "object",
       "properties": {
+        "_tag": {
+          "type": "string"
+        },
+        "_order": {
+          "type": "integer"
+        },
         "name": {
           "type": "string"
         },
@@ -17780,6 +18926,12 @@
     "WireGuardPeer": {
       "type": "object",
       "properties": {
+        "_tag": {
+          "type": "string"
+        },
+        "_order": {
+          "type": "integer"
+        },
         "address": {
           "type": "string"
         },

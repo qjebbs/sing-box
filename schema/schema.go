@@ -30,11 +30,15 @@ type Node struct {
 }
 
 func StrictObject() *Node {
-	return &Node{
+	node := &Node{
 		Type:                 "object",
 		Properties:           new(badjson.TypedMap[string, *Node]),
 		AdditionalProperties: false,
 	}
+	// Allow the auxiliary metadata fields `_tag` and `_order` at any level.
+	node.Properties.Put("_tag", StringNode())
+	node.Properties.Put("_order", IntegerNode())
+	return node
 }
 
 func LooseObject() *Node {
