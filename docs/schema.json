@@ -84,6 +84,12 @@
         "$ref": "#/$defs/HTTPClient"
       }
     },
+    "health_checks": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/HealthCheck"
+      }
+    },
     "network_namespaces": {
       "type": "array",
       "items": {
@@ -110,6 +116,12 @@
     },
     "route": {
       "$ref": "#/$defs/RouteOptions"
+    },
+    "providers": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/Provider"
+      }
     },
     "services": {
       "type": "array",
@@ -5569,6 +5581,61 @@
         }
       ]
     },
+    "HealthCheck": {
+      "type": "object",
+      "properties": {
+        "tag": {
+          "type": "string"
+        },
+        "interval": {
+          "$ref": "#/$defs/Duration"
+        },
+        "sampling": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "destination": {
+          "type": "string"
+        },
+        "detour_of": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "HealthCheckReference": {
+      "anyOf": [
+        {
+          "type": "string",
+          "x-tag-reference": "health_check"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "interval": {
+              "$ref": "#/$defs/Duration"
+            },
+            "sampling": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "destination": {
+              "type": "string"
+            },
+            "detour_of": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          },
+          "additionalProperties": false
+        }
+      ]
+    },
     "Hysteria2InboundRealm": {
       "type": "object",
       "properties": {
@@ -8525,6 +8592,106 @@
         "wifi"
       ]
     },
+    "LoadBalancePickBias": {
+      "type": "object",
+      "properties": {
+        "contains": {
+          "type": "string"
+        },
+        "prefix": {
+          "type": "string"
+        },
+        "suffix": {
+          "type": "string"
+        },
+        "regexp": {
+          "type": "string"
+        },
+        "rtt_scale": {
+          "type": "number"
+        }
+      },
+      "additionalProperties": false
+    },
+    "LoadBalancePickOptions": {
+      "type": "object",
+      "properties": {
+        "objective": {
+          "type": "string"
+        },
+        "strategy": {
+          "type": "string"
+        },
+        "max_fail": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "max_rtt": {
+          "$ref": "#/$defs/Duration"
+        },
+        "expected": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "baselines": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Duration"
+          }
+        },
+        "biases": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/LoadBalancePickBias"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "LoadBalanceProfileOptions": {
+      "type": "object",
+      "properties": {
+        "tag": {
+          "type": "string"
+        },
+        "exclude": {
+          "type": "string"
+        },
+        "include": {
+          "type": "string"
+        },
+        "objective": {
+          "type": "string"
+        },
+        "strategy": {
+          "type": "string"
+        },
+        "max_fail": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "max_rtt": {
+          "$ref": "#/$defs/Duration"
+        },
+        "expected": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "baselines": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Duration"
+          }
+        },
+        "biases": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/LoadBalancePickBias"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
     "LogOptions": {
       "type": "object",
       "properties": {
@@ -10907,6 +11074,27 @@
           "type": "object",
           "properties": {
             "type": {
+              "const": "chain"
+            },
+            "tag": {
+              "type": "string"
+            },
+            "outbounds": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          },
+          "required": [
+            "type"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
               "const": "direct"
             },
             "tag": {
@@ -11674,6 +11862,61 @@
           "type": "object",
           "properties": {
             "type": {
+              "const": "loadbalance"
+            },
+            "tag": {
+              "type": "string"
+            },
+            "outbounds": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "x-tag-reference": "outbound"
+              }
+            },
+            "providers": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "all_providers": {
+              "type": "boolean"
+            },
+            "exclude": {
+              "type": "string"
+            },
+            "include": {
+              "type": "string"
+            },
+            "health_check": {
+              "$ref": "#/$defs/HealthCheckReference"
+            },
+            "pick": {
+              "$ref": "#/$defs/LoadBalancePickOptions"
+            },
+            "profiles": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/LoadBalanceProfileOptions"
+              }
+            },
+            "log_health": {
+              "type": "boolean"
+            },
+            "interrupt_exist_connections": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "type"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
               "const": "naive"
             },
             "tag": {
@@ -11881,6 +12124,21 @@
                 "type": "string",
                 "x-tag-reference": "outbound"
               }
+            },
+            "providers": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "all_providers": {
+              "type": "boolean"
+            },
+            "exclude": {
+              "type": "string"
+            },
+            "include": {
+              "type": "string"
             },
             "default": {
               "type": "string",
@@ -13482,19 +13740,28 @@
                 "x-tag-reference": "outbound"
               }
             },
-            "url": {
+            "providers": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "all_providers": {
+              "type": "boolean"
+            },
+            "exclude": {
               "type": "string"
             },
-            "interval": {
-              "$ref": "#/$defs/Duration"
+            "include": {
+              "type": "string"
+            },
+            "health_check": {
+              "$ref": "#/$defs/HealthCheckReference"
             },
             "tolerance": {
               "type": "integer",
               "minimum": 0,
               "maximum": 65535
-            },
-            "idle_timeout": {
-              "$ref": "#/$defs/Duration"
             },
             "interrupt_exist_connections": {
               "type": "boolean"
@@ -14082,6 +14349,43 @@
             }
           ]
         },
+        "certificate_sha256": {
+          "anyOf": [
+            {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "array",
+                  "items": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 255
+                  }
+                }
+              ]
+            },
+            {
+              "type": "array",
+              "items": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "array",
+                    "items": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 255
+                    }
+                  }
+                ]
+              }
+            }
+          ]
+        },
         "client_certificate": {
           "anyOf": [
             {
@@ -14182,6 +14486,160 @@
             "random",
             "randomized"
           ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "Provider": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "const": "http"
+            },
+            "tag": {
+              "type": "string"
+            },
+            "url": {
+              "type": "string"
+            },
+            "interval": {
+              "$ref": "#/$defs/Duration"
+            },
+            "cache_file": {
+              "type": "string"
+            },
+            "http_client": {
+              "$ref": "#/$defs/HTTPClientReference"
+            },
+            "disable_user_agent": {
+              "type": "boolean"
+            },
+            "exclude": {
+              "type": "string"
+            },
+            "include": {
+              "type": "string"
+            },
+            "dedup_host": {
+              "type": "boolean"
+            },
+            "dedup_host_port": {
+              "type": "boolean"
+            },
+            "outbounds_default": {
+              "$ref": "#/$defs/ProviderOutboundsOptions"
+            }
+          },
+          "required": [
+            "type"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "ProviderOutboundsOptions": {
+      "type": "object",
+      "properties": {
+        "detour": {
+          "type": "string",
+          "x-tag-reference": "outbound"
+        },
+        "bind_interface": {
+          "type": "string"
+        },
+        "inet4_bind_address": {
+          "type": "string"
+        },
+        "inet6_bind_address": {
+          "type": "string"
+        },
+        "bind_address_no_port": {
+          "type": "boolean"
+        },
+        "protect_path": {
+          "type": "string"
+        },
+        "routing_mark": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 4294967295
+            },
+            {
+              "type": "string"
+            }
+          ]
+        },
+        "reuse_addr": {
+          "type": "boolean"
+        },
+        "netns": {
+          "type": "string",
+          "x-tag-reference": "network_namespace"
+        },
+        "connect_timeout": {
+          "$ref": "#/$defs/Duration"
+        },
+        "tcp_fast_open": {
+          "type": "boolean"
+        },
+        "tcp_multi_path": {
+          "type": "boolean"
+        },
+        "disable_tcp_keep_alive": {
+          "type": "boolean"
+        },
+        "tcp_keep_alive": {
+          "$ref": "#/$defs/Duration"
+        },
+        "tcp_keep_alive_interval": {
+          "$ref": "#/$defs/Duration"
+        },
+        "udp_fragment": {
+          "type": "boolean"
+        },
+        "domain_resolver": {
+          "$ref": "#/$defs/DomainResolver"
+        },
+        "network_strategy": {
+          "type": "string",
+          "enum": [
+            "default",
+            "fallback",
+            "hybrid"
+          ]
+        },
+        "network_type": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/InterfaceType"
+            },
+            {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/InterfaceType"
+              }
+            }
+          ]
+        },
+        "fallback_network_type": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/InterfaceType"
+            },
+            {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/InterfaceType"
+              }
+            }
+          ]
+        },
+        "fallback_delay": {
+          "$ref": "#/$defs/Duration"
         }
       },
       "additionalProperties": false
