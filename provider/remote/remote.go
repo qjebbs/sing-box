@@ -21,6 +21,7 @@ import (
 	"github.com/sagernet/sing/common"
 	E "github.com/sagernet/sing/common/exceptions"
 	F "github.com/sagernet/sing/common/format"
+	"github.com/sagernet/sing/common/json/badoption"
 	"github.com/sagernet/sing/service"
 )
 
@@ -48,19 +49,10 @@ type Remote struct {
 	logFactory log.Factory
 	logger     log.ContextLogger
 	tag        string
-
-	url            string
-	interval       time.Duration
-	cacheFile      string
-	downloadDetour string
-	exclude        *regexp.Regexp
-	include        *regexp.Regexp
-	dedupHost      bool
-	dedupHostPort  bool
-	userAgent      string
-	disableUA      bool
-	options        option.RemoteProviderOptions
-	defaultOptions option.ProviderOutboundsOptions
+	userAgent  string
+	exclude    *regexp.Regexp
+	include    *regexp.Regexp
+	options    option.RemoteProviderOptions
 
 	sync.Mutex
 	*adapter.ProviderInfo
@@ -83,17 +75,17 @@ func NewRemote(ctx context.Context, router adapter.Router, logFactory log.Factor
 		return nil, E.New("provider URL is required")
 	}
 	var (
-		err              error
-		exclude, include *regexp.Regexp
+		err                          error
+		excludeRegexp, includeRegexp *regexp.Regexp
 	)
 	if options.Exclude != "" {
-		exclude, err = regexp.Compile(options.Exclude)
+		excludeRegexp, err = regexp.Compile(options.Exclude)
 		if err != nil {
 			return nil, err
 		}
 	}
 	if options.Include != "" {
-		include, err = regexp.Compile(options.Include)
+		includeRegexp, err = regexp.Compile(options.Include)
 		if err != nil {
 			return nil, err
 		}
@@ -107,6 +99,7 @@ func NewRemote(ctx context.Context, router adapter.Router, logFactory log.Factor
 		// minimum interval is 1 minute
 		interval = time.Minute
 	}
+	options.Interval = badoption.Duration(interval)
 	ua := "ProxySubscriber/0.6.0  Shadowrocket/2070"
 	logger := logFactory.NewLogger(F.ToString("provider/remote", "[", tag, "]"))
 	return &Remote{
@@ -116,19 +109,11 @@ func NewRemote(ctx context.Context, router adapter.Router, logFactory log.Factor
 		logFactory: logFactory,
 		outbound:   service.FromContext[adapter.OutboundManager](ctx),
 
-		tag:            tag,
-		url:            options.URL,
-		interval:       interval,
-		cacheFile:      options.CacheFile,
-		downloadDetour: options.DownloadDetour,
-		userAgent:      ua,
-		disableUA:      options.DisableUserAgent,
-		exclude:        exclude,
-		include:        include,
-		dedupHost:      options.DedupHost,
-		dedupHostPort:  options.DedupHostPort,
-		options:        options,
-		defaultOptions: options.OutboundsDefault,
+		tag:       tag,
+		userAgent: ua,
+		exclude:   excludeRegexp,
+		include:   includeRegexp,
+		options:   options,
 
 		ctx:     ctx,
 		chReady: make(chan struct{}),
@@ -212,7 +197,7 @@ func (s *Remote) Ready() <-chan struct{} {
 }
 
 func (s *Remote) refreshLoop() {
-	ticker := time.NewTicker(s.interval)
+	ticker := time.NewTicker(time.Duration(s.options.Interval))
 	defer ticker.Stop()
 	if err := s.Update(); err != nil {
 		s.logger.Error(err)
@@ -289,9 +274,18 @@ func (s *Remote) updateOutbounds(content string) {
 	outbounds := make([]adapter.Outbound, 0)
 	outboundsByTag := make(map[string]adapter.Outbound)
 
-	links := s.parseLinks(content, s.dedupHost, s.dedupHostPort)
+	links := s.parseLinks(content, s.options.DedupHost, s.options.DedupHostPort)
 	for _, link := range links {
-		outbound, err := s.createOutbound(link)
+		opt, err := link.Link.Outbound(s.options.OutboundsDefault)
+		if err != nil {
+			s.logger.Warn("line ", link.Line, ": make options:", err)
+			continue
+		}
+		if !s.matchExcludeInclude(opt.Tag) {
+			s.logger.Info("outbound ", opt.Tag, " filtered out by exclude/include")
+			continue
+		}
+		outbound, err := s.createOutbound(opt)
 		if err != nil {
 			s.logger.Warn("line ", link.Line, ": ", err)
 			continue
@@ -367,13 +361,23 @@ func (s *Remote) parseLinks(content string, dedupHost, dedupHostPort bool) []*pa
 	return common.Reverse(deduped)
 }
 
-func (s *Remote) createOutbound(lnk *parsedLink) (adapter.Outbound, error) {
-	opt, err := lnk.Link.Outbound(s.defaultOptions)
-	if err != nil {
-		return nil, E.New("line ", lnk.Line, ": make options:", err)
+// matchExcludeInclude reports whether a node with the given tag should be
+// kept, according to the exclude and include regular expressions.
+// A node is kept only when it does not match exclude and (if include is
+// configured) matches include. The priority of exclude is higher than include.
+func (s *Remote) matchExcludeInclude(tag string) bool {
+	if s.exclude != nil && s.exclude.MatchString(tag) {
+		return false
 	}
+	if s.include != nil && !s.include.MatchString(tag) {
+		return false
+	}
+	return true
+}
+
+func (s *Remote) createOutbound(opt *option.Outbound) (adapter.Outbound, error) {
 	tag := s.tag + "/" + opt.Tag
-	err = s.outbound.Create(
+	err := s.outbound.Create(
 		s.parentCtx,
 		s.router,
 		s.logFactory.NewLogger(F.ToString("provider/", opt.Type, "[", tag, "]")),
@@ -394,8 +398,8 @@ func (s *Remote) createOutbound(lnk *parsedLink) (adapter.Outbound, error) {
 func (s *Remote) downloadWithCache() (*fileContent, error) {
 	fc, err := s.download()
 	if err == nil {
-		if s.cacheFile != "" {
-			if err := saveCacheIfNeed(s.cacheFile, fc); err != nil {
+		if s.options.CacheFile != "" {
+			if err := saveCacheIfNeed(s.options.CacheFile, fc); err != nil {
 				s.logger.Error(E.Cause(err, "save cache file"))
 			}
 		}
@@ -405,10 +409,10 @@ func (s *Remote) downloadWithCache() (*fileContent, error) {
 	if s.loadedHash != "" {
 		return nil, errfetch
 	}
-	if s.cacheFile == "" {
+	if s.options.CacheFile == "" {
 		return nil, err
 	}
-	fc, err = loadCache(s.cacheFile)
+	fc, err = loadCache(s.options.CacheFile)
 	if err == nil {
 		s.logger.Info("cache file loaded due to: ", errfetch)
 		return fc, nil
@@ -422,11 +426,11 @@ func (s *Remote) download() (*fileContent, error) {
 		return nil, E.New("http client not initialized")
 	}
 	defer s.httpClient.CloseIdleConnections()
-	req, err := http.NewRequestWithContext(s.ctx, http.MethodGet, s.url, nil)
+	req, err := http.NewRequestWithContext(s.ctx, http.MethodGet, s.options.URL, nil)
 	if err != nil {
 		return nil, err
 	}
-	if !s.disableUA {
+	if !s.options.DisableUserAgent {
 		req.Header.Set("User-Agent", s.userAgent)
 	}
 	resp, err := s.httpClient.Do(req)
@@ -447,16 +451,16 @@ func (s *Remote) download() (*fileContent, error) {
 func (s *Remote) resolveTransport() (adapter.HTTPTransport, error) {
 	httpClientManager := service.FromContext[adapter.HTTPClientManager](s.ctx)
 	if s.options.HTTPClient != nil && !s.options.HTTPClient.IsEmpty() {
-		if s.downloadDetour != "" { //nolint:staticcheck
+		if s.options.DownloadDetour != "" { //nolint:staticcheck
 			return nil, E.New("http_client is conflict with deprecated download_detour field")
 		}
 		return httpClientManager.ResolveTransport(s.ctx, s.logger, *s.options.HTTPClient)
 	}
-	if s.downloadDetour != "" { //nolint:staticcheck
+	if s.options.DownloadDetour != "" { //nolint:staticcheck
 		deprecated.Report(s.ctx, deprecated.OptionLegacyProviderDownloadDetour)
 		return httpClientManager.ResolveTransport(s.ctx, s.logger, option.HTTPClientOptions{
 			DialerOptions: option.DialerOptions{
-				Detour: s.downloadDetour, //nolint:staticcheck
+				Detour: s.options.DownloadDetour, //nolint:staticcheck
 			},
 			DisableEmptyDirectCheck: true,
 		})
