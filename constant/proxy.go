@@ -43,8 +43,6 @@ const (
 	TypeHysteriaRealm      = "hysteria-realm"
 	TypeACME               = "acme"
 	TypeCloudflareOriginCA = "cloudflare-origin-ca"
-
-	TypeHealthChecker = "health-checker"
 )
 
 const (

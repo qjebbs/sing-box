@@ -5,7 +5,6 @@ import (
 	"time"
 
 	"github.com/sagernet/sing-box/adapter"
-	boxConstant "github.com/sagernet/sing-box/constant"
 )
 
 var _ adapter.Provider = (*mergedProvider)(nil)
@@ -38,7 +37,7 @@ func (m *mergedProvider) Set(namespace string, providers []adapter.Provider) {
 }
 
 func (m *mergedProvider) Tag() string          { return "" }
-func (m *mergedProvider) Type() string         { return boxConstant.TypeHealthChecker }
+func (m *mergedProvider) Type() string         { return "" }
 func (m *mergedProvider) Update() error        { return nil }
 func (m *mergedProvider) UpdatedAt() time.Time { return time.Time{} }
 func (m *mergedProvider) Wait() {

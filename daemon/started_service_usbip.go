@@ -9,7 +9,7 @@ import (
 	"sync/atomic"
 
 	"github.com/sagernet/sing-box/adapter"
-	usbip "github.com/sagernet/sing-usbip"
+	"github.com/sagernet/sing-usbip"
 	"github.com/sagernet/sing/common"
 	E "github.com/sagernet/sing/common/exceptions"
 	"github.com/sagernet/sing/service"
