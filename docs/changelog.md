@@ -2,6 +2,14 @@
 icon: material/alert-decagram
 ---
 
+#### 1.14.2
+
+* Fixes and improvements
+
+#### 1.14.1
+
+* Fixes and improvements
+
 #### 1.14.0
 
 Important changes since 1.13:
@@ -54,7 +62,7 @@ Important changes since 1.13:
 * Update gVisor to 20260727.0
 * Update Tailscale to v1.102.1
 * Update uTLS to v1.8.7
-* Update NaiveProxy to v150.0.7871.63-1
+* Update NaiveProxy to v150.0.7871.63-2
 
 **1**:
 

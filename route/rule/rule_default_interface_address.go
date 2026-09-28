@@ -29,6 +29,9 @@ func NewDefaultInterfaceAddressItem(networkManager adapter.NetworkManager, inter
 }
 
 func (r *DefaultInterfaceAddressItem) Match(metadata *adapter.InboundContext) bool {
+	if r.interfaceMonitor == nil {
+		return false
+	}
 	defaultInterface := r.interfaceMonitor.DefaultInterface()
 	if defaultInterface == nil {
 		return false

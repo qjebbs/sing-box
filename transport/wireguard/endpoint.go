@@ -202,28 +202,25 @@ func (e *Endpoint) Start(postStart bool) error {
 	}
 	wgDevice := device.NewDevice(e.options.Context, e.returnDevice, bind, logger, e.options.Workers)
 	e.tunDevice.SetDevice(wgDevice)
-	var ipcConf strings.Builder
-	ipcConf.WriteString(e.ipcConf)
-	for _, peer := range e.peers {
-		ipcConf.WriteString(peer.GenerateIpcLines())
-	}
-	err = wgDevice.IpcSet(ipcConf.String())
-	if err != nil {
-		wgDevice.Close()
-		return E.Cause(err, "setup wireguard: \n", ipcConf.String())
-	}
-	for _, peer := range e.peers {
+	domainPeers := make(map[device.NoisePublicKey]*peerConfig)
+	for peerIndex, peer := range e.peers {
 		if !peer.destination.IsDomain() {
 			continue
 		}
 		var publicKey device.NoisePublicKey
-		common.Must(publicKey.FromHex(peer.publicKeyHex))
-		wgPeer, found := wgDevice.LookupActivePeer(publicKey)
-		if !found {
+		err = publicKey.FromHex(peer.publicKeyHex)
+		if err != nil {
 			wgDevice.Close()
-			return E.New("missing configured peer: ", peer.destination)
+			return E.Cause(err, "decode public key for peer ", peerIndex)
 		}
-		wgPeer.SetEndpointResolver(func() ([]conn.Endpoint, error) {
+		domainPeers[publicKey] = &e.peers[peerIndex]
+	}
+	if len(domainPeers) > 0 {
+		wgDevice.SetEndpointResolverFunc(func(publicKey device.NoisePublicKey) ([]conn.Endpoint, error) {
+			peer, found := domainPeers[publicKey]
+			if !found {
+				return nil, nil
+			}
 			addresses, lookupErr := e.options.ResolvePeer(peer.destination.Fqdn)
 			if lookupErr != nil {
 				return nil, lookupErr
@@ -242,6 +239,16 @@ func (e *Endpoint) Start(postStart bool) error {
 			}
 			return endpoints, nil
 		})
+	}
+	var ipcConf strings.Builder
+	ipcConf.WriteString(e.ipcConf)
+	for _, peer := range e.peers {
+		ipcConf.WriteString(peer.GenerateIpcLines())
+	}
+	err = wgDevice.IpcSet(ipcConf.String())
+	if err != nil {
+		wgDevice.Close()
+		return E.Cause(err, "setup wireguard: \n", ipcConf.String())
 	}
 	e.device = wgDevice
 	e.pause = service.FromContext[pause.Manager](e.options.Context)
@@ -300,9 +307,9 @@ func (e *Endpoint) BindUpdate() error {
 
 func (e *Endpoint) onPauseUpdated(event int) {
 	switch event {
-	case pause.EventDevicePaused, pause.EventNetworkPause:
+	case pause.EventNetworkPause:
 		e.device.Down()
-	case pause.EventDeviceWake, pause.EventNetworkWake:
+	case pause.EventNetworkWake:
 		e.device.Up()
 	}
 }

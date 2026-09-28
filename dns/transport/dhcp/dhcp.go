@@ -109,7 +109,11 @@ func (t *Transport) Start(stage adapter.StartStage) error {
 		return nil
 	}
 	if t.interfaceName == "" {
-		t.interfaceCallback = t.networkManager.InterfaceMonitor().RegisterCallback(t.interfaceUpdated)
+		interfaceMonitor := t.networkManager.InterfaceMonitor()
+		if interfaceMonitor == nil {
+			return E.New("missing monitor for auto DHCP, set route.auto_detect_interface")
+		}
+		t.interfaceCallback = interfaceMonitor.RegisterCallback(t.interfaceUpdated)
 	}
 	go func() {
 		err := t.fetch()

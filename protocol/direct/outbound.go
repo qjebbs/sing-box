@@ -99,7 +99,11 @@ func (h *Outbound) Start(stage adapter.StartStage) error {
 }
 
 func (h *Outbound) fetchMyAddresses() {
-	myInterfaceNames := h.network.InterfaceMonitor().MyInterfaces()
+	interfaceMonitor := h.network.InterfaceMonitor()
+	if interfaceMonitor == nil {
+		return
+	}
+	myInterfaceNames := interfaceMonitor.MyInterfaces()
 	if len(myInterfaceNames) == 0 {
 		return
 	}

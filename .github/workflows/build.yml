@@ -54,7 +54,7 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@v5
         with:
-          go-version: 1.26.7
+          go-version: 1.26.8
           cache: false
       - name: Cache Go modules
         uses: actions/cache/restore@v4
@@ -145,7 +145,7 @@ jobs:
         if: ${{ ! matrix.legacy_win7 }}
         uses: actions/setup-go@v5
         with:
-          go-version: 1.26.7
+          go-version: 1.26.8
           cache: false
       - name: Cache Go modules
         uses: actions/cache/restore@v4
@@ -160,7 +160,7 @@ jobs:
         with:
           path: |
             ~/go/go_win7
-          key: go_win7_1267
+          key: go_win7_1268
       - name: Setup Go for Windows 7
         if: matrix.legacy_win7 && steps.cache-go-for-windows7.outputs.cache-hit != 'true'
         env:
@@ -488,7 +488,7 @@ jobs:
         if: ${{ ! matrix.legacy_osx }}
         uses: actions/setup-go@v5
         with:
-          go-version: 1.26.7
+          go-version: 1.26.8
           cache: false
       - name: Cache Go modules
         uses: actions/cache/restore@v4
@@ -503,7 +503,7 @@ jobs:
         with:
           path: |
             ~/go/go_osx
-          key: go_osx_1267
+          key: go_osx_1268
       - name: Setup Go for macOS 10.13
         if: matrix.legacy_osx && steps.cache-go-for-macos1013.outputs.cache-hit != 'true'
         env:
@@ -587,7 +587,7 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@v5
         with:
-          go-version: 1.26.7
+          go-version: 1.26.8
           cache: false
       - name: Cache Go modules
         uses: actions/cache@v4
@@ -690,7 +690,7 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@v5
         with:
-          go-version: 1.26.7
+          go-version: 1.26.8
           cache: false
       - name: Cache Go modules
         uses: actions/cache@v4
@@ -754,7 +754,7 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@v5
         with:
-          go-version: 1.26.7
+          go-version: 1.26.8
           cache: false
       - name: Cache Go modules
         uses: actions/cache/restore@v4
@@ -862,7 +862,7 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@v5
         with:
-          go-version: 1.26.7
+          go-version: 1.26.8
           cache: false
       - name: Cache Go modules
         uses: actions/cache/restore@v4
@@ -975,7 +975,7 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@v5
         with:
-          go-version: 1.26.7
+          go-version: 1.26.8
           cache: false
       - name: Cache Go modules
         uses: actions/cache@v4
@@ -1087,7 +1087,7 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@v5
         with:
-          go-version: 1.26.7
+          go-version: 1.26.8
           cache: false
       - name: Cache Go modules
         uses: actions/cache@v4
@@ -1214,7 +1214,7 @@ jobs:
           path: 'dist'
   build_apple_library:
     name: Build Apple library (${{ matrix.artifact }})
-    runs-on: ${{ matrix.build && 'macos-26' || 'ubuntu-latest' }}
+    runs-on: ${{ matrix.build && 'xcode-27' || 'ubuntu-latest' }}
     if: github.event_name != 'workflow_dispatch' || inputs.build == 'All' || inputs.build == 'Apple' || inputs.build == 'Apple-release' || inputs.build == 'iOS' || inputs.build == 'macOS' || inputs.build == 'tvOS' || inputs.build == 'macOS-standalone' || inputs.build == 'iOS-jailbreak'
     needs:
       - calculate_version
@@ -1244,8 +1244,11 @@ jobs:
         if: matrix.build
         uses: actions/setup-go@v5
         with:
-          go-version: 1.26.7
+          go-version: 1.26.8
           cache: false
+      - name: Patch Go for iOS
+        if: matrix.build && (matrix.platform == 'ios/arm64' || matrix.platform == 'tvos/arm64')
+        run: .github/patch_go_for_ios.sh
       - name: Cache Go modules
         if: matrix.build
         uses: actions/cache@v4
@@ -1258,13 +1261,15 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/Library/Caches/go-build
-          key: libbox-go-build-${{ matrix.artifact }}-1.26.7-${{ hashFiles('go.sum') }}
-          restore-keys: libbox-go-build-${{ matrix.artifact }}-1.26.7-
+          key: libbox-go-build-${{ matrix.artifact }}-1.26.8-${{ hashFiles('go.sum') }}
+          restore-keys: libbox-go-build-${{ matrix.artifact }}-1.26.8-
       - name: Set tag
         if: matrix.build
         run: git tag v${{ needs.calculate_version.outputs.version }} -f
       - name: Build library
         if: matrix.build
+        env:
+          GOTOOLCHAIN: local
         run: |-
           make lib_install
           export PATH="$PATH:$(go env GOPATH)/bin"
@@ -1280,7 +1285,7 @@ jobs:
           compression-level: 1
   build_apple:
     name: Build Apple release clients
-    runs-on: ${{ matrix.if && 'macos-26' || 'ubuntu-latest' }}
+    runs-on: ${{ matrix.if && 'xcode-27' || 'ubuntu-latest' }}
     if: github.event_name != 'workflow_dispatch' || inputs.build == 'All' || inputs.build == 'Apple-release' || inputs.build == 'macOS-standalone' || inputs.build == 'iOS-jailbreak'
     needs:
       - calculate_version
@@ -1326,7 +1331,7 @@ jobs:
         if: matrix.if
         uses: actions/setup-go@v5
         with:
-          go-version: 1.26.7
+          go-version: 1.26.8
           cache: false
       - name: Cache Go modules
         if: matrix.if
@@ -1370,10 +1375,10 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ${{ matrix.type == 'standalone' && 'clients/apple/build/SFM.System-*.dd' || matrix.type == 'jailbreak' && 'clients/apple/build/jailbreak/DerivedData' || format('{0}/DerivedData', runner.temp) }}
-          key: apple-derived-data-${{ matrix.type }}-${{ matrix.platform }}-${{ matrix.variant || 'default' }}-${{ hashFiles('clients/apple/sing-box.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved') }}-${{ github.sha }}
+          key: apple-derived-data-${{ matrix.type }}-${{ matrix.platform }}-${{ matrix.variant || 'default' }}-${{ github.ref_name }}-${{ hashFiles('clients/apple/sing-box.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved') }}-${{ github.sha }}
           restore-keys: |
-            apple-derived-data-${{ matrix.type }}-${{ matrix.platform }}-${{ matrix.variant || 'default' }}-${{ hashFiles('clients/apple/sing-box.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved') }}-
-            apple-derived-data-${{ matrix.type }}-${{ matrix.platform }}-${{ matrix.variant || 'default' }}-
+            apple-derived-data-${{ matrix.type }}-${{ matrix.platform }}-${{ matrix.variant || 'default' }}-${{ github.ref_name }}-${{ hashFiles('clients/apple/sing-box.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved') }}-
+            apple-derived-data-${{ matrix.type }}-${{ matrix.platform }}-${{ matrix.variant || 'default' }}-${{ github.ref_name }}-
       - name: Setup App Store Connect key
         if: matrix.if && matrix.type != 'jailbreak' && github.event_name == 'workflow_dispatch'
         run: |-
@@ -1554,7 +1559,7 @@ jobs:
             --api-key $ASC_KEY_ID \
             --api-issuer 00000000-0000-0000-0000-000000000000
       - name: Publish to TestFlight
-        if: matrix.if && matrix.type == 'app-store' && github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/testing'
+        if: matrix.if && matrix.type == 'app-store' && github.event_name == 'workflow_dispatch'
         run: |-
           arguments=(publish_testflight "${{ matrix.platform }}")
           if [[ -n "$TEST_MESSAGE" ]]; then
@@ -1611,7 +1616,7 @@ jobs:
           path: 'dist'
   build_apple_app_store:
     name: Build Apple App Store clients
-    runs-on: ${{ matrix.if && 'macos-26' || 'ubuntu-latest' }}
+    runs-on: ${{ matrix.if && 'xcode-27' || 'ubuntu-latest' }}
     if: github.event_name == 'workflow_dispatch' && (inputs.build == 'All' || inputs.build == 'Apple' || inputs.build == 'iOS' || inputs.build == 'macOS' || inputs.build == 'tvOS')
     needs:
       - calculate_version
