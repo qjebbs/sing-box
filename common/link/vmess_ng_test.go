@@ -31,5 +31,17 @@ func TestVMessV2RayNG(t *testing.T) {
 				},
 			},
 		},
+		{
+			Link: "vmess://eyJ2IjoyLCJwcyI6InRjcCIsImFkZCI6ImV4YW1wbGUuY29tIiwicG9ydCI6NDQzLCJpZCI6InV1aWQiLCJhaWQiOjAsInNjeSI6ImF1dG8iLCJuZXQiOiJ0Y3AiLCJ0eXBlIjoibm9uZSIsInRscyI6IiJ9",
+			Want: &link.VMessV2RayNG{
+				Vmess: link.Vmess{
+					Tag:      "tcp",
+					Server:   "example.com",
+					Port:     443,
+					UUID:     "uuid",
+					Security: "auto",
+				},
+			},
+		},
 	})
 }

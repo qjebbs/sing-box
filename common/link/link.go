@@ -5,9 +5,11 @@ import (
 	"fmt"
 	"net/url"
 	"strings"
+	"time"
 
 	"github.com/sagernet/sing-box/option"
 	E "github.com/sagernet/sing/common/exceptions"
+	"github.com/sagernet/sing/common/json/badoption"
 )
 
 // errors
@@ -69,4 +71,51 @@ func base64Decode(b64 string) ([]byte, error) {
 
 func base64Encode(b []byte) string {
 	return base64.StdEncoding.EncodeToString(b)
+}
+
+func parseDuration(value string) (badoption.Duration, error) {
+	d, err := time.ParseDuration(value)
+	if err == nil {
+		return badoption.Duration(d), nil
+	}
+	seconds, parseErr := time.ParseDuration(value + "s")
+	if parseErr != nil {
+		return 0, err
+	}
+	return badoption.Duration(seconds), nil
+}
+
+func isTrue(value string) bool {
+	switch strings.ToLower(value) {
+	case "1", "true":
+		return true
+	default:
+		return false
+	}
+}
+
+func anyTrue(value any) bool {
+	switch value := value.(type) {
+	case bool:
+		return value
+	case string:
+		return isTrue(value)
+	case float64:
+		return value != 0
+	case int:
+		return value != 0
+	default:
+		return false
+	}
+}
+
+func splitComma(value string) []string {
+	var result []string
+	for _, item := range strings.Split(value, ",") {
+		item = strings.TrimSpace(item)
+		if item != "" {
+			result = append(result, item)
+		}
+	}
+	return result
 }

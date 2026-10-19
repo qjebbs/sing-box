@@ -40,7 +40,7 @@ func ParseVMessV2RayNG(u *url.URL) (*VMessV2RayNG, error) {
 	if err := json.Unmarshal(b, &ng); err != nil {
 		return nil, ErrBadFormat
 	}
-	if ng.V != 2 {
+	if ng.V != 0 && ng.V != 2 {
 		return nil, E.New("unsupported version ", ng.V)
 	}
 	vm, err := ng.AsVMess()
@@ -65,23 +65,26 @@ func (l *VMessV2RayNG) URL() (string, error) {
 	return "vmess://" + b64, nil
 }
 
-// https://github.com/2dust/v2rayN/wiki/分享链接格式说明(ver-2)
+// https://github.com/2dust/v2rayN/wiki/Description-of-VMess-share-link
 type vmessNG struct {
-	V           number `json:"v,omitempty"`
-	Ps          string `json:"ps,omitempty"`
-	Add         string `json:"add,omitempty"`
-	Port        number `json:"port,omitempty"`
-	ID          string `json:"id,omitempty"`
-	Aid         number `json:"aid,omitempty"`
-	Scy         string `json:"scy,omitempty"`
-	Net         string `json:"net,omitempty"`
-	Type        string `json:"type,omitempty"`
-	Host        string `json:"host,omitempty"`
-	Path        string `json:"path,omitempty"`
-	TLS         string `json:"tls,omitempty"`
-	SNI         string `json:"sni,omitempty"`
-	ALPN        string `json:"alpn,omitempty"`
-	Fingerprint string `json:"fp,omitempty"`
+	V              number `json:"v,omitempty"`
+	Ps             string `json:"ps,omitempty"`
+	Add            string `json:"add,omitempty"`
+	Port           number `json:"port,omitempty"`
+	ID             string `json:"id,omitempty"`
+	Aid            number `json:"aid,omitempty"`
+	Scy            string `json:"scy,omitempty"`
+	Net            string `json:"net,omitempty"`
+	Type           string `json:"type,omitempty"`
+	Host           string `json:"host,omitempty"`
+	Path           string `json:"path,omitempty"`
+	TLS            string `json:"tls,omitempty"`
+	SNI            string `json:"sni,omitempty"`
+	ALPN           string `json:"alpn,omitempty"`
+	Fingerprint    string `json:"fp,omitempty"`
+	Insecure       any    `json:"insecure,omitempty"`
+	VerifyCertName string `json:"vcn,omitempty"`
+	PinCertSHA256  string `json:"pcs,omitempty"`
 }
 
 func (l vmessNG) AsVMess() (*Vmess, error) {
@@ -90,24 +93,29 @@ func (l vmessNG) AsVMess() (*Vmess, error) {
 		alpn      []string
 	)
 
-	switch l.Type {
-	case "none", "":
-		// ok
-	default:
-		return nil, E.New("unsupported type ", l.Type)
-	}
-
 	switch l.Net {
 	case "ws", "websocket":
+		if l.Type != "" && l.Type != "none" {
+			return nil, E.New("unsupported header type ", l.Type, " in ", l.Net)
+		}
 		transport = C.V2RayTransportTypeWebsocket
 	case "http", "h2":
 		transport = C.V2RayTransportTypeHTTP
-	case "quci":
+	case "quic", "quci":
 		transport = C.V2RayTransportTypeQUIC
 	case "grpc":
 		transport = C.V2RayTransportTypeGRPC
+	case "tcp", "":
+		switch l.Type {
+		case "", "none":
+			// plain tcp
+		case "http":
+			transport = C.V2RayTransportTypeHTTP
+		default:
+			return nil, E.New("unsupported header type ", l.Type, " in ", l.Net)
+		}
 	default:
-		// "kcp", "tcp" ...
+		// "kcp" ...
 		return nil, E.New("unsupported transport ", l.Net)
 	}
 
@@ -129,10 +137,12 @@ func (l vmessNG) AsVMess() (*Vmess, error) {
 		Host:      l.Host,
 		Path:      l.Path,
 
-		TLS:         l.TLS == "tls",
-		SNI:         l.SNI,
-		ALPN:        alpn,
-		Fingerprint: l.Fingerprint,
+		TLS:           l.TLS == "tls",
+		SNI:           l.SNI,
+		ALPN:          alpn,
+		AllowInsecure: anyTrue(l.Insecure),
+		Fingerprint:   l.Fingerprint,
+		PinCertSHA256: l.PinCertSHA256,
 	}, nil
 }
 
@@ -151,20 +161,24 @@ func (l *vmessNG) FromVMess(v *Vmess) error {
 		net = "quic"
 	}
 	*l = vmessNG{
-		V:           number(2),
-		Ps:          v.Tag,
-		Add:         v.Server,
-		Port:        number(v.Port),
-		ID:          v.UUID,
-		Aid:         number(v.AlterID),
-		Scy:         v.Security,
-		Net:         net,
-		Host:        v.Host,
-		Path:        v.Path,
-		TLS:         tls,
-		SNI:         v.SNI,
-		ALPN:        strings.Join(v.ALPN, ","),
-		Fingerprint: v.Fingerprint,
+		V:             number(2),
+		Ps:            v.Tag,
+		Add:           v.Server,
+		Port:          number(v.Port),
+		ID:            v.UUID,
+		Aid:           number(v.AlterID),
+		Scy:           v.Security,
+		Net:           net,
+		Host:          v.Host,
+		Path:          v.Path,
+		TLS:           tls,
+		SNI:           v.SNI,
+		ALPN:          strings.Join(v.ALPN, ","),
+		Fingerprint:   v.Fingerprint,
+		PinCertSHA256: v.PinCertSHA256,
+	}
+	if v.AllowInsecure {
+		l.Insecure = true
 	}
 	return nil
 }
