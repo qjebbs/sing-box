@@ -8,6 +8,7 @@ import (
 	"github.com/sagernet/sing-box/adapter"
 	"github.com/sagernet/sing-box/adapter/outbound"
 	"github.com/sagernet/sing-box/common/interrupt"
+	"github.com/sagernet/sing-box/common/urltest"
 	C "github.com/sagernet/sing-box/constant"
 	"github.com/sagernet/sing-box/log"
 	"github.com/sagernet/sing-box/option"
@@ -25,6 +26,7 @@ func RegisterSelectorProvider(registry *outbound.Registry) {
 var (
 	_ adapter.Outbound      = (*SelectorProvider)(nil)
 	_ adapter.OutboundGroup = (*SelectorProvider)(nil)
+	_ adapter.Referrer      = (*SelectorProvider)(nil)
 	_ adapter.Lifecycle     = (*SelectorProvider)(nil)
 )
 
@@ -37,6 +39,7 @@ type SelectorProvider struct {
 	connection                   adapter.ConnectionManager
 	defaultTag                   string
 	selected                     atomic.TypedValue[adapter.Outbound]
+	history                      *urltest.HistoryStorage
 	interruptGroup               *interrupt.Group
 	interruptExternalConnections bool
 }
@@ -50,6 +53,7 @@ func NewSelectorProvider(ctx context.Context, router adapter.Router, logger log.
 		provider:                     service.FromContext[adapter.ProviderManager](ctx),
 		connection:                   service.FromContext[adapter.ConnectionManager](ctx),
 		defaultTag:                   options.Default,
+		history:                      service.PtrFromContext[urltest.HistoryStorage](ctx),
 		interruptGroup:               interrupt.NewGroup(),
 		interruptExternalConnections: options.InterruptExistConnections,
 	}
@@ -104,6 +108,15 @@ func (s *SelectorProvider) Selected(network string) adapter.Outbound {
 	return s.selected.Load()
 }
 
+// References implements adapter.Referrer
+func (s *SelectorProvider) References() []string {
+	selected := s.Selected(N.NetworkTCP)
+	if selected == nil {
+		return nil
+	}
+	return []string{selected.Tag()}
+}
+
 // AttachConnection implements adapter.OutboundGroup
 func (s *SelectorProvider) AttachConnection(closer io.Closer) (detach func()) {
 	return s.interruptGroup.Add(closer, true)
@@ -127,6 +140,9 @@ func (s *SelectorProvider) SelectOutbound(tag string) bool {
 		}
 	}
 	s.interruptGroup.Interrupt(s.interruptExternalConnections)
+	if s.history != nil {
+		s.history.NotifyUpdated()
+	}
 	return true
 }
 

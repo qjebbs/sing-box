@@ -10,6 +10,7 @@ import (
 	"github.com/sagernet/sing-box/adapter/outbound"
 	"github.com/sagernet/sing-box/common/healthcheck"
 	"github.com/sagernet/sing-box/common/interrupt"
+	"github.com/sagernet/sing-box/common/urltest"
 	C "github.com/sagernet/sing-box/constant"
 	"github.com/sagernet/sing-box/log"
 	"github.com/sagernet/sing-box/option"
@@ -27,6 +28,7 @@ func RegisterURLTestProvider(registry *outbound.Registry) {
 var (
 	_ adapter.Outbound                = (*URLTestProvider)(nil)
 	_ adapter.URLTestGroup            = (*URLTestProvider)(nil)
+	_ adapter.Referrer                = (*URLTestProvider)(nil)
 	_ adapter.InterfaceUpdateListener = (*URLTestProvider)(nil)
 	_ adapter.Lifecycle               = (*URLTestProvider)(nil)
 )
@@ -45,6 +47,7 @@ type URLTestProvider struct {
 
 	checker   *option.HealthCheckOptions
 	tolerance healthcheck.RTT
+	history   *urltest.HistoryStorage
 
 	// selectedOutbound records the last selection so connections are only
 	// interrupted when the selection actually changes, not on every check.
@@ -70,6 +73,7 @@ func NewURLTestProvider(ctx context.Context, router adapter.Router, logger log.C
 		healthCheckMgr:               service.FromContext[adapter.HealthCheckManager](ctx),
 		checker:                      options.HealthCheck,
 		tolerance:                    tolerance,
+		history:                      service.PtrFromContext[urltest.HistoryStorage](ctx),
 		interruptGroup:               interrupt.NewGroup(),
 		interruptExternalConnections: options.InterruptExistConnections,
 	}, nil
@@ -122,6 +126,9 @@ func (s *URLTestProvider) interruptOutdatedConnections() {
 		return
 	}
 	s.interruptGroup.Interrupt(s.interruptExternalConnections)
+	if s.history != nil {
+		s.history.NotifyUpdated()
+	}
 }
 
 // Selected implements adapter.OutboundGroup
@@ -131,6 +138,20 @@ func (s *URLTestProvider) Selected(network string) adapter.Outbound {
 		return nil
 	}
 	return selected
+}
+
+// References implements adapter.Referrer
+func (s *URLTestProvider) References() []string {
+	tcpOutbound := s.Selected(N.NetworkTCP)
+	udpOutbound := s.Selected(N.NetworkUDP)
+	var references []string
+	if tcpOutbound != nil {
+		references = append(references, tcpOutbound.Tag())
+	}
+	if udpOutbound != nil && udpOutbound != tcpOutbound {
+		references = append(references, udpOutbound.Tag())
+	}
+	return references
 }
 
 // AttachConnection implements adapter.OutboundGroup

@@ -765,7 +765,7 @@ func (s *StartedService) SelectOutbound(ctx context.Context, request *SelectOutb
 	if !isLoaded {
 		return nil, status.Error(codes.NotFound, "selector not found: "+request.GroupTag)
 	}
-	selector, isSelector := outboundGroup.(*group.Selector)
+	selector, isSelector := outboundGroup.(*group.SelectorProvider)
 	if !isSelector {
 		return nil, status.Error(codes.InvalidArgument, "outbound is not a selector: "+request.GroupTag)
 	}

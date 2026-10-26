@@ -1,6 +1,8 @@
 package outbound
 
 import (
+	"slices"
+
 	"github.com/sagernet/sing-box/adapter"
 	"github.com/sagernet/sing-box/option"
 	"github.com/sagernet/sing-box/provider"
@@ -86,7 +88,10 @@ func (a *GroupAdapter) InitProviders(om adapter.OutboundManager, pm adapter.Prov
 		return E.New("missing outbound and provider tags")
 	}
 	outbounds := make([]adapter.Outbound, 0, len(a.options.Outbounds))
-	for _, tag := range a.options.Outbounds {
+	for i, tag := range a.options.Outbounds {
+		if slices.Contains(a.options.Outbounds[:i], tag) {
+			return E.New("duplicate outbound: ", tag)
+		}
 		detour, ok := om.Outbound(tag)
 		if !ok {
 			return E.New("outbound not found: ", tag)

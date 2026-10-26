@@ -4,11 +4,13 @@ import (
 	"context"
 	"io"
 	"net"
+	"slices"
 
 	"github.com/sagernet/sing-box/adapter"
 	"github.com/sagernet/sing-box/adapter/outbound"
 	"github.com/sagernet/sing-box/common/healthcheck"
 	"github.com/sagernet/sing-box/common/interrupt"
+	"github.com/sagernet/sing-box/common/urltest"
 	C "github.com/sagernet/sing-box/constant"
 	"github.com/sagernet/sing-box/log"
 	"github.com/sagernet/sing-box/option"
@@ -27,6 +29,7 @@ func RegisterLoadBalance(registry *outbound.Registry) {
 var (
 	_ adapter.Outbound                = (*LoadBalance)(nil)
 	_ adapter.URLTestGroup            = (*LoadBalance)(nil)
+	_ adapter.Referrer                = (*LoadBalance)(nil)
 	_ adapter.Lifecycle               = (*LoadBalance)(nil)
 	_ adapter.InterfaceUpdateListener = (*LoadBalance)(nil)
 )
@@ -45,6 +48,11 @@ type LoadBalance struct {
 	healthCheckMgr adapter.HealthCheckManager
 	options        option.LoadBalanceOutboundOptions
 	interruptGroup *interrupt.TaggedGroup
+
+	history *urltest.HistoryStorage
+	// lastReferenced records the last referenced node set, so references are only
+	// published when it actually changes.
+	lastReferenced common.TypedValue[[]string]
 }
 
 // NewLoadBalance creates a new load balance outbound
@@ -63,6 +71,7 @@ func NewLoadBalance(ctx context.Context, router adapter.Router, logger log.Conte
 		healthCheckMgr: service.FromContext[adapter.HealthCheckManager](ctx),
 		options:        options,
 		interruptGroup: interrupt.NewTaggedGroup(),
+		history:        service.PtrFromContext[urltest.HistoryStorage](ctx),
 	}, nil
 }
 
@@ -72,6 +81,17 @@ func (s *LoadBalance) Selected(network string) adapter.Outbound {
 		return nil
 	}
 	return s.Pick(context.Background(), network, M.Socksaddr{})
+}
+
+// References implements adapter.Referrer
+func (s *LoadBalance) References() []string {
+	if s.Balancer == nil {
+		return nil
+	}
+	// Every node that isn't dead may serve the next connection, so it may keep its
+	// idle connections. The objective is deliberately not applied here: it depends
+	// on pick thresholds, which would make the references flap on jitter.
+	return s.Balancer.AliveNodes()
 }
 
 // AttachConnection implements adapter.OutboundGroup
@@ -186,6 +206,13 @@ func (s *LoadBalance) Start(stage adapter.StartStage, scope *adapter.Scope) erro
 
 func (s *LoadBalance) interruptOutdatedConnections() {
 	s.interruptGroup.Interrupt(s.options.InterruptExistConnections, s.Balancer.AvailableNodes(s.options.LogHealth))
+	referenced := s.Balancer.AliveNodes()
+	if previous := s.lastReferenced.Swap(referenced); !slices.Equal(previous, referenced) {
+		// The nodes this group may use changed.
+		if s.history != nil {
+			s.history.NotifyUpdated()
+		}
+	}
 }
 
 // URLTest implements adapter.URLTestGroup

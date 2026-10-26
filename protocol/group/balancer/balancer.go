@@ -133,6 +133,27 @@ func (b *Balancer) AvailableNodes(logging bool) []string {
 	))
 }
 
+// AliveNodes returns the tags of nodes that are not dead. Unlike AvailableNodes,
+// it ignores the objective, so the result only changes when a node's health
+// changes, not when it merely stops being the preferred one.
+func (b *Balancer) AliveNodes() []string {
+	nodes := b.Nodes("")
+	alive := make([]string, 0, len(nodes))
+	for _, node := range nodes {
+		if node.Status != StatusDead {
+			alive = append(alive, node.Tag())
+		}
+	}
+	if len(alive) == 0 {
+		// No node is alive: nothing can be served, but outbounds may still be
+		// tried, keep them referenced like AvailableNodes does.
+		return common.Uniq(common.Map(nodes, func(node *Node) string {
+			return node.Tag()
+		}))
+	}
+	return common.Uniq(alive)
+}
+
 // Networks returns all networks supported by this balancer
 func (b *Balancer) Networks() []string {
 	if b.networks == nil {
