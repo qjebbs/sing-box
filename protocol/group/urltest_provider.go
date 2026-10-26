@@ -131,6 +131,14 @@ func (s *URLTestProvider) interruptOutdatedConnections() {
 	}
 }
 
+// touchHealthCheck keeps the health checks of this group running while it is in
+// use, and catches up after it was idle.
+func (s *URLTestProvider) touchHealthCheck() {
+	if s.HealthCheck != nil {
+		s.HealthCheck.Touch(s.Tag())
+	}
+}
+
 // Selected implements adapter.OutboundGroup
 func (s *URLTestProvider) Selected(network string) adapter.Outbound {
 	selected, err := s.Select(network)
@@ -156,10 +164,12 @@ func (s *URLTestProvider) References() []string {
 
 // AttachConnection implements adapter.OutboundGroup
 func (s *URLTestProvider) AttachConnection(closer io.Closer) (detach func()) {
+	s.touchHealthCheck()
 	return s.interruptGroup.Add(closer, true)
 }
 
 func (s *URLTestProvider) DialContext(ctx context.Context, network string, destination M.Socksaddr) (net.Conn, error) {
+	s.touchHealthCheck()
 	outbound, err := s.Select(network)
 	if err != nil {
 		return nil, err
@@ -183,6 +193,7 @@ func (s *URLTestProvider) DialContext(ctx context.Context, network string, desti
 }
 
 func (s *URLTestProvider) ListenPacket(ctx context.Context, destination M.Socksaddr) (net.PacketConn, error) {
+	s.touchHealthCheck()
 	outbound, err := s.Select(N.NetworkUDP)
 	if err != nil {
 		return nil, err

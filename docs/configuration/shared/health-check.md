@@ -11,6 +11,7 @@ When object:
   "interval": "5m",
   "sampling": 10,
   "destination": "https://www.gstatic.com/generate_204",
+  "idle_timeout": "30m",
   "detour_of": [
     "proxy-a",
     "proxy-b"
@@ -53,6 +54,20 @@ The number of recent health check results to sample. Must be greater than `0`, d
 #### destination
 
 The destination URL for health check. Default is `https://www.gstatic.com/generate_204`.
+
+#### idle_timeout
+
+The duration after which health checks are paused when no outbound group using
+this health check has been in use, 0 to keep checking permanently.
+
+When a shared health check is used by multiple outbound groups, the checks are
+only paused after every group has been idle for this duration.
+
+While paused, no node is tested. Checking resumes as soon as a group is used
+again, starting with an immediate check to refresh the statistics, since results
+older than `(sampling+1) * interval` are discarded.
+
+Values smaller than `interval` are raised to `interval`.
 
 #### detour_of
 

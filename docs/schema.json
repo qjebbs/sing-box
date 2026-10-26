@@ -5951,6 +5951,9 @@
         "destination": {
           "type": "string"
         },
+        "idle_timeout": {
+          "$ref": "#/$defs/Duration"
+        },
         "detour_of": {
           "type": "array",
           "items": {
@@ -5984,6 +5987,9 @@
             },
             "destination": {
               "type": "string"
+            },
+            "idle_timeout": {
+              "$ref": "#/$defs/Duration"
             },
             "detour_of": {
               "type": "array",

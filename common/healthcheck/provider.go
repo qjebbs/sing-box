@@ -114,6 +114,31 @@ func (m *mergedProvider) Outbounds() []adapter.Outbound {
 	return outbounds
 }
 
+// NamespacesOutbounds returns the outbounds of the given namespaces, deduplicated
+// by tag. A nil list means all namespaces.
+func (m *mergedProvider) NamespacesOutbounds(namespaces []string) []adapter.Outbound {
+	if namespaces == nil {
+		return m.Outbounds()
+	}
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	seen := make(map[string]struct{})
+	var outbounds []adapter.Outbound
+	for _, namespace := range namespaces {
+		for _, p := range m.providers[namespace] {
+			for _, o := range p.Outbounds() {
+				tag := o.Tag()
+				if _, ok := seen[tag]; ok {
+					continue
+				}
+				seen[tag] = struct{}{}
+				outbounds = append(outbounds, o)
+			}
+		}
+	}
+	return outbounds
+}
+
 func (m *mergedProvider) NamespacedOutbounds(namespace string) []adapter.Outbound {
 	m.mu.RLock()
 	defer m.mu.RUnlock()

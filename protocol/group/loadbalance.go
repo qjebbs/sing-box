@@ -94,8 +94,17 @@ func (s *LoadBalance) References() []string {
 	return s.Balancer.AliveNodes()
 }
 
+// touchHealthCheck keeps the health checks of this group running while it is in
+// use, and catches up after it was idle.
+func (s *LoadBalance) touchHealthCheck() {
+	if s.Balancer != nil && s.Balancer.HealthCheck != nil {
+		s.HealthCheck.Touch(s.Tag())
+	}
+}
+
 // AttachConnection implements adapter.OutboundGroup
 func (s *LoadBalance) AttachConnection(closer io.Closer) (detach func()) {
+	s.touchHealthCheck()
 	// LoadBalance doesn't have a selected member to bind the closer to: the node
 	// is picked per dial and is registered by DialContext and ListenPacket with
 	// NewConn and NewPacketConn instead. Registering it here would interrupt it
@@ -121,6 +130,7 @@ func (s *LoadBalance) Network() []string {
 
 // DialContext implements adapter.Outbound
 func (s *LoadBalance) DialContext(ctx context.Context, network string, destination M.Socksaddr) (net.Conn, error) {
+	s.touchHealthCheck()
 	var lastErr error
 	maxRetry := 5
 	for i := 0; i < maxRetry; i++ {
@@ -142,6 +152,7 @@ func (s *LoadBalance) DialContext(ctx context.Context, network string, destinati
 
 // ListenPacket implements adapter.Outbound
 func (s *LoadBalance) ListenPacket(ctx context.Context, destination M.Socksaddr) (net.PacketConn, error) {
+	s.touchHealthCheck()
 	var lastErr error
 	maxRetry := 5
 	for i := 0; i < maxRetry; i++ {

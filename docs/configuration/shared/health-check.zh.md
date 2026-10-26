@@ -11,6 +11,7 @@
   "interval": "5m",
   "sampling": 10,
   "destination": "https://www.gstatic.com/generate_204",
+  "idle_timeout": "30m",
   "detour_of": [
     "proxy-a",
     "proxy-b"
@@ -52,6 +53,17 @@
 #### destination
 
 用于健康检查的链接。默认使用 `https://www.gstatic.com/generate_204`。
+
+#### idle_timeout
+
+没有任何出站组使用此健康检查后，暂停健康检查的时长，`0` 表示持续检查。
+
+当一个共享健康检查被多个出站组使用时，只有在所有组都空闲该时长后才会暂停检查。
+
+暂停期间不会测试任何节点。只要有组再次被使用就会立即恢复检查，并立刻进行一次检查以刷新统计，
+因为早于 `(sampling+1) * interval` 的结果会被丢弃。
+
+小于 `interval` 的值会被提升为 `interval`。
 
 #### detour_of
 

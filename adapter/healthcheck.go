@@ -14,6 +14,9 @@ type HealthCheck interface {
 	RegisterPostCheckListener(listener func())
 	UnregisterPostCheckListener(listener func())
 	CheckAll(ctx context.Context, namespace string) (map[string]uint16, error)
+	// Touch records that the namespace is in use, so its health checks keep
+	// running and are resumed after an idle timeout.
+	Touch(namespace string)
 	ReportFailure(outbound Outbound)
 }
 
