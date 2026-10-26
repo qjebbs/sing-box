@@ -1,14 +1,18 @@
 package option
 
 import (
+	"context"
 	"encoding/json"
+	"strings"
 	"testing"
+
+	sjson "github.com/sagernet/sing/common/json"
 )
 
 func TestHealthCheckOptionsJSON(t *testing.T) {
 	var o HealthCheckOptions
 	// tag 引用
-	if err := json.Unmarshal([]byte(`"my-tag"`), &o); err != nil {
+	if err := sjson.UnmarshalContext(context.Background(), []byte(`"my-tag"`), &o); err != nil {
 		t.Fatal(err)
 	}
 	if o.Tag != "my-tag" {
@@ -38,5 +42,37 @@ func TestHealthCheckOptionsJSON(t *testing.T) {
 	}
 	if h.Destination != "https://x.com" {
 		t.Fatalf("unexpected destination %q", h.Destination)
+	}
+}
+
+func TestHealthCheckOptionsRejectsUnknownField(t *testing.T) {
+	var o HealthCheckOptions
+	err := sjson.UnmarshalContext(context.Background(), []byte(`{"url": "https://example.com"}`), &o)
+	if err == nil {
+		t.Fatal("expected an unknown field error")
+	}
+	if !strings.Contains(err.Error(), `unknown field "url"`) {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestHealthCheckRejectsUnknownField(t *testing.T) {
+	var h HealthCheck
+	err := sjson.UnmarshalContext(context.Background(), []byte(`{"tag": "x", "url": "https://example.com"}`), &h)
+	if err == nil {
+		t.Fatal("expected an unknown field error")
+	}
+	if !strings.Contains(err.Error(), `unknown field "url"`) {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestHealthCheckOptionsTagReferenceContext(t *testing.T) {
+	var o HealthCheckOptions
+	if err := sjson.UnmarshalContext(context.Background(), []byte(`"my-tag"`), &o); err != nil {
+		t.Fatal(err)
+	}
+	if o.Tag != "my-tag" {
+		t.Fatalf("expected tag my-tag, got %q", o.Tag)
 	}
 }

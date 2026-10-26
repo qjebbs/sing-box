@@ -1,6 +1,7 @@
 package option
 
 import (
+	"context"
 	"reflect"
 
 	"github.com/sagernet/sing-box/schema"
@@ -43,8 +44,8 @@ func (h HealthCheck) MarshalJSON() ([]byte, error) {
 	return json.Marshal(_HealthCheckOptions(h))
 }
 
-func (h *HealthCheck) UnmarshalJSON(content []byte) error {
-	return json.Unmarshal(content, (*_HealthCheckOptions)(h))
+func (h *HealthCheck) UnmarshalJSONContext(ctx context.Context, content []byte) error {
+	return json.UnmarshalContextDisallowUnknownFields(ctx, content, (*_HealthCheckOptions)(h))
 }
 
 func (o HealthCheckOptions) MarshalJSON() ([]byte, error) {
@@ -54,13 +55,13 @@ func (o HealthCheckOptions) MarshalJSON() ([]byte, error) {
 	return json.Marshal(_HealthCheckOptions(o))
 }
 
-func (o *HealthCheckOptions) UnmarshalJSON(content []byte) error {
+func (o *HealthCheckOptions) UnmarshalJSONContext(ctx context.Context, content []byte) error {
 	if len(content) > 0 && content[0] == '"' {
 		*o = HealthCheckOptions{}
-		return json.Unmarshal(content, &o.Tag)
+		return json.UnmarshalContext(ctx, content, &o.Tag)
 	}
 	var options _HealthCheckOptions
-	err := json.Unmarshal(content, &options)
+	err := json.UnmarshalContextDisallowUnknownFields(ctx, content, &options)
 	if err != nil {
 		return err
 	}
