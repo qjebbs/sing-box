@@ -8,6 +8,7 @@ import (
 	"github.com/sagernet/sing-box/log"
 	"github.com/sagernet/sing-box/option"
 	E "github.com/sagernet/sing/common/exceptions"
+	F "github.com/sagernet/sing/common/format"
 	"github.com/sagernet/sing/common/logger"
 	"github.com/sagernet/sing/service"
 )
@@ -22,10 +23,10 @@ var (
 // across all balancer groups, similar to how the HTTP client manager
 // shares transports.
 type Manager struct {
-	ctx    context.Context
-	scope  *adapter.Scope
-	logger log.ContextLogger
-	access sync.Mutex
+	ctx        context.Context
+	scope      *adapter.Scope
+	logFactory log.Factory
+	access     sync.Mutex
 
 	router  adapter.Router
 	om      adapter.OutboundManager
@@ -37,18 +38,18 @@ type Manager struct {
 // NewManager creates a health check manager from the top-level `health_checks`
 // declarations. The router and outbound manager are resolved from the context
 // here, so this must be called after they have been registered.
-func NewManager(ctx context.Context, logger log.ContextLogger, checks []option.HealthCheck) *Manager {
+func NewManager(ctx context.Context, logFactory log.Factory, checks []option.HealthCheck) *Manager {
 	defines := make(map[string]option.HealthCheck, len(checks))
 	for _, check := range checks {
 		defines[check.Tag] = check
 	}
 	return &Manager{
-		ctx:     ctx,
-		logger:  logger,
-		router:  service.FromContext[adapter.Router](ctx),
-		om:      service.FromContext[adapter.OutboundManager](ctx),
-		defines: defines,
-		checks:  make(map[string]*HealthCheck),
+		ctx:        ctx,
+		logFactory: logFactory,
+		router:     service.FromContext[adapter.Router](ctx),
+		om:         service.FromContext[adapter.OutboundManager](ctx),
+		defines:    defines,
+		checks:     make(map[string]*HealthCheck),
 	}
 }
 
@@ -94,7 +95,7 @@ func (m *Manager) resolveShared(tag string) (*HealthCheck, error) {
 		return nil, E.New("health check not found: ", tag)
 	}
 	options := define.Options()
-	check := NewHealthCheck(m.ctx, m.router, m.om, &options, m.logger)
+	check := NewHealthCheck(m.ctx, m.router, m.om, &options, m.logFactory.NewLogger(F.ToString("healthcheck[", tag, "]")))
 	if err := check.Start(); err != nil {
 		return nil, E.Cause(err, "start health check[", tag, "]")
 	}

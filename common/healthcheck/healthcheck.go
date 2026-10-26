@@ -2,6 +2,7 @@ package healthcheck
 
 import (
 	"context"
+	"strings"
 	"sync"
 	"time"
 
@@ -341,6 +342,10 @@ func (h *HealthCheck) scheduledCheck(ctx context.Context) bool {
 		return false
 	}
 	h.markChecked(namespaces)
+	if len(namespaces) > 0 {
+		// format.ToString doesn't handle slices, join them first.
+		h.logger.Info("scheduled health check for: ", strings.Join(namespaces, ", "))
+	}
 	go h.checkAll(ctx, true, namespaces)
 	return true
 }

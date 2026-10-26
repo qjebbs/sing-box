@@ -254,7 +254,7 @@ func New(options Options) (*Box, error) {
 		return nil, E.Cause(err, "initialize router")
 	}
 	// Must register after Router: the health check manager resolves the router from the context when it is constructed.
-	healthCheckManager := healthcheck.NewManager(ctx, logFactory.NewLogger("healthcheck"), options.HealthChecks)
+	healthCheckManager := healthcheck.NewManager(ctx, logFactory, options.HealthChecks)
 	service.MustRegister[adapter.HealthCheckManager](ctx, healthCheckManager)
 	healthCheckService := adapter.LifecycleService(healthCheckManager)
 	if needClashAPI || needAPIService || options.PlatformLogWriter != nil {
