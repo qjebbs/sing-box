@@ -54,18 +54,6 @@ func (m *mergedProvider) Wait() {
 	}
 }
 
-func (m *mergedProvider) NamespacedWait(namespace string) {
-	m.mu.RLock()
-	providers, ok := m.providers[namespace]
-	m.mu.RUnlock()
-	if !ok {
-		return
-	}
-	for _, p := range providers {
-		p.Wait()
-	}
-}
-
 func (m *mergedProvider) Outbound(tag string) (adapter.Outbound, bool) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()

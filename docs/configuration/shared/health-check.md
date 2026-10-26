@@ -55,6 +55,11 @@ The number of recent health check results to sample. Must be greater than `0`, d
 
 The destination URL for health check. Default is `https://www.gstatic.com/generate_204`.
 
+!!! note ""
+
+    Checks only run while the group is in use: a health check that is never used performs no checks at all.
+    The first use starts the check loop, which then runs one round right away.
+
 #### idle_timeout
 
 The duration after which health checks are paused when no outbound group using

@@ -41,10 +41,9 @@ type HealthCheck struct {
 	detourScope   *adapter.Scope
 	globalHistory *urltest.HistoryStorage
 
-	loopCtx        context.Context
-	loopStarted    bool
-	cleanupStarted bool
-	loopMu         sync.Mutex
+	loopCtx     context.Context
+	loopStarted bool
+	loopMu      sync.Mutex
 
 	// idleMu guards the per namespace activity used to suspend the loops when
 	// every namespace is idle. suspended is guarded by loopMu.
@@ -109,15 +108,7 @@ func NewHealthCheck(
 // SetProviders replaces the full provider list for the given namespace.
 func (h *HealthCheck) SetProviders(namespace string, providers []adapter.Provider) error {
 	h.mergedProviders.Set(namespace, providers)
-	if len(providers) > 0 {
-		h.markActive(namespace)
-		h.tryStartLoops()
-	}
-	go func() {
-		// wait for all providers to be ready
-		h.mergedProviders.NamespacedWait(namespace)
-		h.CheckAll(context.Background(), namespace)
-	}()
+	// Nothing is checked until the group is used, see Touch.
 	return nil
 }
 
@@ -159,27 +150,9 @@ func (h *HealthCheck) Start() error {
 	ctx, cancel := context.WithCancel(context.Background())
 	h.cancel = cancel
 	h.loopCtx = ctx
-	// loops are started lazily when providers are registered via SetProviders
+	go h.cleanupLoop(ctx, 8*time.Hour)
+	// The check loop is only started when a group is used, see Touch.
 	return nil
-}
-
-// tryStartLoops starts the background loops if they haven't been started yet.
-// Must be called after Start() has initialized h.loopCtx.
-func (h *HealthCheck) tryStartLoops() {
-	h.loopMu.Lock()
-	defer h.loopMu.Unlock()
-	if h.loopCtx == nil {
-		return
-	}
-	// The cleanup loop lives until Close, only the check loop is suspended.
-	if !h.cleanupStarted {
-		h.cleanupStarted = true
-		go h.cleanupLoop(h.loopCtx, 8*time.Hour)
-	}
-	if !h.loopStarted {
-		h.loopStarted = true
-		go h.checkLoop(h.loopCtx)
-	}
 }
 
 // Close stops the health check service, implements adapter.Service
@@ -191,7 +164,6 @@ func (h *HealthCheck) Close() error {
 	}
 	h.loopCtx = nil
 	h.loopStarted = false
-	h.cleanupStarted = false
 	h.suspended = false
 	h.loopMu.Unlock()
 	if h.detourScope == nil {
@@ -208,8 +180,12 @@ func (h *HealthCheck) InterfaceUpdated(ctx context.Context) {
 		return
 	}
 	// h.logger.Info("[InterfaceUpdated]: CheckAll()")
-	h.markChecked(nil)
-	go h.checkAll(ctx, true, nil)
+	namespaces, run := h.activeNamespaces()
+	if !run {
+		return
+	}
+	h.markChecked(namespaces)
+	go h.checkAll(ctx, true, namespaces)
 }
 
 // ReportFailure reports a failure of the node
@@ -233,15 +209,21 @@ func (h *HealthCheck) Touch(namespace string) {
 		return
 	}
 	now := time.Now()
-	h.loopMu.Lock()
-	suspended := h.suspended
-	h.loopMu.Unlock()
 	h.idleMu.Lock()
 	h.lastActive[namespace] = now
+	h.idleMu.Unlock()
+	if h.startLoop() {
+		// The first round of the started loop covers this namespace.
+		return
+	}
+	if h.options.IdleTimeout <= 0 {
+		// Without an idle timeout the loop checks every namespace each round,
+		// a catch-up would only duplicate it.
+		return
+	}
+	h.idleMu.Lock()
 	catchUp := false
-	// Without an idle timeout the loop checks every namespace anyway, a catch-up
-	// would only duplicate it.
-	if !suspended && h.options.IdleTimeout > 0 && now.Sub(h.lastCheck[namespace]) >= time.Duration(h.options.Interval) {
+	if now.Sub(h.lastCheck[namespace]) >= time.Duration(h.options.Interval) {
 		if _, inFlight := h.checking[namespace]; !inFlight {
 			h.checking[namespace] = struct{}{}
 			h.lastCheck[namespace] = now
@@ -249,11 +231,6 @@ func (h *HealthCheck) Touch(namespace string) {
 		}
 	}
 	h.idleMu.Unlock()
-	if suspended {
-		// The restarted loop checks the namespace right away.
-		h.resume()
-		return
-	}
 	if catchUp {
 		go h.checkNamespace(namespace)
 	}
@@ -276,14 +253,6 @@ func (h *HealthCheck) markChecked(namespaces []string) {
 	h.idleMu.Unlock()
 }
 
-func (h *HealthCheck) markActive(namespace string) {
-	now := time.Now()
-	h.idleMu.Lock()
-	h.lastActive[namespace] = now
-	h.lastCheck[namespace] = now
-	h.idleMu.Unlock()
-}
-
 // checkNamespace performs a scheduled check for a single namespace, it is used
 // to catch up after the loop was suspended or the namespace was idle.
 func (h *HealthCheck) checkNamespace(namespace string) {
@@ -298,31 +267,47 @@ func (h *HealthCheck) checkNamespace(namespace string) {
 	}
 }
 
-// resume restarts the loops after they were suspended because every namespace
-// was idle.
-func (h *HealthCheck) resume() {
+// startLoop starts the check loop when it is not running, either because it was
+// never needed or because it was suspended after being idle. It returns true
+// when the loop was started, in which case its first round covers the namespaces
+// in use right away.
+func (h *HealthCheck) startLoop() bool {
 	h.loopMu.Lock()
 	defer h.loopMu.Unlock()
-	if !h.suspended || h.loopCtx == nil {
-		return
+	if h.loopCtx == nil {
+		return false
 	}
-	h.suspended = false
+	if h.suspended {
+		h.suspended = false
+		h.loopStarted = true
+		h.logger.Info("health check resumed")
+		go h.checkLoop(h.loopCtx)
+		return true
+	}
+	if h.loopStarted {
+		return false
+	}
 	h.loopStarted = true
-	h.logger.Info("health check resumed")
+	h.logger.Debug("health check started")
 	go h.checkLoop(h.loopCtx)
+	return true
 }
 
 // activeNamespaces returns the namespaces that are still in use. A nil result
 // means all namespaces. The loop must be suspended when run is false, because
 // every namespace has been idle for longer than the configured idle timeout.
 func (h *HealthCheck) activeNamespaces() (namespaces []string, run bool) {
+	now := time.Now()
+	h.idleMu.Lock()
+	defer h.idleMu.Unlock()
+	if len(h.lastActive) == 0 {
+		// Nothing has ever been used, keep the checks lazy.
+		return nil, false
+	}
 	idleTimeout := time.Duration(h.options.IdleTimeout)
 	if idleTimeout <= 0 {
 		return nil, true
 	}
-	now := time.Now()
-	h.idleMu.Lock()
-	defer h.idleMu.Unlock()
 	for namespace, lastActive := range h.lastActive {
 		if now.Sub(lastActive) < idleTimeout {
 			namespaces = append(namespaces, namespace)

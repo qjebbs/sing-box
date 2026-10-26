@@ -5,8 +5,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/sagernet/sing-box/adapter"
 	"github.com/sagernet/sing-box/log"
 	"github.com/sagernet/sing-box/option"
+	"github.com/sagernet/sing-box/provider"
 	"github.com/sagernet/sing/common/json/badoption"
 	"github.com/sagernet/sing/service"
 	"github.com/sagernet/sing/service/pause"
@@ -46,6 +48,13 @@ func TestActiveNamespaces(t *testing.T) {
 			lastActive: map[string]time.Time{"a": now, "b": now.Add(-24 * time.Hour)},
 			wantRun:    true,
 			wantAll:    true,
+		},
+		{
+			name:       "never used",
+			idle:       0,
+			lastActive: map[string]time.Time{},
+			wantRun:    false,
+			wantCount:  0,
 		},
 		{
 			name:       "all active",
@@ -90,17 +99,22 @@ func TestActiveNamespaces(t *testing.T) {
 	}
 }
 
+func markUsed(checker *HealthCheck, namespace string, lastCheck time.Time) {
+	checker.idleMu.Lock()
+	checker.lastActive[namespace] = time.Now()
+	checker.lastCheck[namespace] = lastCheck
+	checker.idleMu.Unlock()
+}
+
 func TestTouchCatchesUpOnlyWhenStale(t *testing.T) {
 	checker := newIdleTestChecker(time.Hour, time.Minute)
-	checker.markActive("group")
+	markUsed(checker, "group", time.Now())
 	checker.Touch("group")
 	if _, inFlight := checker.checking["group"]; inFlight {
 		t.Fatal("a recently checked namespace must not catch up")
 	}
 
-	checker.idleMu.Lock()
-	checker.lastCheck["group"] = time.Now().Add(-time.Hour)
-	checker.idleMu.Unlock()
+	markUsed(checker, "group", time.Now().Add(-time.Hour))
 	checker.Touch("group")
 	checker.idleMu.Lock()
 	_, inFlight := checker.checking["group"]
@@ -117,14 +131,58 @@ func TestTouchCatchesUpOnlyWhenStale(t *testing.T) {
 
 func TestTouchWithoutIdleTimeoutDoesNotCatchUp(t *testing.T) {
 	checker := newIdleTestChecker(0, time.Minute)
-	checker.markActive("group")
-	checker.idleMu.Lock()
-	checker.lastCheck["group"] = time.Now().Add(-2 * time.Hour)
-	checker.idleMu.Unlock()
+	markUsed(checker, "group", time.Now().Add(-2*time.Hour))
 	checker.markChecked(nil)
 	checker.Touch("group")
 	if _, inFlight := checker.checking["group"]; inFlight {
 		t.Fatal("a checker without idle timeout must not catch up on use")
+	}
+}
+
+func TestSetProvidersDefersChecks(t *testing.T) {
+	checker := newIdleTestChecker(time.Hour, time.Minute)
+	err := checker.SetProviders("group", []adapter.Provider{provider.NewMemory(nil)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(20 * time.Millisecond)
+	checker.loopMu.Lock()
+	started := checker.loopStarted
+	checker.loopMu.Unlock()
+	if started {
+		t.Fatal("registering providers must not start the periodic loop")
+	}
+	checker.idleMu.Lock()
+	lastCheck := checker.lastCheck["group"]
+	_, active := checker.lastActive["group"]
+	checker.idleMu.Unlock()
+	if !lastCheck.IsZero() {
+		t.Fatal("nothing must be checked before the group is used")
+	}
+	if active {
+		t.Fatal("registering providers must not mark the namespace as used")
+	}
+}
+
+func TestCheckLoopStartsLazily(t *testing.T) {
+	checker := newIdleTestChecker(time.Hour, 10*time.Millisecond)
+	err := checker.Start()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer checker.Close()
+	checker.loopMu.Lock()
+	started := checker.loopStarted
+	checker.loopMu.Unlock()
+	if started {
+		t.Fatal("the check loop must not run before the group is used")
+	}
+	checker.Touch("group")
+	checker.loopMu.Lock()
+	started = checker.loopStarted
+	checker.loopMu.Unlock()
+	if !started {
+		t.Fatal("the check loop must start once the group is used")
 	}
 }
 
@@ -135,8 +193,7 @@ func TestIdleTimeoutSuspendsAndResumes(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer checker.Close()
-	checker.markActive("group")
-	checker.tryStartLoops()
+	checker.Touch("group")
 
 	waitFor(t, time.Second, func() bool {
 		checker.loopMu.Lock()
