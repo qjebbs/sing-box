@@ -29,6 +29,10 @@ type MetaData struct {
 	scheduled  bool
 	anySuccess bool
 	checked    map[string]bool
+	// pendingFailures collects the failed tags of this round. Their results are
+	// committed after the round and only when any check succeeded, since an
+	// all-failed round doesn't contribute to the objective.
+	pendingFailures []string
 }
 
 // NewMetaData creates a new MetaData
@@ -57,6 +61,22 @@ func (c *MetaData) ReportSuccess() {
 	c.Lock()
 	defer c.Unlock()
 	c.anySuccess = true
+}
+
+// ReportFailure reports a check failure, which is committed after the round.
+func (c *MetaData) ReportFailure(tag string) {
+	c.Lock()
+	defer c.Unlock()
+	c.pendingFailures = append(c.pendingFailures, tag)
+}
+
+// TakePendingFailures returns and clears the failed tags of this round.
+func (c *MetaData) TakePendingFailures() []string {
+	c.Lock()
+	defer c.Unlock()
+	pendingFailures := c.pendingFailures
+	c.pendingFailures = nil
+	return pendingFailures
 }
 
 // AnySuccess tells if there is any check success.

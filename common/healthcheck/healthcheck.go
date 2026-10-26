@@ -466,10 +466,15 @@ func (h *HealthCheck) checkOutboundBatch(ctx context.Context, meta *MetaData, ba
 		func() (uint16, error) {
 			t, err := h.checkOutbound(ctx, real)
 			if err != nil {
-				// ignore error so the failure can be returned by the batch
+				// Ignore the error so the failure can be returned by the batch.
+				// The result is committed after the round, see waitProcessResult.
+				meta.ReportFailure(tag)
 				return 0, nil
 			}
 			meta.ReportSuccess()
+			// Commit the result as soon as it is available, instead of waiting for
+			// the whole round, so a single slow node doesn't delay the statistics.
+			h.storeResult(meta.scheduled, tag, RTT(t))
 			return t, nil
 		},
 	)
@@ -512,30 +517,46 @@ func (h *HealthCheck) checkOutbound(ctx context.Context, outbound adapter.Outbou
 	return result.delay, nil
 }
 
+// storeResult commits a check result for a node: the scheduled check appends it
+// to the sampling window, the non-scheduled one updates the latest result.
+func (h *HealthCheck) storeResult(scheduled bool, tag string, delay RTT) {
+	// always update global history for display usage,
+	// so that user can see the latest failure status
+	if h.globalHistory != nil {
+		h.globalHistory.StoreURLTestHistory(tag, &adapter.URLTestHistory{
+			Time:  time.Now(),
+			Delay: uint16(delay),
+		})
+	}
+	if scheduled {
+		h.Storage.Put(tag, delay)
+	} else {
+		h.Storage.Update(tag, delay)
+	}
+}
+
 func (h *HealthCheck) waitProcessResult(batch *batch.Batch[uint16], meta *MetaData) (map[string]uint16, error) {
 	m, err := batch.WaitAndGetResult()
 	if err != nil {
 		return nil, err
 	}
-	r := make(map[string]uint16)
+	r := make(map[string]uint16, len(m))
 	for tag, v := range m {
 		r[tag] = v.Value
-		// always update global history for display usage,
-		// so that user can see the latest failure status
-		if h.globalHistory != nil {
+	}
+	// Successful results were already committed when they arrived. Failed ones are
+	// committed now, since an all-failed round means the network is unavailable or
+	// every node is dead, which doesn't contribute to the objective.
+	pendingFailures := meta.TakePendingFailures()
+	anySuccess := meta.AnySuccess()
+	for _, tag := range pendingFailures {
+		if anySuccess {
+			h.storeResult(meta.scheduled, tag, Failed)
+		} else if h.globalHistory != nil {
 			h.globalHistory.StoreURLTestHistory(tag, &adapter.URLTestHistory{
 				Time:  time.Now(),
-				Delay: v.Value,
+				Delay: uint16(Failed),
 			})
-		}
-		// ignore all-failed result, since it doesn't contribute to the
-		// objective to tell which nodes are better
-		if meta.AnySuccess() {
-			if meta.scheduled {
-				h.Storage.Put(tag, RTT(v.Value))
-			} else {
-				h.Storage.Update(tag, RTT(v.Value))
-			}
 		}
 	}
 	return r, nil

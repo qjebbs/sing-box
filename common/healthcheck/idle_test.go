@@ -6,9 +6,11 @@ import (
 	"time"
 
 	"github.com/sagernet/sing-box/adapter"
+	"github.com/sagernet/sing-box/common/urltest"
 	"github.com/sagernet/sing-box/log"
 	"github.com/sagernet/sing-box/option"
 	"github.com/sagernet/sing-box/provider"
+	"github.com/sagernet/sing/common/batch"
 	"github.com/sagernet/sing/common/json/badoption"
 	"github.com/sagernet/sing/service"
 	"github.com/sagernet/sing/service/pause"
@@ -229,4 +231,67 @@ func waitFor(t *testing.T, timeout time.Duration, condition func() bool, message
 		time.Sleep(5 * time.Millisecond)
 	}
 	t.Fatal(message)
+}
+
+func newResultTestBatch(t *testing.T) *batch.Batch[uint16] {
+	t.Helper()
+	b, _ := batch.New(context.Background(), batch.WithConcurrencyNum[uint16](2))
+	return b
+}
+
+func TestSuccessResultIsCommittedImmediately(t *testing.T) {
+	checker := newIdleTestChecker(time.Hour, time.Minute)
+	checker.globalHistory = urltest.NewHistoryStorage()
+	defer checker.globalHistory.Close()
+	meta := NewMetaData()
+	meta.scheduled = true
+	b := newResultTestBatch(t)
+	b.Go("fast", func() (uint16, error) {
+		checker.storeResult(meta.scheduled, "fast", 10)
+		meta.ReportSuccess()
+		return 10, nil
+	})
+	// The round is still open (the slow node isn't even submitted yet), but the
+	// result of the fast node becomes visible without waiting for the others.
+	waitFor(t, time.Second, func() bool {
+		return checker.Storage.Stats("fast").All == 1
+	}, "success result is not committed immediately")
+	if stats := checker.Storage.Stats("fast"); stats.Latest != 10 {
+		t.Fatalf("unexpected committed result: %+v", stats)
+	}
+	b.Go("slow", func() (uint16, error) {
+		meta.ReportFailure("slow")
+		return 0, nil
+	})
+	if _, err := checker.waitProcessResult(b, meta); err != nil {
+		t.Fatal(err)
+	}
+	if stats := checker.Storage.Stats("slow"); stats.All != 1 || stats.Latest != Failed {
+		t.Fatalf("failed result is not committed after the round: %+v", stats)
+	}
+	if checker.globalHistory.LoadURLTestHistory("slow") == nil {
+		t.Fatal("failed result is not visible in the global history")
+	}
+}
+
+func TestFailedResultsAreDroppedWhenAllFailed(t *testing.T) {
+	checker := newIdleTestChecker(time.Hour, time.Minute)
+	checker.globalHistory = urltest.NewHistoryStorage()
+	defer checker.globalHistory.Close()
+	meta := NewMetaData()
+	meta.scheduled = true
+	b := newResultTestBatch(t)
+	b.Go("dead", func() (uint16, error) {
+		meta.ReportFailure("dead")
+		return 0, nil
+	})
+	if _, err := checker.waitProcessResult(b, meta); err != nil {
+		t.Fatal(err)
+	}
+	if stats := checker.Storage.Stats("dead"); stats.All != 0 {
+		t.Fatalf("an all-failed round must not be committed: %+v", stats)
+	}
+	if checker.globalHistory.LoadURLTestHistory("dead") == nil {
+		t.Fatal("failed result is not visible in the global history")
+	}
 }
