@@ -236,7 +236,7 @@ func New(options Options) (*Box, error) {
 	}
 	service.MustRegister[adapter.DNSRouter](ctx, dnsRouter)
 	service.MustRegister[adapter.DNSRuleSetUpdateValidator](ctx, dnsRouter)
-	connectionManager := route.NewConnectionManager(logFactory.NewLogger("connection"))
+	connectionManager := route.NewConnectionManager(ctx, logFactory.NewLogger("connection"))
 	service.MustRegister[adapter.ConnectionManager](ctx, connectionManager)
 	networkManager, err := route.NewNetworkManager(ctx, logFactory.NewLogger("network"), routeOptions, dnsOptions)
 	if err != nil {
@@ -258,7 +258,7 @@ func New(options Options) (*Box, error) {
 	service.MustRegister[adapter.HealthCheckManager](ctx, healthCheckManager)
 	healthCheckService := adapter.LifecycleService(healthCheckManager)
 	if needClashAPI || needAPIService || options.PlatformLogWriter != nil {
-		trafficManager := trafficcontrol.NewManager(outboundManager)
+		trafficManager := trafficcontrol.NewManager()
 		service.MustRegisterPtr(ctx, trafficManager)
 		router.AppendTracker(trafficManager)
 		internalServices = append(internalServices, trafficManager)

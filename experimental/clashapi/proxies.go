@@ -82,7 +82,11 @@ func proxyInfo(server *Server, detour adapter.Outbound) *badjson.JSONObject {
 		}
 	}
 	if group, isGroup := detour.(adapter.OutboundGroup); isGroup {
-		info.Put("now", group.Now())
+		var now string
+		if selected := group.Selected(N.NetworkTCP); selected != nil {
+			now = selected.Tag()
+		}
+		info.Put("now", now)
 		info.Put("all", group.All())
 	}
 	return &info
@@ -219,7 +223,7 @@ func getProxyDelay(server *Server) func(w http.ResponseWriter, r *http.Request) 
 
 		delay, err := urltest.URLTest(ctx, url, proxy)
 		defer func() {
-			realTag := group.RealTag(server.outbound, proxy)
+			realTag := group.RealTag(proxy, N.NetworkTCP)
 			if err != nil {
 				server.urlTestHistory.DeleteURLTestHistory(realTag)
 			}

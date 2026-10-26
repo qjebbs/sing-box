@@ -2,6 +2,7 @@ package group
 
 import (
 	"context"
+	"io"
 	"net"
 
 	"github.com/sagernet/sing-box/adapter"
@@ -95,13 +96,17 @@ func (s *SelectorProvider) Start(stage adapter.StartStage, scope *adapter.Scope)
 	return nil
 }
 
-func (s *SelectorProvider) Now() string {
-	selected := s.selected.Load()
-	if selected == nil {
-		return ""
+// Selected implements adapter.OutboundGroup
+func (s *SelectorProvider) Selected(network string) adapter.Outbound {
+	if err := s.ensureSelected(); err != nil {
+		return nil
 	}
-	return selected.Tag()
+	return s.selected.Load()
+}
 
+// AttachConnection implements adapter.OutboundGroup
+func (s *SelectorProvider) AttachConnection(closer io.Closer) (detach func()) {
+	return s.interruptGroup.Add(closer, true)
 }
 
 func (s *SelectorProvider) SelectOutbound(tag string) bool {
@@ -121,7 +126,7 @@ func (s *SelectorProvider) SelectOutbound(tag string) bool {
 			}
 		}
 	}
-	s.interruptGroup.Interrupt(s.interruptExternalConnections, []string{tag})
+	s.interruptGroup.Interrupt(s.interruptExternalConnections)
 	return true
 }
 
@@ -133,7 +138,7 @@ func (s *SelectorProvider) DialContext(ctx context.Context, network string, dest
 	if err != nil {
 		return nil, err
 	}
-	return s.interruptGroup.NewConn(conn, interrupt.IsExternalConnectionFromContext(ctx), s.selected.Load().Tag()), nil
+	return s.interruptGroup.NewConn(conn, interrupt.IsExternalConnectionFromContext(ctx)), nil
 }
 
 func (s *SelectorProvider) ListenPacket(ctx context.Context, destination M.Socksaddr) (net.PacketConn, error) {
@@ -144,19 +149,21 @@ func (s *SelectorProvider) ListenPacket(ctx context.Context, destination M.Socks
 	if err != nil {
 		return nil, err
 	}
-	return s.interruptGroup.NewPacketConn(conn, interrupt.IsExternalConnectionFromContext(ctx), s.selected.Load().Tag()), nil
+	return s.interruptGroup.NewPacketConn(conn, interrupt.IsExternalConnectionFromContext(ctx)), nil
 }
 
 func (s *SelectorProvider) ensureSelected() error {
 	if s.selected.Load() != nil {
 		return nil
 	}
-	all := s.Outbounds()
-	if len(all) == 0 {
-		// "all" can be empty, only when s.outbounds is empty
-		// and s.providers is not empty but not loaded yet.
-		return E.New("no outbound available, providers are not loaded yet")
+	for _, provider := range s.Providers() {
+		outbounds := provider.Outbounds()
+		if len(outbounds) > 0 {
+			s.selected.Store(outbounds[0])
+			return nil
+		}
 	}
-	s.selected.Store(all[0])
-	return nil
+	// "all" can be empty, only when s.outbounds is empty
+	// and s.providers is not empty but not loaded yet.
+	return E.New("no outbound available, providers are not loaded yet")
 }

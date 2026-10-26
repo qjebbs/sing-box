@@ -2,6 +2,7 @@ package group
 
 import (
 	"context"
+	"io"
 	"net"
 
 	"github.com/sagernet/sing-box/adapter"
@@ -43,7 +44,7 @@ type LoadBalance struct {
 	connection     adapter.ConnectionManager
 	healthCheckMgr adapter.HealthCheckManager
 	options        option.LoadBalanceOutboundOptions
-	interruptGroup *interrupt.Group
+	interruptGroup *interrupt.TaggedGroup
 }
 
 // NewLoadBalance creates a new load balance outbound
@@ -61,17 +62,25 @@ func NewLoadBalance(ctx context.Context, router adapter.Router, logger log.Conte
 		connection:     service.FromContext[adapter.ConnectionManager](ctx),
 		healthCheckMgr: service.FromContext[adapter.HealthCheckManager](ctx),
 		options:        options,
-		interruptGroup: interrupt.NewGroup(),
+		interruptGroup: interrupt.NewTaggedGroup(),
 	}, nil
 }
 
-// Now implements adapter.OutboundGroup
-func (s *LoadBalance) Now() string {
-	picked := s.Pick(context.Background(), N.NetworkTCP, M.Socksaddr{})
-	if picked == nil {
-		return ""
+// Selected implements adapter.OutboundGroup
+func (s *LoadBalance) Selected(network string) adapter.Outbound {
+	if s.Balancer == nil {
+		return nil
 	}
-	return picked.Tag()
+	return s.Pick(context.Background(), network, M.Socksaddr{})
+}
+
+// AttachConnection implements adapter.OutboundGroup
+func (s *LoadBalance) AttachConnection(closer io.Closer) (detach func()) {
+	// LoadBalance doesn't have a selected member to bind the closer to: the node
+	// is picked per dial and is registered by DialContext and ListenPacket with
+	// NewConn and NewPacketConn instead. Registering it here would interrupt it
+	// on every health check round, which closes connections on healthy nodes too.
+	return func() {}
 }
 
 // All implements adapter.OutboundGroup

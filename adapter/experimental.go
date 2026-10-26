@@ -8,6 +8,7 @@ import (
 	"time"
 
 	E "github.com/sagernet/sing/common/exceptions"
+	N "github.com/sagernet/sing/common/network"
 	"github.com/sagernet/sing/common/varbin"
 )
 
@@ -150,8 +151,9 @@ func (s *SavedBinary) UnmarshalBinary(data []byte) error {
 
 type OutboundGroup interface {
 	Outbound
-	Now() string
 	All() []string
+	Selected(network string) Outbound
+	AttachConnection(closer io.Closer) (detach func())
 	Outbounds() []Outbound
 	Outbound(tag string) (Outbound, bool)
 }
@@ -176,11 +178,6 @@ func RealOutbound(outbound Outbound) (Outbound, error) {
 		if nLoop > 100 {
 			return nil, E.New("too deep or loop nesting of outbound groups")
 		}
-		var ok bool
-		now := group.Now()
-		redirected, ok = group.Outbound(now)
-		if !ok {
-			return nil, E.New("outbound not found:", now)
-		}
+		redirected = group.Selected(N.NetworkTCP)
 	}
 }
