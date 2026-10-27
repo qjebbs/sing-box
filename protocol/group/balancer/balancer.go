@@ -122,7 +122,13 @@ func (b *Balancer) AvailableNodes(logging bool) []string {
 				b.logger.Info("=== nodes unavailable ===")
 			}
 			if isScorer {
-				b.logger.Info(n.String(), " SCORE=", scorer.Score(n))
+				if score := scorer.Score(n); score != healthcheck.Failed {
+					b.logger.Info(n.String(), " SCORE=", score)
+				} else {
+					// healthcheck.Failed means there is no score to show, printing
+					// 0ms would read as the best possible result.
+					b.logger.Info(n.String(), " SCORE=-")
+				}
 				continue
 			}
 			b.logger.Info(n.String())

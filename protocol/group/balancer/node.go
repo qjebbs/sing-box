@@ -78,25 +78,49 @@ func (n *Node) String() string {
 	if n.Outbound != nil {
 		tag = n.Outbound.Tag()
 	}
-	if n.RTTSacale <= 0 || n.RTTSacale == 1 {
-		return fmt.Sprintf(
-			"#%d %s [%s] STD=%s MED=%s AVG=%s Latest=%s FAIL=%d/%d",
-			n.Index, n.Status, tag,
-			n.Deviation, n.Median, n.Average, n.Latest,
-			n.Fail, n.All,
-		)
-	}
+	// The average is not printed: since a failed check counts with the delay of the
+	// timeout, it is a mix of the two, and the median is the typical delay now.
 	return fmt.Sprintf(
-		"#%d %s [%s] STD=%s(%s) MED=%s(%s) AVG=%s(%s) Latest=%s FAIL=%d/%d",
+		"#%d %s [%s] STD=%s MED=%s Latest=%s FAIL=%d/%d",
 		n.Index, n.Status, tag,
-
-		n.Deviation, applyFactorToRTT(n.Deviation, n.RTTSacale),
-		n.Median, applyFactorToRTT(n.Median, n.RTTSacale),
-		n.Average, applyFactorToRTT(n.Average, n.RTTSacale),
-		n.Latest,
-
+		n.deviationString(), n.medianString(), n.latestString(),
 		n.Fail, n.All,
 	)
+}
+
+// deviationString returns the deviation to show. A node whose checks all failed has
+// no stability to speak of: its deviation is the zero of a single repeated value,
+// which reads as the best possible result.
+func (n *Node) deviationString() string {
+	if n.All == 0 || n.Fail == n.All {
+		return "None"
+	}
+	return n.formatRTT(n.Deviation)
+}
+
+// medianString returns the median to show, there is none without a sample.
+func (n *Node) medianString() string {
+	if n.All == 0 {
+		return "None"
+	}
+	return n.formatRTT(n.Median)
+}
+
+// latestString returns the latest delay to show. A failed check, and a check that
+// never happened, have a delay of healthcheck.Failed, which is not a delay of zero.
+func (n *Node) latestString() string {
+	if n.Latest == healthcheck.Failed {
+		return "None"
+	}
+	return n.formatRTT(n.Latest)
+}
+
+// formatRTT returns the delay with the scale factor applied, when there is one.
+func (n *Node) formatRTT(rtt healthcheck.RTT) string {
+	if n.RTTSacale <= 0 || n.RTTSacale == 1 {
+		return rtt.String()
+	}
+	return fmt.Sprintf("%s(%s)", rtt, applyFactorToRTT(rtt, n.RTTSacale))
 }
 
 // ScaleRTT returns the RTT after applying the scale factor of this node.
