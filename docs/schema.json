@@ -9234,6 +9234,12 @@
           "type": "integer",
           "minimum": 0
         },
+        "fail_weight": {
+          "type": "number"
+        },
+        "jitter_weight": {
+          "type": "number"
+        },
         "biases": {
           "type": "array",
           "items": {
@@ -9284,6 +9290,12 @@
         "max_nodes": {
           "type": "integer",
           "minimum": 0
+        },
+        "fail_weight": {
+          "type": "number"
+        },
+        "jitter_weight": {
+          "type": "number"
         },
         "biases": {
           "type": "array",

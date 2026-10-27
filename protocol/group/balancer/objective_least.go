@@ -1,6 +1,7 @@
 package balancer
 
 import (
+	"math"
 	"sort"
 
 	"github.com/sagernet/sing-box/common/healthcheck"
@@ -12,47 +13,106 @@ var _ Objective = (*LeastObjective)(nil)
 const (
 	// DefaultTolerance is the default relative tolerance around the best node.
 	DefaultTolerance float32 = 0.2
+	// DefaultFailWeight is the default weight of the failure rate in the score.
+	DefaultFailWeight float32 = 2
+	// DefaultJitterWeight is the default weight of the standard deviation in the score.
+	DefaultJitterWeight float32 = 1
 	// toleranceFloor is the absolute floor of the tolerance, so tiny values, such as
 	// the deviation of an always stable node, are not split by noise.
 	toleranceFloor = 10 * healthcheck.Millisecond
 )
 
-// LeastObjective is the least load / least ping balancing objective
+// LeastObjective is the least load / least ping balancing objective. Both rank the
+// nodes by Score, they only differ in the base statistic and whether the jitter is
+// added to it.
 type LeastObjective struct {
 	*QualifiedObjective
 	tolerance float32
 	minNodes  int
 	maxNodes  int
-	rttFunc   func(node *Node) healthcheck.RTT
+	// baseFunc is the primary statistic of the objective, it is the first term of
+	// the score.
+	baseFunc func(node *Node) healthcheck.RTT
+	// jitterFunc is added to the score as a penalty, it is nil when baseFunc is the
+	// jitter itself, since adding it again would only scale every score.
+	jitterFunc   func(node *Node) healthcheck.RTT
+	failWeight   float32
+	jitterWeight float32
+}
+
+func deviationRTT(node *Node) healthcheck.RTT {
+	return node.ScaleRTT(node.Deviation)
+}
+
+func medianRTT(node *Node) healthcheck.RTT {
+	return node.ScaleRTT(node.Median)
 }
 
 // NewLeastLoadObjective returns a new LeastObjective.
 func NewLeastLoadObjective(options option.LoadBalancePickOptions) *LeastObjective {
-	return NewLeastObjective(options, func(node *Node) healthcheck.RTT {
-		return node.ScaleRTT(node.Deviation)
-	})
+	objective := newLeastObjective(options)
+	// the standard deviation is the jitter itself, so jitter_weight is not used,
+	// adding the deviation again would only scale every score by the same factor
+	// objective.jitterWeight = 0
+	objective.baseFunc = deviationRTT
+	return objective
 }
 
 // NewLeastPingObjective returns a new LeastObjective.
 func NewLeastPingObjective(options option.LoadBalancePickOptions) *LeastObjective {
-	return NewLeastObjective(options, func(node *Node) healthcheck.RTT {
-		return node.ScaleRTT(node.Median)
-	})
+	objective := newLeastObjective(options)
+	objective.baseFunc = medianRTT
+	objective.jitterFunc = deviationRTT
+	objective.jitterWeight = float32Option(options.JitterWeight, DefaultJitterWeight)
+	return objective
 }
 
-// NewLeastObjective returns a new LeastObjective
-func NewLeastObjective(options option.LoadBalancePickOptions, rttFunc func(node *Node) healthcheck.RTT) *LeastObjective {
-	tolerance := options.Tolerance
-	if tolerance <= 0 {
-		tolerance = DefaultTolerance
-	}
+// newLeastObjective returns a new LeastObjective with the common options.
+func newLeastObjective(options option.LoadBalancePickOptions) *LeastObjective {
 	return &LeastObjective{
 		QualifiedObjective: NewQualifiedObjective(),
-		tolerance:          tolerance,
+		tolerance:          float32Option(options.Tolerance, DefaultTolerance),
 		minNodes:           int(options.MinNodes),
 		maxNodes:           int(options.MaxNodes),
-		rttFunc:            rttFunc,
+		failWeight:         float32Option(options.FailWeight, DefaultFailWeight),
 	}
+}
+
+func float32Option(value float32, defaultValue float32) float32 {
+	if value <= 0 {
+		return defaultValue
+	}
+	return value
+}
+
+// Score returns the cost of using the node, lower is better. It starts from the
+// base value of the objective, penalizes the failure rate, since a failing node
+// costs a retry, and adds the jitter, since an unstable node stalls connections:
+//
+//	score = base * (1 + failWeight * failRate) + jitterWeight * jitter
+//
+// The jitter term is absent when the objective has no jitterFunc, which is the
+// case for leastload: its base is the deviation itself.
+func (o *LeastObjective) Score(node *Node) healthcheck.RTT {
+	score := float64(o.baseFunc(node))
+	if o.jitterFunc != nil && o.jitterWeight > 0 {
+		score += float64(o.jitterWeight) * float64(o.jitterFunc(node))
+	}
+	if o.failWeight > 0 && node.All > 0 && node.Fail > 0 {
+		score *= 1 + float64(o.failWeight)*float64(node.Fail)/float64(node.All)
+	}
+	return rttFromFloat(score)
+}
+
+func rttFromFloat(value float64) healthcheck.RTT {
+	if value <= 0 {
+		return healthcheck.Failed
+	}
+	if value >= math.MaxUint16 {
+		return healthcheck.RTT(math.MaxUint16)
+	}
+	// round instead of truncate, so the penalty never loses a millisecond
+	return healthcheck.RTT(value + 0.5)
 }
 
 // Filter implements Objective.
@@ -61,12 +121,12 @@ func (o *LeastObjective) Filter(all []*Node) []*Node {
 	// nodes are either qualified, alive or all nodes
 	nodes := o.QualifiedObjective.Filter(all)
 	o.Sort(nodes)
-	return SelectCluster(nodes, o.tolerance, o.minNodes, o.maxNodes, o.rttFunc)
+	return SelectCluster(nodes, o.tolerance, o.minNodes, o.maxNodes, o.Score)
 }
 
 // Sort implements Objective.
 func (o *LeastObjective) Sort(all []*Node) {
-	SortByLeast(all, o.rttFunc)
+	SortByLeast(all, o.Score)
 }
 
 // SelectCluster selects the nodes that are statistically close enough to the best
@@ -82,11 +142,11 @@ func SelectCluster(
 		return nil
 	}
 	best := rttFunc(nodes[0])
-	toleranceRange := healthcheck.RTT(float32(best) * tolerance)
-	if toleranceRange < toleranceFloor {
-		toleranceRange = toleranceFloor
+	toleranceRange := float32(best) * tolerance
+	if toleranceRange < float32(toleranceFloor) {
+		toleranceRange = float32(toleranceFloor)
 	}
-	limit := best + toleranceRange
+	limit := rttFromFloat(float64(best) + float64(toleranceRange))
 	count := 1
 	for count < len(nodes) {
 		// Nodes are sorted by status first, never mix a fallback status in.

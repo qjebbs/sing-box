@@ -1,5 +1,7 @@
 package balancer
 
+import "github.com/sagernet/sing-box/common/healthcheck"
+
 // Objective is the interface for balancer objectives
 type Objective interface {
 	// Filter filters nodes from all.
@@ -10,4 +12,10 @@ type Objective interface {
 	Filter(all []*Node) []*Node
 	// Sort sorts nodes according to the objective, better nodes are in front.
 	Sort([]*Node)
+}
+
+// Scorer is an optional interface for objectives that rank nodes by a score.
+type Scorer interface {
+	// Score returns the cost of using the node, lower is better.
+	Score(node *Node) healthcheck.RTT
 }

@@ -181,3 +181,100 @@ func TestLeastPingUsesMedian(t *testing.T) {
 		t.Fatalf("want node 1 selected, got %v", selected[0].Index)
 	}
 }
+
+func TestLeastPingScore(t *testing.T) {
+	t.Parallel()
+	objective := balancer.NewLeastPingObjective(option.LoadBalancePickOptions{})
+	testCases := []struct {
+		name  string
+		stats healthcheck.Stats
+		want  healthcheck.RTT
+	}{
+		{name: "clear", stats: healthcheck.Stats{Median: 160, Deviation: 10, All: 10}, want: 170},
+		// the jitter is added, an unstable node costs more than a steady one
+		{name: "jitter", stats: healthcheck.Stats{Median: 160, Deviation: 600, All: 10}, want: 760},
+		// 2 of 10 checks failed: costs a retry, 1 + 2*0.2 = 1.4
+		{name: "failures", stats: healthcheck.Stats{Median: 160, Deviation: 10, All: 10, Fail: 2}, want: 238},
+		{name: "never checked", stats: healthcheck.Stats{}, want: 0},
+	}
+	for _, testCase := range testCases {
+		testCase := testCase
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+			node := &balancer.Node{Status: balancer.StatusQualified, Stats: testCase.stats}
+			got := objective.Score(node)
+			if got != testCase.want {
+				t.Fatalf("want %v, got %v", testCase.want, got)
+			}
+		})
+	}
+}
+
+func TestLeastLoadScoreIgnoresJitter(t *testing.T) {
+	t.Parallel()
+	// leastload scores by the standard deviation itself, adding it again would only
+	// scale every score, so the jitter weight is not applied.
+	objective := balancer.NewLeastLoadObjective(option.LoadBalancePickOptions{JitterWeight: 1})
+	node := &balancer.Node{Status: balancer.StatusQualified, Stats: healthcheck.Stats{
+		Median: 160, Deviation: 40, All: 10,
+	}}
+	if got := objective.Score(node); got != 40 {
+		t.Fatalf("want 40, got %v", got)
+	}
+}
+
+func TestLeastScoreOptionWeights(t *testing.T) {
+	t.Parallel()
+	node := &balancer.Node{Status: balancer.StatusQualified, Stats: healthcheck.Stats{
+		Median: 100, Deviation: 20, All: 10, Fail: 2,
+	}}
+	testCases := []struct {
+		name    string
+		options option.LoadBalancePickOptions
+		want    healthcheck.RTT
+	}{
+		// (100 + 20) * (1 + 2 * 0.2)
+		{name: "defaults", options: option.LoadBalancePickOptions{}, want: 168},
+		// 100 * (1 + 0.5*0.2) + 0
+		{name: "custom", options: option.LoadBalancePickOptions{FailWeight: 0.5, JitterWeight: 0.0001}, want: 110},
+	}
+	for _, testCase := range testCases {
+		testCase := testCase
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+			got := balancer.NewLeastPingObjective(testCase.options).Score(node)
+			if got != testCase.want {
+				t.Fatalf("want %v, got %v", testCase.want, got)
+			}
+		})
+	}
+}
+
+func TestLeastPingScoreRanks(t *testing.T) {
+	t.Parallel()
+	// Both nodes are fast enough to be qualified, but the first one fails 2 of 10
+	// checks. The retry penalty pushes it behind the second one.
+	flaky := &balancer.Node{
+		Index: 1, Status: balancer.StatusQualified,
+		Stats: healthcheck.Stats{Median: 161, Deviation: 10, All: 10, Fail: 2},
+	}
+	steady := &balancer.Node{
+		Index: 2, Status: balancer.StatusQualified,
+		Stats: healthcheck.Stats{Median: 164, Deviation: 8, All: 10},
+	}
+	selected := balancer.NewLeastPingObjective(option.LoadBalancePickOptions{}).Filter([]*balancer.Node{flaky, steady})
+	if len(selected) != 1 || selected[0].Index != 2 {
+		t.Fatalf("want node 2, got %v", selected)
+	}
+}
+
+func TestLeastScoreClamp(t *testing.T) {
+	t.Parallel()
+	objective := balancer.NewLeastPingObjective(option.LoadBalancePickOptions{})
+	node := &balancer.Node{Status: balancer.StatusQualified, Stats: healthcheck.Stats{
+		Median: 65000, Deviation: 65000, All: 10, Fail: 10,
+	}}
+	if got := objective.Score(node); got != 65535 {
+		t.Fatalf("want the score clamped to 65535, got %v", got)
+	}
+}

@@ -37,6 +37,12 @@ type LoadBalancePickOptions struct {
 	MinNodes uint `json:"min_nodes,omitempty"`
 	// max_nodes is the maximum number of nodes to select, 0 means unlimited.
 	MaxNodes uint `json:"max_nodes,omitempty"`
+	// fail_weight scales the failure rate penalty of the score, a node failing f of
+	// its checks is scored as (1 + f*fail_weight) times slower. Default is 2.
+	FailWeight float32 `json:"fail_weight,omitempty"`
+	// jitter_weight scales the standard deviation added to the score. Default is 1,
+	// it is not used by leastload, whose score is the standard deviation itself.
+	JitterWeight float32 `json:"jitter_weight,omitempty"`
 	// pick biases
 	Biases []LoadBalancePickBias `json:"biases,omitempty"`
 }

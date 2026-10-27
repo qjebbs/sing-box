@@ -25,6 +25,8 @@
     "tolerance": 0.2,
     "min_nodes": 1,
     "max_nodes": 0,
+    "fail_weight": 2,
+    "jitter_weight": 1,
     "biases": [
       {
         "contains": "keyword",
@@ -99,6 +101,17 @@ It tries to pick from the class that the objective is targeting (see the table a
 
 Generally speaking, use `leastload`, `leastping` for better network quality; use `alive` for more quantity of outbound nodes.
 
+Both `leastload` and `leastping` rank the nodes by a score, lower is better:
+
+```
+score = base * (1 + fail_weight * fail_rate) + jitter_weight * deviation
+```
+
+- `leastload` uses the standard deviation as the base, `leastping` uses the median RTT.
+- The failure rate is the share of failed health checks in the same window, a failing node costs a retry, so it is penalized relative to its own latency.
+- The jitter penalty is added, because an unstable node stalls connections even when its typical RTT is low.
+- `leastload` does not apply the jitter penalty (`jitter_weight=0`), since its score is the standard deviation itself, adding it again is redundant.
+
 #### strategy
 
 The strategy of load balancing. Default is `random`.
@@ -125,7 +138,7 @@ The maximum number of health check failures for qulified nodes, default is `0`, 
 
 The maximum relative difference to the best node, default is `0.2`, i.e. nodes that are at most 20% worse than the best one are selected with it.
 
-For `leastload` the value compared is the standard deviation (STD) of RTTs, for `leastping` it is the median of RTTs, which is not dragged away by a single spike like the average is.
+The value compared is the [score](#objective), so both the failure rate and the jitter of a node are already included in the comparison.
 
 The tolerance is applied to the best node in the selection, so a clearly worse node is never selected just to fill a count.
 A minimum absolute difference of `10ms` is always used, so tiny values, such as the deviation of an always stable node, aren't split by noise.
@@ -147,6 +160,22 @@ This only affects the case when the nodes within the tolerance are fewer than `m
 The maximum number of nodes to select, default is `0`, which means unlimited.
 
 This affects the case when the nodes are equally good, e.g. when all nodes are within the tolerance, only `max_nodes` of them are selected to avoid spreading connections over every node.
+
+#### fail_weight
+
+> Available only for `least*` objectives
+
+Scales the failure rate penalty of the [score](#objective). Default is `2`, i.e. a node failing 10% of its health checks is scored as `1.2` times slower, which usually matters more than a few milliseconds of latency, since a failure costs a whole timeout.
+
+The penalty applies after the `max_fail` constraint, it only ranks the nodes that are allowed to fail.
+
+#### jitter_weight
+
+> Available only for `least*` objectives
+
+Scales the standard deviation added to the [score](#objective). Default is `1`, so a node whose RTT deviates by 300ms is scored as 300ms slower than its median.
+
+Set it lower if you prefer a low but unstable node over a slightly slower steady one. It has no effect on `leastload`, whose score is the standard deviation itself.
 
 #### biases
 

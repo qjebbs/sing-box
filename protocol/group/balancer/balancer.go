@@ -116,9 +116,14 @@ func (b *Balancer) AvailableNodes(logging bool) []string {
 		)
 		b.logger.Info("=== nodes available ===")
 		b.Objective.Sort(all)
+		scorer, isScorer := b.Objective.(Scorer)
 		for i, n := range all {
 			if i == available {
 				b.logger.Info("=== nodes unavailable ===")
+			}
+			if isScorer {
+				b.logger.Info(n.String(), " SCORE=", scorer.Score(n))
+				continue
 			}
 			b.logger.Info(n.String())
 		}
