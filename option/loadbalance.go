@@ -30,10 +30,13 @@ type LoadBalancePickOptions struct {
 	MaxFail uint `json:"max_fail,omitempty"`
 	// max acceptable rtt. defalut 0
 	MaxRTT badoption.Duration `json:"max_rtt,omitempty"`
-	// expected nodes count to select
-	Expected uint `json:"expected,omitempty"`
-	// ping rtt baselines
-	Baselines []badoption.Duration `json:"baselines,omitempty"`
+	// tolerance is the maximum relative difference to the best node, e.g. 0.2 means
+	// nodes up to 20% worse than the best one are selected too. Default is 0.2.
+	Tolerance float32 `json:"tolerance,omitempty"`
+	// min_nodes is the minimum number of nodes to select. Default is 1.
+	MinNodes uint `json:"min_nodes,omitempty"`
+	// max_nodes is the maximum number of nodes to select, 0 means unlimited.
+	MaxNodes uint `json:"max_nodes,omitempty"`
 	// pick biases
 	Biases []LoadBalancePickBias `json:"biases,omitempty"`
 }

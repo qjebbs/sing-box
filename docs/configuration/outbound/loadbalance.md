@@ -22,16 +22,9 @@
     "strategy": "random",
     "max_fail": 0,
     "max_rtt": "1000ms",
-    "expected": 3,
-    "baselines": [
-      "30ms",
-      "50ms",
-      "100ms",
-      "150ms",
-      "200ms",
-      "250ms",
-      "350ms"
-    ],
+    "tolerance": 0.2,
+    "min_nodes": 1,
+    "max_nodes": 0,
     "biases": [
       {
         "contains": "keyword",
@@ -126,23 +119,34 @@ The maximum round-trip time of health check that is acceptable for qulified node
 
 The maximum number of health check failures for qulified nodes, default is `0`, i.e. no failures allowed.
 
-#### expected / baselines
+#### tolerance
 
 > Available only for `least*` objectives
 
-`expected` is the expected number of nodes to be selected. The default value is 1.
+The maximum relative difference to the best node, default is `0.2`, i.e. nodes that are at most 20% worse than the best one are selected with it.
 
-`baselines` divide the nodes into different ranges. The default value is empty. For `leastload`, it divides according to the standard deviation (STD) of RTTs; For `leastping`, it divides according to the average of RTTs.
+For `leastload` the value compared is the standard deviation (STD) of RTTs, for `leastping` it is the average of RTTs.
 
-Here are typical configuration for `leastload`:
+The tolerance is applied to the best node in the selection, so a clearly worse node is never selected just to fill a count.
+A minimum absolute difference of `10ms` is always used, so tiny values, such as the deviation of an always stable node, aren't split by noise.
 
-1. `expected: 3`, select 3 nodes with the smallest STD.
+For example, with `tolerance: 0.2` and nodes of `174ms`, `504ms`, `505ms`, only the `174ms` node is selected, as the others are nearly three times slower.
 
-1. `expected:3, baselines =["50ms"]`, If there are more than 3 nodes with sufficient stability (STD<50ms), select as many as there are. Otherwise, select the top 3 nodes with the smallest STD.
+#### min_nodes
 
-1. `expected:3, baselines =["30ms","50ms","100ms"]`, try different baselines until we find at least 3 nodes. Otherwise select the top 3 nodes with the smallest STD. The advantage is that it can find a proper quantity of nodes without wasting nodes with similar qualities.
+> Available only for `least*` objectives
 
-1. `baselines: ["30ms","50ms","100ms"]`, try to select nodes by different baselines. If there is no node matching any baseline, return the one with the smallest STD.
+The minimum number of nodes to select, default is `1`.
+
+This only affects the case when the nodes within the tolerance are fewer than `min_nodes`, e.g. `min_nodes: 2` selects the runner-up even when it is outside the tolerance, which trades quality for redundancy.
+
+#### max_nodes
+
+> Available only for `least*` objectives
+
+The maximum number of nodes to select, default is `0`, which means unlimited.
+
+This affects the case when the nodes are equally good, e.g. when all nodes are within the tolerance, only `max_nodes` of them are selected to avoid spreading connections over every node.
 
 #### biases
 

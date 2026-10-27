@@ -9223,15 +9223,16 @@
         "max_rtt": {
           "$ref": "#/$defs/Duration"
         },
-        "expected": {
+        "tolerance": {
+          "type": "number"
+        },
+        "min_nodes": {
           "type": "integer",
           "minimum": 0
         },
-        "baselines": {
-          "type": "array",
-          "items": {
-            "$ref": "#/$defs/Duration"
-          }
+        "max_nodes": {
+          "type": "integer",
+          "minimum": 0
         },
         "biases": {
           "type": "array",
@@ -9273,15 +9274,16 @@
         "max_rtt": {
           "$ref": "#/$defs/Duration"
         },
-        "expected": {
+        "tolerance": {
+          "type": "number"
+        },
+        "min_nodes": {
           "type": "integer",
           "minimum": 0
         },
-        "baselines": {
-          "type": "array",
-          "items": {
-            "$ref": "#/$defs/Duration"
-          }
+        "max_nodes": {
+          "type": "integer",
+          "minimum": 0
         },
         "biases": {
           "type": "array",

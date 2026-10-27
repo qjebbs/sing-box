@@ -9,11 +9,20 @@ import (
 
 var _ Objective = (*LeastObjective)(nil)
 
+const (
+	// DefaultTolerance is the default relative tolerance around the best node.
+	DefaultTolerance float32 = 0.2
+	// toleranceFloor is the absolute floor of the tolerance, so tiny values, such as
+	// the deviation of an always stable node, are not split by noise.
+	toleranceFloor = 10 * healthcheck.Millisecond
+)
+
 // LeastObjective is the least load / least ping balancing objective
 type LeastObjective struct {
 	*QualifiedObjective
-	expected  int
-	baselines []healthcheck.RTT
+	tolerance float32
+	minNodes  int
+	maxNodes  int
 	rttFunc   func(node *Node) healthcheck.RTT
 }
 
@@ -33,10 +42,15 @@ func NewLeastPingObjective(options option.LoadBalancePickOptions) *LeastObjectiv
 
 // NewLeastObjective returns a new LeastObjective
 func NewLeastObjective(options option.LoadBalancePickOptions, rttFunc func(node *Node) healthcheck.RTT) *LeastObjective {
+	tolerance := options.Tolerance
+	if tolerance <= 0 {
+		tolerance = DefaultTolerance
+	}
 	return &LeastObjective{
 		QualifiedObjective: NewQualifiedObjective(),
-		expected:           int(options.Expected),
-		baselines:          healthcheck.RTTsOf(options.Baselines),
+		tolerance:          tolerance,
+		minNodes:           int(options.MinNodes),
+		maxNodes:           int(options.MaxNodes),
 		rttFunc:            rttFunc,
 	}
 }
@@ -47,12 +61,7 @@ func (o *LeastObjective) Filter(all []*Node) []*Node {
 	// nodes are either qualified, alive or all nodes
 	nodes := o.QualifiedObjective.Filter(all)
 	o.Sort(nodes)
-	// LeastNodes will always select at least one node
-	return LeastNodes(
-		nodes,
-		o.expected, o.baselines,
-		o.rttFunc,
-	)
+	return SelectCluster(nodes, o.tolerance, o.minNodes, o.maxNodes, o.rttFunc)
 }
 
 // Sort implements Objective.
@@ -60,52 +69,40 @@ func (o *LeastObjective) Sort(all []*Node) {
 	SortByLeast(all, o.rttFunc)
 }
 
-// LeastNodes filters ordered nodes according to `baselines` and `expected`.
-//  1. baseline: nil, expected: 0: selects top one node.
-//  2. baseline: nil, expected > 0: selects `expected` number of nodes.
-//  3. baselines: [...], expected > 0: select `expected` number of nodes, and also those near them according to baselines.
-//  4. baselines: [...], expected <= 0: go through all baselines until find selects, if not, select the top one.
-func LeastNodes(
-	nodes []*Node, expected int, baselines []healthcheck.RTT,
+// SelectCluster selects the nodes that are statistically close enough to the best
+// one: every node whose value is within tolerance, relative to the best value, is
+// kept, so a node that is clearly worse is never selected just to fill a count.
+// minNodes extends the selection to that count when the cluster is too small,
+// maxNodes limits it when set.
+func SelectCluster(
+	nodes []*Node, tolerance float32, minNodes int, maxNodes int,
 	rttFunc func(node *Node) healthcheck.RTT,
 ) []*Node {
 	if len(nodes) == 0 {
 		return nil
 	}
-	availableCount := len(nodes)
-	if expected > availableCount {
-		return nodes
+	best := rttFunc(nodes[0])
+	toleranceRange := healthcheck.RTT(float32(best) * tolerance)
+	if toleranceRange < toleranceFloor {
+		toleranceRange = toleranceFloor
 	}
-	if expected <= 0 {
-		expected = 1
-	}
-	if len(baselines) == 0 {
-		return nodes[:expected]
-	}
-
-	count := 0
-	// go through all base line until find expected selects
-	for i := 0; i < len(baselines); i++ {
-		baseline := baselines[i]
-		curStatus := nodes[count].Status
-		for j := count; j < availableCount; j++ {
-			if nodes[j].Status != curStatus {
-				// if status changed, reset baseline index
-				i = -1
-				break
-			}
-			if rttFunc(nodes[j]) >= baseline {
-				break
-			}
-			count = j + 1
-		}
-		// don't continue if find expected selects
-		if count >= expected {
+	limit := best + toleranceRange
+	count := 1
+	for count < len(nodes) {
+		// Nodes are sorted by status first, never mix a fallback status in.
+		if nodes[count].Status != nodes[0].Status {
 			break
 		}
+		if rttFunc(nodes[count]) > limit {
+			break
+		}
+		count++
 	}
-	if count < expected {
-		count = expected
+	if count < minNodes {
+		count = min(minNodes, len(nodes))
+	}
+	if maxNodes > 0 && count > maxNodes {
+		count = maxNodes
 	}
 	return nodes[:count]
 }

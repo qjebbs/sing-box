@@ -15,9 +15,7 @@ import (
 )
 
 var (
-	benchmarkPickOptions = option.LoadBalancePickOptions{
-		Expected: 9999,
-	}
+	benchmarkPickOptions            = option.LoadBalancePickOptions{}
 	benchmarkAliveObjective         = balancer.NewAliveObjective()
 	benchmarkLeastLoadObjective     = balancer.NewLeastLoadObjective(benchmarkPickOptions)
 	benchmarkRandomStrategy         = balancer.NewRandomStrategy()

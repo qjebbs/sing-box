@@ -1,95 +1,127 @@
 package balancer_test
 
 import (
-	"strconv"
 	"testing"
 
 	"github.com/sagernet/sing-box/common/healthcheck"
+	"github.com/sagernet/sing-box/option"
 	"github.com/sagernet/sing-box/protocol/group/balancer"
 )
 
-func TestLeastNodes(t *testing.T) {
+func deviationRTT(node *balancer.Node) healthcheck.RTT {
+	return node.Deviation
+}
+
+func newNode(status balancer.Status, deviation healthcheck.RTT) *balancer.Node {
+	return &balancer.Node{Status: status, Stats: healthcheck.Stats{Deviation: deviation}}
+}
+
+func TestSelectCluster(t *testing.T) {
 	t.Parallel()
-	nodes := []*balancer.Node{
-		{Stats: healthcheck.Stats{Deviation: 50}},
-		{Stats: healthcheck.Stats{Deviation: 70}},
-		{Stats: healthcheck.Stats{Deviation: 100}},
-		{Stats: healthcheck.Stats{Deviation: 110}},
-		{Stats: healthcheck.Stats{Deviation: 120}},
-		{Stats: healthcheck.Stats{Deviation: 150}},
+	// Average values from a real subscription: the first node is far better than the
+	// rest, so only it must be selected.
+	realData := []*balancer.Node{
+		newNode(balancer.StatusQualified, 174),
+		newNode(balancer.StatusQualified, 504),
+		newNode(balancer.StatusQualified, 505),
+		newNode(balancer.StatusQualified, 536),
+		newNode(balancer.StatusQualified, 544),
+		newNode(balancer.StatusQualified, 561),
+		newNode(balancer.StatusQualified, 577),
+	}
+	// Tiny values, such as the deviation of stable nodes, use the absolute floor.
+	tinyValues := []*balancer.Node{
+		newNode(balancer.StatusQualified, 3),
+		newNode(balancer.StatusQualified, 5),
+		newNode(balancer.StatusQualified, 8),
+		newNode(balancer.StatusQualified, 12),
+	}
+	// Average values from another subscription: the first two nodes are close, the
+	// third one is clearly worse.
+	closePair := []*balancer.Node{
+		newNode(balancer.StatusQualified, 161),
+		newNode(balancer.StatusQualified, 164),
+		newNode(balancer.StatusQualified, 423),
+		newNode(balancer.StatusQualified, 442),
+	}
+	equalNodes := make([]*balancer.Node, 0, 8)
+	for i := 0; i < 8; i++ {
+		equalNodes = append(equalNodes, newNode(balancer.StatusQualified, 500))
 	}
 	testCases := []struct {
-		expected  int
-		baselines []healthcheck.RTT
+		name      string
+		nodes     []*balancer.Node
+		tolerance float32
+		minNodes  int
+		maxNodes  int
 		want      int
 	}{
-		// typical cases
-		{want: 1},
-		{baselines: []healthcheck.RTT{100}, want: 2},
-		{expected: 3, want: 3},
-		{expected: 3, baselines: []healthcheck.RTT{50, 100, 150}, want: 5},
-
-		// edge cases
-		{expected: 0, baselines: nil, want: 1},
-		{expected: 1, baselines: nil, want: 1},
-		{expected: 0, baselines: []healthcheck.RTT{10}, want: 1},
-		{expected: 0, baselines: []healthcheck.RTT{80, 100}, want: 2},
-		{expected: 2, baselines: []healthcheck.RTT{50, 100}, want: 2},
-		{expected: 0, baselines: []healthcheck.RTT{10}, want: 1},
-		{expected: 9999, want: len(nodes)},
-		{expected: 9999, baselines: []healthcheck.RTT{50, 100, 150}, want: len(nodes)},
+		{name: "empty", nodes: nil, tolerance: balancer.DefaultTolerance, want: 0},
+		{name: "single", nodes: realData[:1], tolerance: balancer.DefaultTolerance, want: 1},
+		{name: "real data", nodes: realData, tolerance: balancer.DefaultTolerance, want: 1},
+		{name: "close pair", nodes: closePair, tolerance: balancer.DefaultTolerance, want: 2},
+		{name: "equal nodes", nodes: equalNodes, tolerance: balancer.DefaultTolerance, want: len(equalNodes)},
+		{name: "tiny values", nodes: tinyValues, tolerance: balancer.DefaultTolerance, want: len(tinyValues)},
+		{name: "wide tolerance", nodes: realData, tolerance: 2, want: 3},
+		{name: "min nodes", nodes: realData, tolerance: balancer.DefaultTolerance, minNodes: 3, want: 3},
+		{name: "min nodes larger than available", nodes: closePair, tolerance: balancer.DefaultTolerance, minNodes: 9, want: len(closePair)},
+		{name: "min nodes within tolerance", nodes: closePair, tolerance: balancer.DefaultTolerance, minNodes: 1, want: 2},
+		{name: "max nodes", nodes: equalNodes, tolerance: balancer.DefaultTolerance, maxNodes: 3, want: 3},
 	}
-	for i, tc := range testCases {
-		tc := tc
-		t.Run(strconv.Itoa(i), func(t *testing.T) {
+	for _, testCase := range testCases {
+		testCase := testCase
+		t.Run(testCase.name, func(t *testing.T) {
 			t.Parallel()
-			if got := balancer.LeastNodes(
-				nodes, tc.expected, tc.baselines,
-				func(node *balancer.Node) healthcheck.RTT {
-					return node.Deviation
-				},
-			); len(got) != tc.want {
-				t.Errorf("want: %v, got: %v", tc.want, len(got))
+			balancer.SortByLeast(testCase.nodes, deviationRTT)
+			got := balancer.SelectCluster(
+				testCase.nodes, testCase.tolerance, testCase.minNodes, testCase.maxNodes, deviationRTT,
+			)
+			if len(got) != testCase.want {
+				t.Errorf("want %v nodes, got %v", testCase.want, len(got))
 			}
 		})
 	}
 }
 
-func TestLeastNodesAndStatus(t *testing.T) {
+func TestSelectClusterSortsFirst(t *testing.T) {
+	t.Parallel()
+	objective := balancer.NewLeastLoadObjective(option.LoadBalancePickOptions{})
+	nodes := []*balancer.Node{
+		{Index: 0, Status: balancer.StatusQualified, Stats: healthcheck.Stats{Deviation: 120, All: 10}},
+		{Index: 1, Status: balancer.StatusQualified, Stats: healthcheck.Stats{Deviation: 15, All: 10}},
+		{Index: 2, Status: balancer.StatusQualified, Stats: healthcheck.Stats{Deviation: 18, All: 10}},
+		{Index: 3, Status: balancer.StatusQualified, Stats: healthcheck.Stats{Deviation: 191, All: 10}},
+	}
+	selected := objective.Filter(nodes)
+	if len(selected) != 2 {
+		t.Fatalf("want 2 nodes, got %v", len(selected))
+	}
+	if selected[0].Index != 1 || selected[1].Index != 2 {
+		t.Fatalf("want nodes [1 2], got [%v %v]", selected[0].Index, selected[1].Index)
+	}
+}
+
+func TestSelectClusterAndStatus(t *testing.T) {
 	t.Parallel()
 	nodes := []*balancer.Node{
-		{Status: balancer.StatusQualified, Stats: healthcheck.Stats{Deviation: 50}},
-		{Status: balancer.StatusQualified, Stats: healthcheck.Stats{Deviation: 80}},
-		{Status: balancer.StatusAlive, Stats: healthcheck.Stats{Deviation: 20}},
-		{Status: balancer.StatusAlive, Stats: healthcheck.Stats{Deviation: 50}},
-		{Status: balancer.StatusAlive, Stats: healthcheck.Stats{Deviation: 70}},
-		{Status: balancer.StatusAlive, Stats: healthcheck.Stats{Deviation: 100}},
-		{Status: balancer.StatusAlive, Stats: healthcheck.Stats{Deviation: 110}},
-		{Status: balancer.StatusUnknown, Stats: healthcheck.Stats{Deviation: 0}},
+		newNode(balancer.StatusQualified, 50),
+		newNode(balancer.StatusQualified, 52),
+		newNode(balancer.StatusAlive, 20),
+		newNode(balancer.StatusAlive, 22),
+		newNode(balancer.StatusAlive, 100),
+		newNode(balancer.StatusUnknown, 0),
 	}
-	testCases := []struct {
-		expected  int
-		baselines []healthcheck.RTT
-		want      int
-	}{
-		{expected: 1, want: 1},
-		{expected: 3, want: 3},
-		{expected: 1, baselines: []healthcheck.RTT{100}, want: 2},
-		{expected: 3, baselines: []healthcheck.RTT{100}, want: 5},
+	// Sorted by status first: qualified nodes are selected, and the selection never
+	// crosses into a fallback status, even when its value is lower.
+	balancer.SortByLeast(nodes, deviationRTT)
+	selected := balancer.SelectCluster(nodes, balancer.DefaultTolerance, 0, 0, deviationRTT)
+	if len(selected) != 2 {
+		t.Fatalf("want 2 qualified nodes, got %v", len(selected))
 	}
-	for i, tc := range testCases {
-		tc := tc
-		t.Run(strconv.Itoa(i), func(t *testing.T) {
-			t.Parallel()
-			if got := balancer.LeastNodes(
-				nodes, tc.expected, tc.baselines,
-				func(node *balancer.Node) healthcheck.RTT {
-					return node.Deviation
-				},
-			); len(got) != tc.want {
-				t.Errorf("want %v, got = %v", tc.want, len(got))
-			}
-		})
+	for _, node := range selected {
+		if node.Status != balancer.StatusQualified {
+			t.Fatalf("selection crossed the status boundary: %v", node.Status)
+		}
 	}
 }
 
