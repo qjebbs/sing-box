@@ -9234,9 +9234,6 @@
           "type": "integer",
           "minimum": 0
         },
-        "fail_weight": {
-          "type": "number"
-        },
         "jitter_weight": {
           "type": "number"
         },
@@ -9290,9 +9287,6 @@
         "max_nodes": {
           "type": "integer",
           "minimum": 0
-        },
-        "fail_weight": {
-          "type": "number"
         },
         "jitter_weight": {
           "type": "number"

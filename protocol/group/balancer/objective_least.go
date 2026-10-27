@@ -13,8 +13,6 @@ var _ Objective = (*LeastObjective)(nil)
 const (
 	// DefaultTolerance is the default relative tolerance around the best node.
 	DefaultTolerance float32 = 0.2
-	// DefaultFailWeight is the default weight of the failure rate in the score.
-	DefaultFailWeight float32 = 2
 	// DefaultJitterWeight is the default weight of the standard deviation in the score.
 	DefaultJitterWeight float32 = 1
 	// toleranceFloor is the absolute floor of the tolerance, so tiny values, such as
@@ -36,7 +34,6 @@ type LeastObjective struct {
 	// jitterFunc is added to the score as a penalty, it is nil when baseFunc is the
 	// jitter itself, since adding it again would only scale every score.
 	jitterFunc   func(node *Node) healthcheck.RTT
-	failWeight   float32
 	jitterWeight float32
 }
 
@@ -74,7 +71,6 @@ func newLeastObjective(options option.LoadBalancePickOptions) *LeastObjective {
 		tolerance:          float32Option(options.Tolerance, DefaultTolerance),
 		minNodes:           int(options.MinNodes),
 		maxNodes:           int(options.MaxNodes),
-		failWeight:         float32Option(options.FailWeight, DefaultFailWeight),
 	}
 }
 
@@ -86,20 +82,21 @@ func float32Option(value float32, defaultValue float32) float32 {
 }
 
 // Score returns the cost of using the node, lower is better. It starts from the
-// base value of the objective, penalizes the failure rate, since a failing node
-// costs a retry, and adds the jitter, since an unstable node stalls connections:
+// base value of the objective and adds the jitter, since an unstable node stalls
+// connections:
 //
-//	score = base * (1 + failWeight * failRate) + jitterWeight * jitter
+//	score = base + jitterWeight * jitter
 //
 // The jitter term is absent when the objective has no jitterFunc, which is the
 // case for leastload: its base is the deviation itself.
+//
+// Failures are not scored here, they are part of the base already: the statistics
+// count a failed check with the delay of the timeout it waited for, see
+// healthcheck.Storage.FailureDelay.
 func (o *LeastObjective) Score(node *Node) healthcheck.RTT {
 	score := float64(o.baseFunc(node))
 	if o.jitterFunc != nil && o.jitterWeight > 0 {
 		score += float64(o.jitterWeight) * float64(o.jitterFunc(node))
-	}
-	if o.failWeight > 0 && node.All > 0 && node.Fail > 0 {
-		score *= 1 + float64(o.failWeight)*float64(node.Fail)/float64(node.All)
 	}
 	return rttFromFloat(score)
 }

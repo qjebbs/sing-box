@@ -4,6 +4,8 @@ import (
 	"math"
 	"slices"
 	"time"
+
+	C "github.com/sagernet/sing-box/constant"
 )
 
 // Stats is the statistics of RTTs
@@ -42,10 +44,14 @@ func (s *Storage) refreshStats(now time.Time) {
 		return
 	}
 	s.stats.Latest = latest.Delay
-	min := RTT(math.MaxUint16)
-	sum := RTT(0)
-	cnt := 0
-	validRTTs := make([]RTT, 0, s.cap)
+	failureDelay := s.FailureDelay
+	if failureDelay == Failed {
+		failureDelay = RTTOf(C.TCPTimeout)
+	}
+	// A failed check is not dropped from the distribution, it is counted with the
+	// delay it would have had. Otherwise a node failing most of its checks would be
+	// described by the few successful ones, and its stability would look excellent.
+	delays := make([]RTT, 0, s.cap)
 	var expiresAt time.Time
 	for i := 0; i < s.cap; i++ {
 		// from latest to oldest
@@ -57,45 +63,46 @@ func (s *Storage) refreshStats(now time.Time) {
 		}
 		// the time when the oldest item expires
 		expiresAt = itemExpiresAt
-		if s.history[idx].Delay == Failed {
+		delay := s.history[idx].Delay
+		if delay == Failed {
 			s.stats.Fail++
-			continue
+			delay = failureDelay
 		}
-		cnt++
-		sum += s.history[idx].Delay
-		validRTTs = append(validRTTs, s.history[idx].Delay)
-		if s.stats.Max < s.history[idx].Delay {
-			s.stats.Max = s.history[idx].Delay
-		}
-		if min > s.history[idx].Delay {
-			min = s.history[idx].Delay
-		}
+		delays = append(delays, delay)
 	}
 
 	s.stats.Expires = expiresAt
-	s.stats.All = cnt + s.stats.Fail
-	if cnt > 0 {
-		s.stats.Average = RTT(int(sum) / cnt)
-		s.stats.Median = medianOf(validRTTs)
-	}
-	if s.stats.All == 0 || s.stats.Fail == s.stats.All {
+	s.stats.All = len(delays)
+	if s.stats.All == 0 {
 		return
 	}
+	// the values are kept in milliseconds, sum them as int to not overflow
+	sum := 0
+	min := RTT(math.MaxUint16)
+	for _, delay := range delays {
+		sum += int(delay)
+		if min > delay {
+			min = delay
+		}
+		if s.stats.Max < delay {
+			s.stats.Max = delay
+		}
+	}
+	s.stats.Average = RTT(sum / len(delays))
+	s.stats.Median = medianOf(delays)
 	s.stats.Min = min
-	var std float64
-	if cnt < 2 {
+	if len(delays) < 2 {
 		// no enough data for standard deviation, we assume it's half of the average rtt
 		// if we don't do this, standard deviation of 1 round tested nodes is 0, will always
 		// selected before 2 or more rounds tested nodes
-		std = float64(s.stats.Average / 2)
-	} else {
-		variance := float64(0)
-		for _, rtt := range validRTTs {
-			variance += math.Pow(float64(rtt)-float64(s.stats.Average), 2)
-		}
-		std = math.Sqrt(variance / float64(cnt))
+		s.stats.Deviation = s.stats.Average / 2
+		return
 	}
-	s.stats.Deviation = RTT(std)
+	variance := float64(0)
+	for _, delay := range delays {
+		variance += math.Pow(float64(delay)-float64(s.stats.Average), 2)
+	}
+	s.stats.Deviation = RTT(math.Sqrt(variance / float64(len(delays))))
 }
 
 // medianOf returns the median of the values, the slice is reordered.

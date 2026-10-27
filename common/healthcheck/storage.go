@@ -2,6 +2,8 @@ package healthcheck
 
 import (
 	"time"
+
+	C "github.com/sagernet/sing-box/constant"
 )
 
 // Storage holds ping rtts for health Checker, it's not thread safe
@@ -10,6 +12,12 @@ type Storage struct {
 	cap      int
 	validity time.Duration
 	history  []History
+
+	// FailureDelay is the delay attributed to a failed check when computing the
+	// statistics. A check fails because the connection waited for the whole
+	// timeout, so this is what the delay would have been, and dropping it would
+	// make a node failing most of its checks look like the most stable one.
+	FailureDelay RTT
 
 	stats Stats
 }
@@ -23,9 +31,10 @@ type History struct {
 // NewStorage returns a new rtt storage with specified capacity
 func NewStorage(cap uint, validity time.Duration) *Storage {
 	return &Storage{
-		cap:      int(cap),
-		validity: validity,
-		history:  make([]History, cap),
+		cap:          int(cap),
+		validity:     validity,
+		history:      make([]History, cap),
+		FailureDelay: RTTOf(C.TCPTimeout),
 	}
 }
 

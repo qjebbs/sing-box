@@ -25,7 +25,6 @@
     "tolerance": 0.2,
     "min_nodes": 1,
     "max_nodes": 0,
-    "fail_weight": 2,
     "jitter_weight": 1,
     "biases": [
       {
@@ -104,13 +103,9 @@
 `leastload` 和 `leastping` 目标都以分数排序，越低越好。计算公式为：
 
 ```
-score = base * (1 + fail_weight * fail_rate) + jitter_weight * deviation
+leastload_score = STD
+leastping_score = MED + jitter_weight * STD
 ```
-
-- `leastload` 以标准差为基础 (base)，`leastping` 以往返时间中位数为基础。
-- 失败率是同一统计窗口内健康检查失败的占比，失败意味着一次重试，因此惩罚相对于该节点自身的延时计算。
-- 抖动惩罚是直接相加的，因为不稳定的节点即使典型延时很低，也会让连接卡顿。
-- `leastload` 不计算抖动惩罚 (`jitter_weight=0`)。因为它的分数本身就是标准差，没必要再叠加。
 
 #### strategy
 
@@ -138,7 +133,7 @@ score = base * (1 + fail_weight * fail_rate) + jitter_weight * deviation
 
 与最优节点的最大相对差距，默认为 `0.2`，即最多比最优节点慢 20% 的节点会与它一起被选中。
 
-比较的是[分数](#objective)，因此节点的失败率与抖动已经包含在比较之中。
+比较的是[分数](#objective)：`leastping` 的分数包含抖动，两个目标的分数都包含失败的检查，因为统计时它按超时时长计入。
 
 容差以选择中最优的节点为基准计算，因此不会为了凑数而选中明显更差的节点。
 同时始终应用 `10ms` 的绝对下限，避免过小的数值（例如始终稳定节点的标准差）被噪声拆开。
@@ -160,14 +155,6 @@ score = base * (1 + fail_weight * fail_rate) + jitter_weight * deviation
 最多选出的节点数量，默认为 `0`，即不限制。
 
 仅在节点质量接近时生效，例如所有节点都在容差范围内时，只从中选出 `max_nodes` 个，避免将连接分散到每一个节点。
-
-#### fail_weight
-
-> 仅适用于 `least*` 目标
-
-失败率[惩罚](#objective)的权重，默认为 `2`，即健康检查失败率 10% 的节点，其分数相当于慢 `1.2` 倍。这通常比几毫秒的延时差异更重要，因为一次失败要付出完整的超时代价。
-
-该惩罚作用于 `max_fail` 约束之后，只对允许失败的节点进行排序区分。
 
 #### jitter_weight
 

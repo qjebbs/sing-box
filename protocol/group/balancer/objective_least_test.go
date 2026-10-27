@@ -193,8 +193,9 @@ func TestLeastPingScore(t *testing.T) {
 		{name: "clear", stats: healthcheck.Stats{Median: 160, Deviation: 10, All: 10}, want: 170},
 		// the jitter is added, an unstable node costs more than a steady one
 		{name: "jitter", stats: healthcheck.Stats{Median: 160, Deviation: 600, All: 10}, want: 760},
-		// 2 of 10 checks failed: costs a retry, 1 + 2*0.2 = 1.4
-		{name: "failures", stats: healthcheck.Stats{Median: 160, Deviation: 10, All: 10, Fail: 2}, want: 238},
+		// failures are already part of the base, the statistics count a failed check
+		// with the delay of the timeout, they are not scored again here
+		{name: "failures", stats: healthcheck.Stats{Median: 160, Deviation: 10, All: 10, Fail: 2}, want: 170},
 		{name: "never checked", stats: healthcheck.Stats{}, want: 0},
 	}
 	for _, testCase := range testCases {
@@ -226,17 +227,17 @@ func TestLeastLoadScoreIgnoresJitter(t *testing.T) {
 func TestLeastScoreOptionWeights(t *testing.T) {
 	t.Parallel()
 	node := &balancer.Node{Status: balancer.StatusQualified, Stats: healthcheck.Stats{
-		Median: 100, Deviation: 20, All: 10, Fail: 2,
+		Median: 100, Deviation: 20, All: 10,
 	}}
 	testCases := []struct {
 		name    string
 		options option.LoadBalancePickOptions
 		want    healthcheck.RTT
 	}{
-		// (100 + 20) * (1 + 2 * 0.2)
-		{name: "defaults", options: option.LoadBalancePickOptions{}, want: 168},
-		// 100 * (1 + 0.5*0.2) + 0
-		{name: "custom", options: option.LoadBalancePickOptions{FailWeight: 0.5, JitterWeight: 0.0001}, want: 110},
+		// 100 + 20
+		{name: "defaults", options: option.LoadBalancePickOptions{}, want: 120},
+		// 100 + 0.5 * 20
+		{name: "custom", options: option.LoadBalancePickOptions{JitterWeight: 0.5}, want: 110},
 	}
 	for _, testCase := range testCases {
 		testCase := testCase
@@ -252,19 +253,41 @@ func TestLeastScoreOptionWeights(t *testing.T) {
 
 func TestLeastPingScoreRanks(t *testing.T) {
 	t.Parallel()
-	// Both nodes are fast enough to be qualified, but the first one fails 2 of 10
-	// checks. The retry penalty pushes it behind the second one.
+	// Both nodes are fast enough to be qualified, but the first one is the jittery
+	// one, the score pushes it behind the second one.
 	flaky := &balancer.Node{
 		Index: 1, Status: balancer.StatusQualified,
-		Stats: healthcheck.Stats{Median: 161, Deviation: 10, All: 10, Fail: 2},
+		Stats: healthcheck.Stats{Median: 161, Deviation: 10, All: 10},
 	}
 	steady := &balancer.Node{
 		Index: 2, Status: balancer.StatusQualified,
 		Stats: healthcheck.Stats{Median: 164, Deviation: 8, All: 10},
 	}
+	// 161 + 10 = 171, 164 + 8 = 172, both are in the cluster, the score orders them
 	selected := balancer.NewLeastPingObjective(option.LoadBalancePickOptions{}).Filter([]*balancer.Node{flaky, steady})
-	if len(selected) != 1 || selected[0].Index != 2 {
-		t.Fatalf("want node 2, got %v", selected)
+	if len(selected) != 2 {
+		t.Fatalf("want both nodes, got %v", selected)
+	}
+	if selected[0].Index != 1 {
+		t.Fatalf("want node 1 first, got %v", selected[0].Index)
+	}
+}
+
+func TestLeastPingOrdersFasterFirst(t *testing.T) {
+	t.Parallel()
+	// With the same jitter the faster node wins, the jitter weight is the only
+	// ordering term besides the base.
+	fast := &balancer.Node{
+		Index: 1, Status: balancer.StatusQualified,
+		Stats: healthcheck.Stats{Median: 161, Deviation: 10, All: 10},
+	}
+	slow := &balancer.Node{
+		Index: 2, Status: balancer.StatusQualified,
+		Stats: healthcheck.Stats{Median: 170, Deviation: 10, All: 10},
+	}
+	selected := balancer.NewLeastPingObjective(option.LoadBalancePickOptions{}).Filter([]*balancer.Node{slow, fast})
+	if len(selected) == 0 || selected[0].Index != 1 {
+		t.Fatalf("want node 1 first, got %v", selected)
 	}
 }
 
