@@ -1,7 +1,7 @@
 {
   "version": 1,
   "variables": {
-    "VERSION": "$(go run github.com/sagernet/sing-box/cmd/internal/read_tag@latest)",
+    "VERSION": "$(go run ./cmd/internal/read_tag)",
     "WORKSPACE_ROOT": "../../..",
     "DEPLOY_ANDROID": "${WORKSPACE_ROOT}/sing-box-for-android/app/libs",
     "DEPLOY_APPLE": "${WORKSPACE_ROOT}/sing-box-for-apple",

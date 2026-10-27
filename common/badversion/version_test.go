@@ -15,4 +15,8 @@ func TestCompareVersion(t *testing.T) {
 	require.True(t, Parse("1.3.0-beta1").GreaterThan(Parse("1.3.0-alpha1")))
 	require.True(t, Parse("1.3.1").GreaterThan(Parse("1.3.0")))
 	require.True(t, Parse("1.4").GreaterThan(Parse("1.3")))
+	require.Equal(t, "1.14.4", Parse("v1.14.4+rev").String())
+	require.Equal(t, "1.14.4", Parse("1.14.4+rev.a48970663").String())
+	require.True(t, Parse("1.14.4+rev.a48970663").GreaterThanOrEqual(Parse("1.14.4")))
+	require.True(t, Parse("1.14.5+rev.a48970663").GreaterThan(Parse("1.14.4+rev")))
 }

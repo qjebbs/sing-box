@@ -38,7 +38,7 @@ get_version() {
     cd "$PROJECT_DIR"
     GOHOSTOS=$(go env GOHOSTOS)
     GOHOSTARCH=$(go env GOHOSTARCH)
-    CGO_ENABLED=0 GOOS=$GOHOSTOS GOARCH=$GOHOSTARCH go run github.com/sagernet/sing-box/cmd/internal/read_tag@latest
+    CGO_ENABLED=0 GOOS=$GOHOSTOS GOARCH=$GOHOSTARCH go run ./cmd/internal/read_tag
 }
 
 get_ldflags() {

@@ -113,6 +113,9 @@ func IsValid(versionName string) bool {
 
 func Parse(versionName string) (version Version) {
 	versionName = strings.TrimPrefix(versionName, "v")
+	if index := strings.Index(versionName, "+"); index != -1 {
+		versionName = versionName[:index]
+	}
 	if strings.Contains(versionName, "-") {
 		parts := strings.Split(versionName, "-")
 		versionName = parts[0]
