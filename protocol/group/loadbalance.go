@@ -216,7 +216,17 @@ func (s *LoadBalance) Start(stage adapter.StartStage, scope *adapter.Scope) erro
 }
 
 func (s *LoadBalance) interruptOutdatedConnections() {
-	s.interruptGroup.Interrupt(s.options.InterruptExistConnections, s.Balancer.AvailableNodes(s.options.LogHealth))
+	available := s.Balancer.AvailableNodes(s.options.LogHealth)
+	var retained []string
+	if s.options.InterruptExistConnections {
+		// The nodes that are in use and just left the selection keep their
+		// connections, they are not closed by a difference that measurement noise can
+		// explain. Without the option the external connections are kept anyway, and
+		// the internal ones are interrupted whatever the retention says, so the
+		// retention is not computed at all.
+		retained = s.Balancer.RetainedNodes(s.interruptGroup.Tags())
+	}
+	s.interruptGroup.Interrupt(s.options.InterruptExistConnections, available, retained)
 	referenced := s.Balancer.AliveNodes()
 	if previous := s.lastReferenced.Swap(referenced); !slices.Equal(previous, referenced) {
 		// The nodes this group may use changed.

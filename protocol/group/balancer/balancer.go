@@ -127,7 +127,7 @@ func (b *Balancer) AvailableNodes(logging bool) []string {
 				} else {
 					// healthcheck.Failed means there is no score to show, printing
 					// 0ms would read as the best possible result.
-					b.logger.Info(n.String(), " SCORE=-")
+					b.logger.Info(n.String(), " SCORE=None")
 				}
 				continue
 			}
@@ -142,6 +142,29 @@ func (b *Balancer) AvailableNodes(logging bool) []string {
 			return node.Tag()
 		},
 	))
+}
+
+// RetainedNodes returns the tags to keep alive: the selected nodes, plus the nodes
+// in use that just left the selection because of the measurement noise. The extra
+// ones only serve the connections they already have, new connections keep to the
+// selection.
+func (b *Balancer) RetainedNodes(inUse []string) []string {
+	all, selected := b.GetNodes()
+	if len(selected) == 0 {
+		return []string{}
+	}
+	keeper, isKeeper := b.Objective.(Keeper)
+	if !isKeeper || len(inUse) == 0 {
+		return nodeTags(selected)
+	}
+	retained := RetainNodes(all, selected, inUse, keeper)
+	if len(retained) > len(selected) {
+		b.logger.Debug(
+			"load balancing keeps ", len(retained)-len(selected),
+			" node(s) out of the selection for their existing connections",
+		)
+	}
+	return retained
 }
 
 // AliveNodes returns the tags of nodes that are not dead. Unlike AvailableNodes,
@@ -233,4 +256,39 @@ func (b *Balancer) GetNodes() (all, filtered []*Node) {
 	all = b.Nodes(N.NetworkTCP)
 	filtered = b.Objective.Filter(all)
 	return all, filtered
+}
+
+// RetainNodes returns the tags of selected, plus the tags of inUse that the keeper
+// still accepts, in the order of inUse.
+func RetainNodes(all, selected []*Node, inUse []string, keeper Keeper) []string {
+	retained := nodeTags(selected)
+	if len(selected) == 0 || len(inUse) == 0 {
+		return retained
+	}
+	selectedTags := make(map[string]bool, len(retained))
+	for _, tag := range retained {
+		selectedTags[tag] = true
+	}
+	nodesByTag := make(map[string]*Node, len(all))
+	for _, node := range all {
+		nodesByTag[node.Tag()] = node
+	}
+	best := selected[0]
+	for _, tag := range inUse {
+		if selectedTags[tag] {
+			continue
+		}
+		node, loaded := nodesByTag[tag]
+		if !loaded || !keeper.Keep(node, best) {
+			continue
+		}
+		retained = append(retained, tag)
+	}
+	return retained
+}
+
+func nodeTags(nodes []*Node) []string {
+	return common.Uniq(common.Map(nodes, func(node *Node) string {
+		return node.Tag()
+	}))
 }

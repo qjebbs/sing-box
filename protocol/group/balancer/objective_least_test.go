@@ -301,3 +301,117 @@ func TestLeastScoreClamp(t *testing.T) {
 		t.Fatalf("want the score clamped to 65535, got %v", got)
 	}
 }
+
+func TestLeastPingKeep(t *testing.T) {
+	t.Parallel()
+	// Real figures: best is 161+57=218, the band is 20% of it.
+	best := &balancer.Node{
+		Status: balancer.StatusQualified,
+		Stats:  healthcheck.Stats{All: 10, Median: 161, Deviation: 57},
+	}
+	testCases := []struct {
+		name string
+		node *balancer.Node
+		want bool
+	}{
+		{
+			name: "in the selection",
+			node: &balancer.Node{
+				Status: balancer.StatusQualified,
+				Stats:  healthcheck.Stats{All: 10, Median: 193, Deviation: 61},
+			},
+			want: true,
+		},
+		{
+			// 193+126=319, the band ends at 261 but the deviation is large, so the
+			// excess over the band is within its own noise
+			name: "out of the band, within the noise",
+			node: &balancer.Node{
+				Status: balancer.StatusQualified,
+				Stats:  healthcheck.Stats{All: 10, Median: 178, Deviation: 126},
+			},
+			want: true,
+		},
+		{
+			// a quiet node is measured accurately, an excess is a real excess
+			name: "out of the band, quiet",
+			node: &balancer.Node{
+				Status: balancer.StatusQualified,
+				Stats:  healthcheck.Stats{All: 30, Median: 400, Deviation: 2},
+			},
+			want: false,
+		},
+		{
+			// 421+978=1399, far beyond anything noise can explain
+			name: "far worse",
+			node: &balancer.Node{
+				Status: balancer.StatusQualified,
+				Stats:  healthcheck.Stats{All: 10, Median: 421, Deviation: 978},
+			},
+			want: false,
+		},
+		{
+			name: "dead",
+			node: &balancer.Node{
+				Status: balancer.StatusDead,
+				Stats:  healthcheck.Stats{All: 10, Median: 100, Deviation: 10},
+			},
+			want: false,
+		},
+	}
+	objective := balancer.NewLeastPingObjective(option.LoadBalancePickOptions{})
+	for _, testCase := range testCases {
+		testCase := testCase
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+			if got := objective.Keep(testCase.node, best); got != testCase.want {
+				t.Fatalf("want %v, got %v (score %v)", testCase.want, got, objective.Score(testCase.node))
+			}
+		})
+	}
+}
+
+func TestLeastKeepIsCappedByTheBand(t *testing.T) {
+	t.Parallel()
+	// Both nodes are extremely noisy (a deviation of 4s from 2 samples), so the
+	// noise allowance would be enormous. It is capped at the band, a node cannot
+	// survive more than twice the tolerance however unreliable its statistics are.
+	best := &balancer.Node{
+		Status: balancer.StatusQualified,
+		Stats:  healthcheck.Stats{All: 2, Median: 100, Deviation: 4000},
+	}
+	// 70% worse than the best, beyond the 40% of twice the tolerance
+	node := &balancer.Node{
+		Status: balancer.StatusQualified,
+		Stats:  healthcheck.Stats{All: 2, Median: 3000, Deviation: 4000},
+	}
+	if balancer.NewLeastPingObjective(option.LoadBalancePickOptions{}).Keep(node, best) {
+		t.Fatalf("a node beyond twice the tolerance was kept")
+	}
+}
+
+func TestLeastLoadKeep(t *testing.T) {
+	t.Parallel()
+	// leastload scores by the deviation, which is measured more accurately than the
+	// median: 40ms with 10 samples, so the band of 8ms plus the noise of two such
+	// estimates keeps a node up to roughly 55ms.
+	best := &balancer.Node{
+		Status: balancer.StatusQualified,
+		Stats:  healthcheck.Stats{All: 10, Deviation: 40},
+	}
+	objective := balancer.NewLeastLoadObjective(option.LoadBalancePickOptions{})
+	close := &balancer.Node{
+		Status: balancer.StatusQualified,
+		Stats:  healthcheck.Stats{All: 10, Deviation: 52},
+	}
+	if !objective.Keep(close, best) {
+		t.Fatalf("a node within the noise of the deviation was dropped, score %v", objective.Score(close))
+	}
+	far := &balancer.Node{
+		Status: balancer.StatusQualified,
+		Stats:  healthcheck.Stats{All: 10, Deviation: 300},
+	}
+	if objective.Keep(far, best) {
+		t.Fatalf("a node with 7 times the deviation was kept")
+	}
+}

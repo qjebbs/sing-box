@@ -19,3 +19,11 @@ type Scorer interface {
 	// Score returns the cost of using the node, lower is better.
 	Score(node *Node) healthcheck.RTT
 }
+
+// Keeper is an optional interface for objectives that can tell whether a node that
+// just left the selection should still serve the connections it already has.
+type Keeper interface {
+	// Keep reports whether node, which is no longer selected, is close enough to
+	// best to keep its existing connections. See LeastObjective.Keep.
+	Keep(node *Node, best *Node) bool
+}

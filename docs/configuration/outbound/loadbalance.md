@@ -190,3 +190,7 @@ Default is `false`.
 Interrupt existing connections when the selected outbound has changed.
 
 Only inbound connections are affected by this setting, internal connections will always be interrupted.
+
+For `least*` objectives the connections are kept while the node that left the selection is still within the noise of the health check statistics, so the connections are not closed by a measurement that could go either way. New connections always keep to the selection. The allowance is at most the tolerance itself, so a node never survives more than twice the tolerance.
+
+The retention applies to the inbound connections only, and only when this option is enabled: internal connections are interrupted either way.

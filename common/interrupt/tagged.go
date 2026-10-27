@@ -56,19 +56,49 @@ func (g *TaggedGroup) NewPacketConn(conn net.PacketConn, isExternal bool, outbou
 	return group.NewPacketConn(conn, isExternal)
 }
 
+// Tags returns the outbound tags that currently have connections. A tag whose
+// connections are all closed is not reported, even though it is still known.
+func (g *TaggedGroup) Tags() []string {
+	g.access.Lock()
+	defer g.access.Unlock()
+	tags := make([]string, 0, len(g.groups))
+	for outboundTag, group := range g.groups {
+		if group.empty() {
+			continue
+		}
+		tags = append(tags, outboundTag)
+	}
+	return tags
+}
+
 // Interrupt closes the connections bound to members not included in
 // currentOutboundTags, the connections of the remaining members are kept.
-func (g *TaggedGroup) Interrupt(interruptExternalConnections bool, currentOutboundTags []string) {
+//
+// The members of keptOutboundTags are in between: their connections to the outside
+// are kept as well, but the connections originating from this group are closed and
+// the tag is forgotten, so it is treated as any other member next time.
+func (g *TaggedGroup) Interrupt(
+	interruptExternalConnections bool, currentOutboundTags []string, keptOutboundTags []string,
+) {
 	g.access.Lock()
-	var outdatedGroups []*Group
+	var outdatedGroups, keptGroups []*Group
 	for outboundTag, group := range g.groups {
 		if slices.Contains(currentOutboundTags, outboundTag) {
+			continue
+		}
+		if slices.Contains(keptOutboundTags, outboundTag) {
+			keptGroups = append(keptGroups, group)
 			continue
 		}
 		outdatedGroups = append(outdatedGroups, group)
 		delete(g.groups, outboundTag)
 	}
 	g.access.Unlock()
+	for _, group := range keptGroups {
+		// External connections stay, the internal ones don't. The tag stays in the
+		// map so the remaining connections are still tracked.
+		group.Interrupt(false)
+	}
 	for _, group := range outdatedGroups {
 		group.Interrupt(interruptExternalConnections)
 	}

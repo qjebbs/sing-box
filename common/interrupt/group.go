@@ -47,6 +47,14 @@ func (g *Group) NewPacketConn(conn net.PacketConn, isExternal bool) net.PacketCo
 	return newPacketConn(g, conn, item)
 }
 
+// empty reports whether the group has no connection left. The caller must hold no
+// lock on this group.
+func (g *Group) empty() bool {
+	g.access.Lock()
+	defer g.access.Unlock()
+	return g.connections.Len() == 0
+}
+
 func (g *Group) Interrupt(interruptExternalConnections bool) {
 	g.access.Lock()
 	var closers []io.Closer

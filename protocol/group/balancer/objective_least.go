@@ -8,7 +8,10 @@ import (
 	"github.com/sagernet/sing-box/option"
 )
 
-var _ Objective = (*LeastObjective)(nil)
+var (
+	_ Objective = (*LeastObjective)(nil)
+	_ Keeper    = (*LeastObjective)(nil)
+)
 
 const (
 	// DefaultTolerance is the default relative tolerance around the best node.
@@ -18,6 +21,10 @@ const (
 	// toleranceFloor is the absolute floor of the tolerance, so tiny values, such as
 	// the deviation of an always stable node, are not split by noise.
 	toleranceFloor = 10 * healthcheck.Millisecond
+	// hysteresisSigma is how many standard errors a node may exceed the selection
+	// band by and still keep its existing connections. Two standard errors is the
+	// usual 95% confidence, the excess is then not distinguishable from noise.
+	hysteresisSigma = 2
 )
 
 // LeastObjective is the least load / least ping balancing objective. Both rank the
@@ -94,11 +101,60 @@ func float32Option(value float32, defaultValue float32) float32 {
 // count a failed check with the delay of the timeout it waited for, see
 // healthcheck.Storage.FailureDelay.
 func (o *LeastObjective) Score(node *Node) healthcheck.RTT {
+	return rttFromFloat(o.scoreOf(node))
+}
+
+func (o *LeastObjective) scoreOf(node *Node) float64 {
 	score := float64(o.baseFunc(node))
 	if o.jitterFunc != nil && o.jitterWeight > 0 {
 		score += float64(o.jitterWeight) * float64(o.jitterFunc(node))
 	}
-	return rttFromFloat(score)
+	return score
+}
+
+// scoreStandardError returns the standard error of the score of the node, i.e. how
+// much the score would move if the health checks were run again. It only depends on
+// the number of samples and their deviation: the median of n samples has a standard
+// error of 1.25σ/√n, and the deviation itself of σ/√(2(n-1)).
+func (o *LeastObjective) scoreStandardError(node *Node) float64 {
+	deviation := float64(node.ScaleRTT(node.Deviation))
+	if node.All < 2 {
+		// a single sample says nothing about the accuracy of its own estimate
+		return deviation
+	}
+	n := float64(node.All)
+	if o.jitterFunc == nil {
+		// the score is the deviation
+		return deviation / math.Sqrt(2*(n-1))
+	}
+	medianError := 1.25 * deviation / math.Sqrt(n)
+	jitterError := float64(o.jitterWeight) * deviation / math.Sqrt(2*(n-1))
+	return math.Sqrt(medianError*medianError + jitterError*jitterError)
+}
+
+// Keep implements Keeper. A node that left the selection is still kept while the
+// excess over the selection band is within the noise of the two estimates, so the
+// existing connections are not closed by a measurement that could go either way.
+//
+// The allowance is capped at the band itself: hysteresis is there to ride out noise,
+// not to keep a node that is clearly worse, so a node never survives more than twice
+// the tolerance.
+func (o *LeastObjective) Keep(node *Node, best *Node) bool {
+	if node.Status != best.Status {
+		return false
+	}
+	bestScore := o.scoreOf(best)
+	band := bestScore * float64(o.tolerance)
+	if band < float64(toleranceFloor) {
+		band = float64(toleranceFloor)
+	}
+	nodeError := o.scoreStandardError(node)
+	bestError := o.scoreStandardError(best)
+	noise := hysteresisSigma * math.Sqrt(nodeError*nodeError+bestError*bestError)
+	if noise > band {
+		noise = band
+	}
+	return o.scoreOf(node) <= bestScore+band+noise
 }
 
 func rttFromFloat(value float64) healthcheck.RTT {

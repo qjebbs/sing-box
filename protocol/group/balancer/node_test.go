@@ -81,7 +81,7 @@ func TestNodeString(t *testing.T) {
 		{
 			name:  "all failed",
 			stats: healthcheck.Stats{All: 1, Fail: 1, Median: 15000, Average: 15000},
-			want:  "#0 x [nil] STD=- MED=15.00s Latest=- FAIL=1/1",
+			want:  "#0 x [nil] STD=None MED=15.00s Latest=None FAIL=1/1",
 		},
 		// one successful check among failures still has a deviation
 		{
@@ -105,7 +105,7 @@ func TestNodeString(t *testing.T) {
 			name:   "never checked",
 			status: StatusUnknown,
 			stats:  healthcheck.Stats{},
-			want:   "#0 ? [nil] STD=- MED=- Latest=- FAIL=0/0",
+			want:   "#0 ? [nil] STD=None MED=None Latest=None FAIL=0/0",
 		},
 	}
 	for _, testCase := range testCases {
@@ -135,7 +135,7 @@ func TestNodeStringScaled(t *testing.T) {
 		RTTSacale: 2,
 		Stats:     healthcheck.Stats{All: 1, Fail: 1, Median: 15000},
 	}
-	want = "STD=- MED=15.00s(30.00s) Latest=-"
+	want = "STD=None MED=15.00s(30.00s) Latest=None"
 	if got := node.String(); !strings.Contains(got, want) {
 		t.Fatalf("want %q, got %q", want, got)
 	}
