@@ -157,3 +157,27 @@ func TestLeastSort(t *testing.T) {
 		t.Logf("want: %v", want)
 	}
 }
+
+func TestLeastPingUsesMedian(t *testing.T) {
+	t.Parallel()
+	// Node 1 is spiky: one bad round dragged its average up while its typical RTT
+	// stayed low. Median ranks it first, the average would rank it last.
+	spiky := &balancer.Node{
+		Index:  1,
+		Status: balancer.StatusQualified,
+		Stats:  healthcheck.Stats{All: 10, Average: 600, Median: 160},
+	}
+	steady := &balancer.Node{
+		Index:  2,
+		Status: balancer.StatusQualified,
+		Stats:  healthcheck.Stats{All: 10, Average: 520, Median: 500},
+	}
+	nodes := []*balancer.Node{steady, spiky}
+	selected := balancer.NewLeastPingObjective(option.LoadBalancePickOptions{}).Filter(nodes)
+	if len(selected) != 1 {
+		t.Fatalf("want 1 node, got %v", len(selected))
+	}
+	if selected[0].Index != 1 {
+		t.Fatalf("want node 1 selected, got %v", selected[0].Index)
+	}
+}

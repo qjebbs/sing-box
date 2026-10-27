@@ -36,7 +36,7 @@ func NewLeastLoadObjective(options option.LoadBalancePickOptions) *LeastObjectiv
 // NewLeastPingObjective returns a new LeastObjective.
 func NewLeastPingObjective(options option.LoadBalancePickOptions) *LeastObjective {
 	return NewLeastObjective(options, func(node *Node) healthcheck.RTT {
-		return node.ScaleRTT(node.Average)
+		return node.ScaleRTT(node.Median)
 	})
 }
 

@@ -113,7 +113,7 @@ Note: `consistenthash` requires a relatively stable quantity of nodes, it's avai
 
 #### max_rtt
 
-The maximum round-trip time of health check that is acceptable for qulified nodes. Default is `0`, which accepts any round-trip time.
+The maximum round-trip time of health check that is acceptable for qulified nodes. The median RTT is compared, so a single spike doesn't disqualify an otherwise good node. Default is `0`, which accepts any round-trip time.
 
 #### max_fail
 
@@ -125,7 +125,7 @@ The maximum number of health check failures for qulified nodes, default is `0`, 
 
 The maximum relative difference to the best node, default is `0.2`, i.e. nodes that are at most 20% worse than the best one are selected with it.
 
-For `leastload` the value compared is the standard deviation (STD) of RTTs, for `leastping` it is the average of RTTs.
+For `leastload` the value compared is the standard deviation (STD) of RTTs, for `leastping` it is the median of RTTs, which is not dragged away by a single spike like the average is.
 
 The tolerance is applied to the best node in the selection, so a clearly worse node is never selected just to fill a count.
 A minimum absolute difference of `10ms` is always used, so tiny values, such as the deviation of an always stable node, aren't split by noise.

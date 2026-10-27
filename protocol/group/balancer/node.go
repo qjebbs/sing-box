@@ -80,17 +80,18 @@ func (n *Node) String() string {
 	}
 	if n.RTTSacale <= 0 || n.RTTSacale == 1 {
 		return fmt.Sprintf(
-			"#%d %s [%s] STD=%s AVG=%s Latest=%s FAIL=%d/%d",
+			"#%d %s [%s] STD=%s MED=%s AVG=%s Latest=%s FAIL=%d/%d",
 			n.Index, n.Status, tag,
-			n.Deviation, n.Average, n.Latest,
+			n.Deviation, n.Median, n.Average, n.Latest,
 			n.Fail, n.All,
 		)
 	}
 	return fmt.Sprintf(
-		"#%d %s [%s] STD=%s(%s) AVG=%s(%s) Latest=%s FAIL=%d/%d",
+		"#%d %s [%s] STD=%s(%s) MED=%s(%s) AVG=%s(%s) Latest=%s FAIL=%d/%d",
 		n.Index, n.Status, tag,
 
 		n.Deviation, applyFactorToRTT(n.Deviation, n.RTTSacale),
+		n.Median, applyFactorToRTT(n.Median, n.RTTSacale),
 		n.Average, applyFactorToRTT(n.Average, n.RTTSacale),
 		n.Latest,
 
@@ -116,7 +117,8 @@ func calcStatus(s *healthcheck.Stats, maxRTT healthcheck.RTT, maxFailRate float3
 		return StatusAlive
 	}
 	// don't apply RTT scale to maxRTT, because it's a threshold, not a score
-	if maxRTT > 0 && s.Average > maxRTT {
+	// median is used so a single spike doesn't disqualify an otherwise good node
+	if maxRTT > 0 && s.Median > maxRTT {
 		return StatusAlive
 	}
 	return StatusQualified

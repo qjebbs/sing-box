@@ -17,42 +17,42 @@ func TestNodeStatus(t *testing.T) {
 	}{
 		{
 			"nil RTTStorage", StatusUnknown, healthcheck.Stats{
-				All: 0, Fail: 0, Latest: 0, Average: 0,
+				All: 0, Fail: 0, Latest: 0, Average: 0, Median: 0,
 			},
 		},
 		{
 			"untested", StatusUnknown, healthcheck.Stats{
-				All: 0, Fail: 0, Latest: 0, Average: 0,
+				All: 0, Fail: 0, Latest: 0, Average: 0, Median: 0,
 			},
 		},
 		{
 			"@max_rtt", StatusQualified, healthcheck.Stats{
-				All: 10, Fail: 0, Latest: healthcheck.Second, Average: healthcheck.Second,
+				All: 10, Fail: 0, Latest: healthcheck.Second, Average: healthcheck.Second, Median: healthcheck.Second,
 			},
 		},
 		{
 			"@max_fail", StatusQualified, healthcheck.Stats{
-				All: 10, Fail: 2, Latest: healthcheck.Second, Average: healthcheck.Second,
+				All: 10, Fail: 2, Latest: healthcheck.Second, Average: healthcheck.Second, Median: healthcheck.Second,
 			},
 		},
 		{
 			"@max_fail_2", StatusQualified, healthcheck.Stats{
-				All: 5, Fail: 1, Latest: healthcheck.Second, Average: healthcheck.Second,
+				All: 5, Fail: 1, Latest: healthcheck.Second, Average: healthcheck.Second, Median: healthcheck.Second,
 			},
 		},
 		{
 			"latest_fail", StatusDead, healthcheck.Stats{
-				All: 10, Fail: 1, Latest: healthcheck.Failed, Average: healthcheck.Second,
+				All: 10, Fail: 1, Latest: healthcheck.Failed, Average: healthcheck.Second, Median: healthcheck.Second,
 			},
 		},
 		{
 			"over max_fail", StatusAlive, healthcheck.Stats{
-				All: 5, Fail: 2, Latest: healthcheck.Second, Average: healthcheck.Second,
+				All: 5, Fail: 2, Latest: healthcheck.Second, Average: healthcheck.Second, Median: healthcheck.Second,
 			},
 		},
 		{
 			"over max_rtt", StatusAlive, healthcheck.Stats{
-				All: 10, Fail: 0, Latest: healthcheck.Second, Average: 2 * healthcheck.Second,
+				All: 10, Fail: 0, Latest: healthcheck.Second, Average: 2 * healthcheck.Second, Median: 2 * healthcheck.Second,
 			},
 		},
 	}

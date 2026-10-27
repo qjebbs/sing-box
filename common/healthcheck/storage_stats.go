@@ -2,6 +2,7 @@ package healthcheck
 
 import (
 	"math"
+	"slices"
 	"time"
 )
 
@@ -11,6 +12,7 @@ type Stats struct {
 	Fail      int // number of failed health checks
 	Deviation RTT // standard deviation of RTTs
 	Average   RTT // average RTT of all health checks
+	Median    RTT // median RTT of all health checks
 	Max       RTT // maximum RTT of all health checks
 	Min       RTT // minimum RTT of all health checks
 	Latest    RTT // latest RTT of all health checks
@@ -74,6 +76,7 @@ func (s *Storage) refreshStats(now time.Time) {
 	s.stats.All = cnt + s.stats.Fail
 	if cnt > 0 {
 		s.stats.Average = RTT(int(sum) / cnt)
+		s.stats.Median = medianOf(validRTTs)
 	}
 	if s.stats.All == 0 || s.stats.Fail == s.stats.All {
 		return
@@ -93,4 +96,19 @@ func (s *Storage) refreshStats(now time.Time) {
 		std = math.Sqrt(variance / float64(cnt))
 	}
 	s.stats.Deviation = RTT(std)
+}
+
+// medianOf returns the median of the values, the slice is reordered.
+// It represents the typical RTT better than the average, since a single spike
+// doesn't move it.
+func medianOf(values []RTT) RTT {
+	if len(values) == 0 {
+		return Failed
+	}
+	slices.Sort(values)
+	middle := len(values) / 2
+	if len(values)%2 == 1 {
+		return values[middle]
+	}
+	return RTT((int(values[middle-1]) + int(values[middle])) / 2)
 }
