@@ -18,6 +18,8 @@ For extended features
 
 Warn: The health check feature has been moved to the top-level `health_checks` option, and URLTest/Loadbalance outbounds now require an explicit `health_check` field. You may need to update your configuration.
 
+Warn: The `leastload` / `leastping` objectives no longer accept `expected` and `baselines`. They now rank the nodes by a score and select the nodes within a relative `tolerance` of the best one. You may need to update your configuration, see [Load Balance](./docs/configuration/outbound/loadbalance.md). The new algorithm gives a better network quality in practice: it no longer pads the selection with nodes that are more than twice as slow as the best one just to reach a node count.
+
 ## License
 
 ```
