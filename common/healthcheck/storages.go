@@ -74,6 +74,19 @@ func (s *Storages) Update(tag string, delay RTT) {
 	store.Update(delay)
 }
 
+// ReportConnection records the outcome of a connection of the tag, see
+// Storage.ReportConnection.
+func (s *Storages) ReportConnection(tag string, established bool) {
+	s.Lock()
+	defer s.Unlock()
+	store, ok := s.storages[tag]
+	if !ok {
+		store = NewStorage(s.cap, s.validity)
+		s.storages[tag] = store
+	}
+	store.ReportConnection(time.Now(), established)
+}
+
 // Delete remove the histories storage for the tag
 func (s *Storages) Delete(tag string) {
 	s.Lock()

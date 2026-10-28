@@ -42,6 +42,8 @@ func TestNodeStatus(t *testing.T) {
 			},
 		},
 		{
+			// the latest check failed: the node is down until a check gives it a result
+			// again, whatever the delay of the checks before it
 			"latest_fail", StatusDead, healthcheck.Stats{
 				All: 10, Fail: 1, Latest: healthcheck.Failed, Average: healthcheck.Second, Median: healthcheck.Second,
 			},

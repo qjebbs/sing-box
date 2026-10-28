@@ -76,7 +76,7 @@ const (
 	// compare it with the measured ones.
 	classUnmeasured
 	// classFailed is a candidate whose latest health check failed. It is only used
-	// when nothing else is left.
+	// when nothing else is left, until a check gives it a result again.
 	classFailed
 )
 
@@ -225,6 +225,19 @@ func (s *selection) Reselect(network string) (node *candidate, changed bool) {
 	}
 	s.selected[network] = selectionEntry{node: node}
 	return node, previous != nil && previous.tag != node.tag
+}
+
+// ReportConnection records the outcome of a connection carried with the candidate, so the
+// node is scored for the share of them it drops. A failure also drops the cached
+// selection: the node just failed, the switch should not wait for the next check round.
+func (s *selection) ReportConnection(candidate *candidate, established bool) {
+	if candidate == nil {
+		return
+	}
+	s.storage.ReportConnection(candidate.tag, established)
+	if !established {
+		s.Invalidate()
+	}
 }
 
 // Invalidate marks the cached selections stale, so the next call selects from the

@@ -163,6 +163,17 @@ type URLTestGroup interface {
 	URLTest(ctx context.Context) (map[string]uint16, error)
 }
 
+// OutboundConnectionReporter is implemented by an outbound group that scores the
+// connections it carries, next to the results of its health checks.
+//
+// A group is told about the connections of the node it uses, which is what it needs: it
+// cannot tell which node failed on its own, and the connection failed along the whole
+// chain. Both outcomes are reported, so the group reads a rate rather than a count that
+// grows with the traffic of the node.
+type OutboundConnectionReporter interface {
+	ReportConnection(outbound Outbound, established bool)
+}
+
 func RealOutbound(outbound Outbound) (Outbound, error) {
 	if outbound == nil {
 		return nil, nil

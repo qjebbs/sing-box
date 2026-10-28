@@ -2,6 +2,7 @@ package group
 
 import (
 	"context"
+	"fmt"
 	"slices"
 	"testing"
 
@@ -16,7 +17,7 @@ type stubCandidate struct {
 func TestTryEach(t *testing.T) {
 	t.Parallel()
 	nodes := []*stubCandidate{{tag: "failed"}, {tag: "working"}}
-	var reported []string
+	var observed []string
 	cursor := 0
 	value, err := tryEach(context.Background(), log.NewNOPFactory().Logger(),
 		func() (*stubCandidate, bool) {
@@ -27,8 +28,9 @@ func TestTryEach(t *testing.T) {
 			cursor++
 			return node, true
 		},
-		func(node *stubCandidate) {
-			reported = append(reported, node.tag)
+		func(node *stubCandidate, established bool) {
+			// both outcomes are observed, so the group reads a rate and not a count
+			observed = append(observed, fmt.Sprintf("%s=%v", node.tag, established))
 		},
 		func(node *stubCandidate) (string, error) {
 			if node.tag == "failed" {
@@ -43,8 +45,8 @@ func TestTryEach(t *testing.T) {
 	if value != "working" {
 		t.Fatalf("want working, got %s", value)
 	}
-	if !slices.Equal(reported, []string{"failed"}) {
-		t.Fatalf("want the failed node reported, got %v", reported)
+	if !slices.Equal(observed, []string{"failed=false", "working=true"}) {
+		t.Fatalf("want both outcomes observed, got %v", observed)
 	}
 }
 
@@ -55,7 +57,10 @@ func TestTryEachGivesUp(t *testing.T) {
 		func() (*stubCandidate, bool) {
 			return &stubCandidate{tag: "failed"}, true
 		},
-		func(*stubCandidate) {
+		func(_ *stubCandidate, established bool) {
+			if established {
+				t.Fatalf("no attempt can be established here")
+			}
 			attempts++
 		},
 		func(*stubCandidate) (string, error) {
@@ -76,7 +81,7 @@ func TestTryEachWithoutNodes(t *testing.T) {
 		func() (*stubCandidate, bool) {
 			return nil, false
 		},
-		func(*stubCandidate) {
+		func(*stubCandidate, bool) {
 			t.Fatal("no node can be reported")
 		},
 		func(*stubCandidate) (string, error) {

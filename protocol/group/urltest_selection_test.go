@@ -198,11 +198,33 @@ func TestSelectionSwitchesWhenNodeFails(t *testing.T) {
 	if tag := selectedTag(selection); tag != "failed" {
 		t.Fatalf("want failed, got %s", tag)
 	}
-	// the tolerance is wide, but a failed node is never kept
+	// the latest check failed: the node is down until a check gives it a result again,
+	// so the wide tolerance cannot keep it
 	storage.Update("failed", healthcheck.Failed)
 	selection.Invalidate()
 	if tag := selectedTag(selection); tag != "alive" {
 		t.Fatalf("want alive, got %s", tag)
+	}
+}
+
+func TestSelectionScoresReportedFailures(t *testing.T) {
+	t.Parallel()
+	// A failure of the connections the group carried is an attempt that failed as well,
+	// so it is mixed in next to the checks: a few are affordable, a storm is not.
+	selection, storage := newSelectionForTest(t, 0.0001, "busy", "alive")
+	fill(storage, "busy", 100)
+	fill(storage, "alive", 200)
+	if tag := selectedTag(selection); tag != "busy" {
+		t.Fatalf("want busy, got %s", tag)
+	}
+	// ten connections carried, one of them failed: (10*100 + 1*300) / 20 = 115, the
+	// node is still ahead, it is only scored for the share it drops
+	busy := &candidate{outbound: stubOutbound("busy"), tag: "busy"}
+	for i := 0; i < 10; i++ {
+		selection.ReportConnection(busy, i != 0)
+	}
+	if tag := selectedTag(selection); tag != "busy" {
+		t.Fatalf("want busy after one failure, got %s", tag)
 	}
 }
 

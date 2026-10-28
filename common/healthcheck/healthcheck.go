@@ -188,16 +188,18 @@ func (h *HealthCheck) InterfaceUpdated(ctx context.Context) {
 	go h.checkAll(ctx, true, namespaces)
 }
 
-// ReportFailure reports a failure of the node
-func (h *HealthCheck) ReportFailure(outbound adapter.Outbound) {
+// ReportConnection records the outcome of a connection the group carried with the node.
+//
+// It is recorded next to the checks rather than as one of them: the checks are probes on
+// a schedule, and the connections say something they cannot, such as a node that passes
+// every probe and then drops what it is asked to carry. Both outcomes are recorded, so
+// the share that failed is a rate, not a count that grows with the traffic of the node.
+func (h *HealthCheck) ReportConnection(outbound adapter.Outbound, established bool) {
 	if _, ok := outbound.(adapter.OutboundGroup); ok {
 		// cannot determine which node in the group is failed, so just ignore the report
 		return
 	}
-	tag := outbound.Tag()
-	// MUST Update instead of Put, since Put will add a new history
-	// which affects the max_fail assertion in balancers.
-	h.Storage.Update(tag, Failed)
+	h.Storage.ReportConnection(outbound.Tag(), established)
 }
 
 // IsActive reports whether the namespace was in use within the idle timeout, so its
