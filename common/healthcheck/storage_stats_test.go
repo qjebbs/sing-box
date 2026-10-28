@@ -12,7 +12,6 @@ func TestStorageStats(t *testing.T) {
 	t.Parallel()
 	rtts := []healthcheck.RTT{60, 140, 60, 140, 60, 60, 140, 60, 140}
 	s := healthcheck.NewStorage(4, time.Hour)
-	s.FailureDelay = healthcheck.Second
 	for _, rtt := range rtts {
 		s.Put(rtt)
 	}
@@ -28,17 +27,17 @@ func TestStorageStats(t *testing.T) {
 	}
 	assertStats(t, "Stats() - All Success", want, s.Stats())
 
-	// A failed check counts with the delay it waited for, so the half failed node is
-	// described by 60, 140, 1000 and 1000, not by 60 and 140 only.
+	// The delay statistics describe the checks that succeeded: a failure says nothing
+	// about the delay the node has when it works, it is reported by Fail and Latest.
 	s.Put(healthcheck.Failed)
 	s.Put(healthcheck.Failed)
 	want = healthcheck.Stats{
 		All:       4,
 		Fail:      2,
-		Deviation: 450,
-		Average:   550,
-		Median:    570,
-		Max:       1000,
+		Deviation: 40,
+		Average:   100,
+		Median:    100,
+		Max:       140,
 		Min:       60,
 		Latest:    healthcheck.Failed,
 	}
@@ -46,48 +45,34 @@ func TestStorageStats(t *testing.T) {
 
 	s.Put(healthcheck.Failed)
 	s.Put(healthcheck.Failed)
-	// Every sample is a timeout, so every sample has the same delay: no deviation,
-	// but the delay itself is the one to report.
 	want = healthcheck.Stats{
-		All:       4,
-		Fail:      4,
-		Deviation: 0,
-		Average:   1000,
-		Median:    1000,
-		Max:       1000,
-		Min:       1000,
-		Latest:    healthcheck.Failed,
+		All:    4,
+		Fail:   4,
+		Latest: healthcheck.Failed,
 	}
 	assertStats(t, "Stats() - All Fail", want, s.Stats())
 }
 
 func TestStorageStatsFirstCheckFailed(t *testing.T) {
 	t.Parallel()
-	// A node that failed its only check reports the timeout it waited for, instead
-	// of the zero statistics that read like the best possible result.
+	// A node that only failed has no delay to report, and the zero of a missing value
+	// would read like the best possible result.
 	s := healthcheck.NewStorage(10, time.Hour)
-	s.FailureDelay = healthcheck.Second
 	s.Put(healthcheck.Failed)
 	want := healthcheck.Stats{
-		All:  1,
-		Fail: 1,
-		// a single sample, deviation is assumed to be half of the average
-		Deviation: 500,
-		Average:   1000,
-		Median:    1000,
-		Max:       1000,
-		Min:       1000,
-		Latest:    healthcheck.Failed,
+		All:    1,
+		Fail:   1,
+		Latest: healthcheck.Failed,
 	}
 	assertStats(t, "Stats() - First Check Failed", want, s.Stats())
 }
 
-func TestStorageStatsFailuresAreNotCensored(t *testing.T) {
+func TestStorageStatsMostlyFail(t *testing.T) {
 	t.Parallel()
-	// A node failing most of its checks used to be described by the few successful
-	// ones, which made it look like the most stable node of all.
+	// A node failing most of its checks is described by the delay of the two that
+	// worked: its reliability is not a delay, and hiding it in the delays made it look
+	// like the most stable node of all.
 	s := healthcheck.NewStorage(10, time.Hour)
-	s.FailureDelay = healthcheck.Second
 	for i := 0; i < 8; i++ {
 		s.Put(healthcheck.Failed)
 	}
@@ -96,14 +81,17 @@ func TestStorageStatsFailuresAreNotCensored(t *testing.T) {
 	want := healthcheck.Stats{
 		All:       10,
 		Fail:      8,
-		Deviation: 360,
-		Average:   820,
-		Median:    1000,
-		Max:       1000,
+		Deviation: 0,
+		Average:   100,
+		Median:    100,
+		Max:       100,
 		Min:       100,
 		Latest:    100,
 	}
 	assertStats(t, "Stats() - Mostly Fail", want, s.Stats())
+	if got := s.Stats().Succeeded(); got != 2 {
+		t.Fatalf("want 2 succeeded checks, got %v", got)
+	}
 }
 
 func TestStorageStatsIgnoreOutdated(t *testing.T) {
@@ -164,6 +152,43 @@ func TestRTTStorageGetFromNil(t *testing.T) {
 	s := (*healthcheck.Storage)(nil)
 	want := healthcheck.Stats{}
 	assertStats(t, "nil.Stats()", want, s.Stats())
+	if got := s.Stats().Mixed(100, healthcheck.Second); got != healthcheck.Failed {
+		t.Fatalf("want no mixed value without samples, got %v", got)
+	}
+}
+
+func TestStatsMixed(t *testing.T) {
+	t.Parallel()
+	// An attempt either succeeds with the value, or fails after waiting for the
+	// failure delay, so the two are mixed by the share of the checks that failed.
+	const failureDelay = 1000
+	testCases := []struct {
+		name  string
+		all   int
+		fail  int
+		value healthcheck.RTT
+		want  healthcheck.RTT
+	}{
+		{name: "no failure", all: 10, fail: 0, value: 100, want: 100},
+		// (9*100 + 1*1000) / 10
+		{name: "one failure", all: 10, fail: 1, value: 100, want: 190},
+		// (5*100 + 5*1000) / 10
+		{name: "half", all: 10, fail: 5, value: 100, want: 550},
+		// every attempt waits for the timeout
+		{name: "all failed", all: 10, fail: 10, value: 0, want: failureDelay},
+		// a value measured with a longer timeout is still capped by the attempt
+		{name: "value above the timeout", all: 10, fail: 0, value: 3000, want: failureDelay},
+	}
+	for _, testCase := range testCases {
+		testCase := testCase
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+			stats := healthcheck.Stats{All: testCase.all, Fail: testCase.fail}
+			if got := stats.Mixed(testCase.value, failureDelay); got != testCase.want {
+				t.Fatalf("want %v, got %v", testCase.want, got)
+			}
+		})
+	}
 }
 
 func assertStats(t *testing.T, name string, want, got healthcheck.Stats) {

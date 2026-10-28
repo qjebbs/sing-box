@@ -193,9 +193,11 @@ func TestLeastPingScore(t *testing.T) {
 		{name: "clear", stats: healthcheck.Stats{Median: 160, Deviation: 10, All: 10}, want: 170},
 		// the jitter is added, an unstable node costs more than a steady one
 		{name: "jitter", stats: healthcheck.Stats{Median: 160, Deviation: 600, All: 10}, want: 760},
-		// failures are already part of the base, the statistics count a failed check
-		// with the delay of the timeout, they are not scored again here
-		{name: "failures", stats: healthcheck.Stats{Median: 160, Deviation: 10, All: 10, Fail: 2}, want: 170},
+		// (8*170 + 2*15000) / 10: two attempts in ten wait for the timeout, the value
+		// itself describes the checks that succeeded
+		{name: "failures", stats: healthcheck.Stats{Median: 160, Deviation: 10, All: 10, Fail: 2}, want: 3136},
+		// no attempt ever succeeded, the timeout is all the node costs
+		{name: "never succeeded", stats: healthcheck.Stats{All: 10, Fail: 10}, want: 15000},
 		{name: "never checked", stats: healthcheck.Stats{}, want: 0},
 	}
 	for _, testCase := range testCases {
@@ -291,14 +293,16 @@ func TestLeastPingOrdersFasterFirst(t *testing.T) {
 	}
 }
 
-func TestLeastScoreClamp(t *testing.T) {
+func TestLeastScoreIsBoundedByTheTimeout(t *testing.T) {
 	t.Parallel()
+	// A node checked with a longer timeout can have a delay above the current one. An
+	// attempt still cannot cost more than the timeout it waits for.
 	objective := balancer.NewLeastPingObjective(option.LoadBalancePickOptions{})
 	node := &balancer.Node{Status: balancer.StatusQualified, Stats: healthcheck.Stats{
-		Median: 65000, Deviation: 65000, All: 10, Fail: 10,
+		Median: 65000, Deviation: 65000, All: 10, Latest: 65000,
 	}}
-	if got := objective.Score(node); got != 65535 {
-		t.Fatalf("want the score clamped to 65535, got %v", got)
+	if got := objective.Score(node); got != 15000 {
+		t.Fatalf("want the score bounded by the 15s timeout, got %v", got)
 	}
 }
 

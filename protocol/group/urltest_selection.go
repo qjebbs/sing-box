@@ -2,7 +2,6 @@ package group
 
 import (
 	"fmt"
-	"math"
 	"sort"
 	"sync"
 
@@ -110,18 +109,18 @@ func (c class) label() string {
 	}
 }
 
-// deviationString has no value to show when the checks all failed: their deviation is
-// the zero of a single repeated value, which reads as the best possible result.
+// deviationString has no value to show without a successful check, the deviation of
+// a node that never worked is the zero of a missing value.
 func (c *candidate) deviationString() string {
-	if c.stats.All == 0 || c.stats.Fail == c.stats.All {
+	if c.stats.All == c.stats.Fail {
 		return "None"
 	}
 	return c.stats.Deviation.String()
 }
 
-// medianString has no value to show without a sample.
+// medianString has no value to show without a successful check.
 func (c *candidate) medianString() string {
-	if c.stats.All == 0 {
+	if c.stats.All == c.stats.Fail {
 		return "None"
 	}
 	return c.stats.Median.String()
@@ -136,24 +135,26 @@ func (c *candidate) latestString() string {
 	return c.stats.Latest.String()
 }
 
-// score returns the delay the selection compares: the median, plus what the failures
-// of the sampling window cost. A check fails only after it waited for the whole
-// timeout, so a node that fails a tenth of its checks makes one attempt in ten wait
-// that long, which adds a tenth of the timeout to the average attempt. A median alone
-// hides that: it stays low while the failures are a minority of the samples.
+// score returns the delay an attempt costs on average, which is what the selection
+// compares: an attempt either succeeds after the median delay of the successful
+// checks, or fails after waiting for the whole timeout, so the two are mixed by the
+// share of the checks that failed.
 //
-// healthcheck.Failed means there is no score: the candidate was not measured, and
-// printing the zero of a missing value would read as the best possible result.
+//	score = (All - Fail) * MED / All + Fail * TIMEOUT / All
+//
+// The failures are not part of the median, they would be counted twice: a node
+// failing half of its checks would be described by a median that is already half a
+// timeout, and then by the penalty again. A score therefore never exceeds the timeout,
+// which a node that fails every check scores, and it is what a node of that quality
+// really costs.
+//
+// healthcheck.Failed means there is no score: the candidate was not measured, and the
+// zero of a missing value would read as the best possible result.
 func (c *candidate) score(failureDelay healthcheck.RTT) healthcheck.RTT {
-	if c.class() != classMeasured {
+	if c.class() == classUnmeasured {
 		return healthcheck.Failed
 	}
-	penalty := uint64(c.stats.Fail) * uint64(failureDelay) / uint64(c.stats.All)
-	score := uint64(c.stats.Median) + penalty
-	if score >= math.MaxUint16 {
-		return healthcheck.RTT(math.MaxUint16)
-	}
-	return healthcheck.RTT(score)
+	return c.stats.Mixed(c.stats.Median, failureDelay)
 }
 
 // selection is the node selection of the group. It reads the health check statistics
@@ -270,7 +271,8 @@ func (s *selection) candidates(network string) []*candidate {
 
 // LogNodes logs the statistics of every candidate in rank order, with the selected
 // one marked. Unlike load balance, a single node is used, so the rest are the ones a
-// better measurement would switch to.
+// better measurement would switch to. The delay and the deviation are those of the
+// successful checks, the failures are shown by the score and the failure count.
 func (s *selection) LogNodes(logger log.ContextLogger, network string) {
 	all := s.candidates(network)
 	if len(all) == 0 {

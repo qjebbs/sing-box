@@ -28,13 +28,18 @@
 The nodes are ranked by the following score, and the best one is used:
 
 ```
-score = MED + FAIL / ALL * TIMEOUT
+score = (ALL - FAIL) / ALL * MED + FAIL / ALL * TIMEOUT
 ```
 
-`MED` is the **median delay** of the health check results, and `FAIL / ALL` the share
-of the checks that failed. A failed check waits for the whole timeout, 15s, before it
-gives up, so a node failing one check in ten is scored 1.5s slower than its median,
-which is what those failures cost on average.
+`MED` is the median delay of the **successful** checks, `FAIL / ALL` the share of the
+checks that failed, and `TIMEOUT` the timeout a failed check waits for before it gives
+up, 15s. An attempt either succeeds after `MED` or fails after `TIMEOUT`, so the score
+is what an attempt costs on average: a node failing one check in ten is scored 1.5s
+slower than its median.
+
+The failures are not part of `MED`, they would be counted twice. A score therefore
+never exceeds the timeout, which a node that fails every check scores, and a node with
+no successful check has no delay to report.
 
 A single bad check doesn't change the selection, and another node only replaces the
 selected one when its score is better by more than [`tolerance`](#tolerance).
