@@ -67,28 +67,27 @@ func (s *Storage) refreshStats(now time.Time) {
 		Connections:        connections,
 		ConnectionFailures: connectionFailures,
 	}
-	latest := s.history[s.idx]
-	if now.Sub(latest.Time) > s.validity {
+	latest, loaded := s.history.At(0)
+	if !loaded || now.Sub(latest.Time) > s.validity {
 		return
 	}
-	delays := make([]RTT, 0, s.cap)
+	delays := make([]RTT, 0, s.history.Length())
 	var expiresAt time.Time
 	fail := 0
-	for i := 0; i < s.cap; i++ {
+	for i := 0; i < s.history.Length(); i++ {
 		// from latest to oldest
-		idx := s.offset(-i)
-		itemExpiresAt := s.history[idx].Time.Add(s.validity)
+		history, _ := s.history.At(i)
+		itemExpiresAt := history.Time.Add(s.validity)
 		if itemExpiresAt.Before(now) {
 			// the latter is invalid, so are the formers
 			break
 		}
 		// the time when the oldest item expires
 		expiresAt = itemExpiresAt
-		delay := s.history[idx].Delay
-		if delay == Failed {
+		if history.Delay == Failed {
 			fail++
 		} else {
-			delays = append(delays, delay)
+			delays = append(delays, history.Delay)
 		}
 	}
 	stats := newStats(len(delays)+fail, fail, latest.Delay, expiresAt, delays)

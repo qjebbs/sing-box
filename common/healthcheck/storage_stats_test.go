@@ -258,22 +258,55 @@ func TestStorageConnectionOutcomes(t *testing.T) {
 	}
 }
 
-func TestStorageConnectionOutcomesAreCapped(t *testing.T) {
+func TestStorageConnectionOutcomesLimit(t *testing.T) {
 	t.Parallel()
-	// A longer run says no more than a full sampling window of it, so the list cannot
-	// grow with the traffic of the node.
-	s := healthcheck.NewStorage(4, time.Hour)
-	now := time.Now()
-	for i := 0; i < 100; i++ {
-		s.ReportConnection(now, i%2 == 0)
+	// The ring bounds the memory of a busy node: only the most recent connections are
+	// remembered, and the rate describes that run rather than the whole window.
+	s := healthcheck.NewStorage(10, time.Hour)
+	at := time.Now()
+	const total = 5000
+	for i := 0; i < total; i++ {
+		s.ReportConnection(at, true)
 	}
-	attempts, failures := s.ConnectionOutcomes(now)
-	if attempts != 4 {
-		t.Fatalf("want the count capped at 4, got %v", attempts)
+	attempts, failures := s.ConnectionOutcomes(at)
+	if attempts >= total {
+		t.Fatalf("want the outcomes bounded, got %v", attempts)
 	}
-	// the last four of the loop are 96..99, two of them failed
-	if failures != 2 {
-		t.Fatalf("want 2 failures in the window, got %v", failures)
+	if attempts < 100 {
+		t.Fatalf("want a run long enough to be a rate, got %v", attempts)
+	}
+	if failures != 0 {
+		t.Fatalf("want no failure, got %v", failures)
+	}
+}
+
+func TestStorageConnectionOutcomesWindow(t *testing.T) {
+	t.Parallel()
+	// Only the connections inside the validity window are counted, and the walk stops at
+	// the first expired one: the ring is in order.
+	s := healthcheck.NewStorage(10, time.Hour)
+	at := time.Now()
+	s.ReportConnection(at.Add(-2*time.Hour), false)
+	s.ReportConnection(at, true)
+	s.ReportConnection(at, false)
+	attempts, failures := s.ConnectionOutcomes(at)
+	if attempts != 2 || failures != 1 {
+		t.Fatalf("want 2 attempts and 1 failure, got %v and %v", attempts, failures)
+	}
+}
+
+func TestStorageConnectionOutcomesAreLazy(t *testing.T) {
+	t.Parallel()
+	// A node whose traffic never reaches the group doesn't pay for the ring.
+	s := healthcheck.NewStorage(10, time.Hour)
+	attempts, failures := s.ConnectionOutcomes(time.Now())
+	if attempts != 0 || failures != 0 {
+		t.Fatalf("want nothing, got %v and %v", attempts, failures)
+	}
+	// both the checks and the statistics still work
+	s.Put(100)
+	if got := s.Stats().Median; got != 100 {
+		t.Fatalf("want the median of the check, got %v", got)
 	}
 }
 
