@@ -367,3 +367,17 @@ func assertStats(t *testing.T, name string, want, got healthcheck.Stats) {
 		t.Fatalf("[%s] want: %v, got: %v", name, want, got)
 	}
 }
+
+func TestStatsCostZeroIsNotFailed(t *testing.T) {
+	t.Parallel()
+	// leastload costs a node by its deviation, and a steady node has none. Zero is
+	// reserved for a missing value, so the cost must stay measurable.
+	stats := healthcheck.Stats{All: 10, Median: 100, Deviation: 0, Latest: 100}
+	if cost := stats.Cost(0, 0, 0); cost != healthcheck.Millisecond {
+		t.Fatalf("want the smallest delay, got %v", cost)
+	}
+	// a node that never worked has no measurable cost, the zero is its absence
+	if cost := (healthcheck.Stats{}).Cost(0, 0, 0); cost != healthcheck.Failed {
+		t.Fatalf("want no cost, got %v", cost)
+	}
+}

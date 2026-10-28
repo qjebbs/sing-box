@@ -120,7 +120,7 @@ func (s *URLTest) Selected(network string) adapter.Outbound {
 	return outbound
 }
 
-func (s *URLTest) AttachConnection(closer io.Closer) func() {
+func (s *URLTest) AttachConnection(closer io.Closer, _ string) func() {
 	s.group.Touch()
 	return s.group.interruptGroup.Add(closer, true)
 }

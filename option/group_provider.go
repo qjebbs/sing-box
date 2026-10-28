@@ -11,8 +11,12 @@ type ProviderSelectorOptions struct {
 type ProviderURLTestOptions struct {
 	ProviderGroupCommonOption
 	HealthCheck *HealthCheckOptions `json:"health_check,omitempty"`
-	// tolerance is the relative score advantage another node needs to replace the
-	// selected one, e.g. 0.2 means 20% of the score of the best node.
+	// objective ranks the nodes, it is leastping or leastload. Default is leastping,
+	// the median delay plus the deviation and the failures.
+	Objective string `json:"objective,omitempty"`
+	// tolerance is the relative score band around the best node within which the node
+	// that was just replaced keeps its existing connections, e.g. 0.2 means 20% of the
+	// score of the best node. The pick itself always takes the best node.
 	Tolerance                 float32 `json:"tolerance,omitempty"`
 	InterruptExistConnections bool    `json:"interrupt_exist_connections,omitempty"`
 }

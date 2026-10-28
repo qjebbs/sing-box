@@ -113,6 +113,7 @@ func (t *multiFlowTracker) CloseFlow(reason tun.FlowCloseReason) {
 type flowInterrupter struct {
 	groups   []adapter.OutboundGroup
 	removers []func()
+	nodeTag  string
 }
 
 func newFlowInterrupter(chain []adapter.Outbound) *flowInterrupter {
@@ -123,7 +124,8 @@ func newFlowInterrupter(chain []adapter.Outbound) *flowInterrupter {
 	if len(groups) == 0 {
 		return nil
 	}
-	return &flowInterrupter{groups: groups}
+	// The chain ends at the outbound that dials, see registerInterrupt.
+	return &flowInterrupter{groups: groups, nodeTag: chain[len(chain)-1].Tag()}
 }
 
 type flowCloser struct {
@@ -138,7 +140,7 @@ func (c flowCloser) Close() error {
 func (t *flowInterrupter) AttachFlow(handle tun.FlowHandle) {
 	closer := flowCloser{handle}
 	for _, group := range t.groups {
-		t.removers = append(t.removers, group.AttachConnection(closer))
+		t.removers = append(t.removers, group.AttachConnection(closer, t.nodeTag))
 	}
 }
 

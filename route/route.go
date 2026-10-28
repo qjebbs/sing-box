@@ -196,12 +196,15 @@ func resolveOutbound(outbound adapter.Outbound, network string) ([]adapter.Outbo
 
 func registerInterrupt(chain []adapter.Outbound, closer io.Closer, onClose N.CloseHandlerFunc) N.CloseHandlerFunc {
 	var removers []func()
+	// The chain ends at the outbound that dials, so the group binds the connection to
+	// the node it actually uses: a member that is a group resolves to the same one.
+	nodeTag := chain[len(chain)-1].Tag()
 	for _, outbound := range chain {
 		group, isGroup := outbound.(adapter.OutboundGroup)
 		if !isGroup {
 			continue
 		}
-		removers = append(removers, group.AttachConnection(closer))
+		removers = append(removers, group.AttachConnection(closer, nodeTag))
 	}
 	if len(removers) == 0 {
 		return onClose

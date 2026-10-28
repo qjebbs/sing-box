@@ -419,3 +419,23 @@ func TestLeastLoadKeep(t *testing.T) {
 		t.Fatalf("a node with 7 times the deviation was kept")
 	}
 }
+
+func TestLeastLoadRanksSteadyFirst(t *testing.T) {
+	t.Parallel()
+	// A node whose deviation is exactly zero has a cost of zero, which must not read as
+	// a missing score: leastload would rank the steadiest node behind every other one.
+	steady := &balancer.Node{Status: balancer.StatusQualified, Stats: healthcheck.Stats{
+		All: 10, Median: 100, Deviation: 0, Latest: 100,
+	}}
+	unstable := &balancer.Node{Status: balancer.StatusQualified, Stats: healthcheck.Stats{
+		All: 10, Median: 100, Deviation: 50, Latest: 100,
+	}}
+	objective := balancer.NewLeastLoadObjective(option.LoadBalancePickOptions{MinNodes: 1, MaxNodes: 1})
+	ranked := objective.Rank([]*balancer.Node{unstable, steady})
+	if ranked[0] != steady {
+		t.Fatalf("want the steady node first, got %v to %v", objective.Score(ranked[0]), objective.Score(ranked[1]))
+	}
+	if selected := balancer.Filter(objective, []*balancer.Node{unstable, steady}); len(selected) != 1 || selected[0] != steady {
+		t.Fatalf("want only the steady node selected, got %d", len(selected))
+	}
+}

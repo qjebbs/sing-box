@@ -18,6 +18,7 @@
   "exclude": "",
   "include": "",
   "health_check": "",
+  "objective": "leastping",
   "tolerance": 0.2,
   "interrupt_exist_connections": false
 }
@@ -25,34 +26,9 @@
 
 ### Selection
 
-The nodes are ranked by the following score, and the best one is used:
-
-```
-cost    = MED + STD
-failure = min(TIMEOUT, 3 * cost)
-score   = (ALL - FAIL) / ALL * cost + FAIL / ALL * failure
-```
-
-`MED` and `STD` are the median delay and the deviation of the **successful** checks,
-`FAIL / ALL` the share of the checks that failed, and `TIMEOUT` the timeout a failed
-check waits for before it gives up, 15s.
-
-The delay statistics describe the successful checks only, so the failures are mixed in
-by their own share, scored in the scale of the node.
-
-A single bad check doesn't change the selection, and another node only replaces the
-selected one when its score is better by more than [`tolerance`](#tolerance).
-
-The nodes are grouped by what the health check says about them:
-
-1. Nodes that passed their latest check, ordered by the score.
-2. Nodes that were never checked, or whose statistics expired.
-3. Nodes whose latest check failed.
-
-The class takes priority over the score, so a failed node is only used when no node of
-another class is left. Within the last two classes nothing is compared: the first one
-in configuration order is used, so a group that has no measurement yet doesn't pick at
-random.
+The group is a special case of the
+[load balance](/configuration/outbound/loadbalance/) group: `min_nodes` and
+`max_nodes` are both `1`. It always uses only the node with the best score.
 
 ### Fields
 
@@ -82,19 +58,31 @@ The [Health Check](/configuration/shared/health-check/) used to test the nodes. 
 
 Required. There is no implicit default health check.
 
+#### objective
+
+The objective of the choice. Default is `leastping`.
+
+| Objective   | Description                    |
+| ----------- | ------------------------------ |
+| `leastping` | the node with the lowest delay |
+| `leastload` | the most stable node           |
+
 #### tolerance
 
-The relative score advantage another node needs to replace the selected one, default
-is `0.2`, i.e. 20% of the score of the best node. The value must be less than `1`.
+The relative score band around the best node, default is `0.2`, i.e. 20% of its score.
 
-The score compared is the one in [Selection](#selection), the median delay plus the
-deviation and the failure penalty, not a single check result.
-
-A node whose latest check failed is not affected by this value, since it doesn't
-belong to the same class as the others.
+This group always uses the node with the best score, so the value doesn't delay a
+switch. It is the band within which the node that was just replaced keeps the connections
+it already carries: a difference that cannot be told apart from noise by the statistics
+is no reason to break them. The allowance is at most the band itself, so a node survives
+at most twice the tolerance.
 
 #### interrupt_exist_connections
 
 Interrupt existing connections when the selected outbound has changed.
 
 Only inbound connections are affected by this setting, internal connections will always be interrupted.
+
+The connections of the node that was just replaced are kept while its score is still
+within the [tolerance](#tolerance), so they are not broken by an ambiguous measurement.
+New connections always use the node with the best score.

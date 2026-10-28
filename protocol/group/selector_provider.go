@@ -118,7 +118,7 @@ func (s *SelectorProvider) References() []string {
 }
 
 // AttachConnection implements adapter.OutboundGroup
-func (s *SelectorProvider) AttachConnection(closer io.Closer) (detach func()) {
+func (s *SelectorProvider) AttachConnection(closer io.Closer, _ string) (detach func()) {
 	return s.interruptGroup.Add(closer, true)
 }
 
