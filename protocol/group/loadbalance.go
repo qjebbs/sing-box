@@ -57,9 +57,18 @@ type LoadBalance struct {
 
 // NewLoadBalance creates a new load balance outbound
 func NewLoadBalance(ctx context.Context, router adapter.Router, logger log.ContextLogger, tag string, options option.LoadBalanceOutboundOptions) (adapter.Outbound, error) {
+	return newLoadBalance(ctx, router, logger, C.TypeLoadBalance, tag, options), nil
+}
+
+// newLoadBalance creates the group and its pick machinery, whatever the type it is
+// registered as: the url test group is the same group under a fixed pick profile.
+func newLoadBalance(
+	ctx context.Context, router adapter.Router, logger log.ContextLogger, typ string, tag string,
+	options option.LoadBalanceOutboundOptions,
+) *LoadBalance {
 	return &LoadBalance{
 		GroupAdapter: outbound.NewGroupAdapter(
-			C.TypeLoadBalance, tag, []string{N.NetworkTCP, N.NetworkUDP},
+			typ, tag, []string{N.NetworkTCP, N.NetworkUDP},
 			options.ProviderGroupCommonOption,
 		),
 		ctx:            ctx,
@@ -72,7 +81,7 @@ func NewLoadBalance(ctx context.Context, router adapter.Router, logger log.Conte
 		options:        options,
 		interruptGroup: interrupt.NewTaggedGroup(),
 		history:        service.PtrFromContext[urltest.HistoryStorage](ctx),
-	}, nil
+	}
 }
 
 // Selected implements adapter.OutboundGroup
@@ -107,13 +116,12 @@ func (s *LoadBalance) touchHealthCheck() {
 }
 
 // AttachConnection implements adapter.OutboundGroup
-func (s *LoadBalance) AttachConnection(closer io.Closer) (detach func()) {
+func (s *LoadBalance) AttachConnection(closer io.Closer, outboundTag string) (detach func()) {
 	s.touchHealthCheck()
-	// LoadBalance doesn't have a selected member to bind the closer to: the node
-	// is picked per dial and is registered by DialContext and ListenPacket with
-	// NewConn and NewPacketConn instead. Registering it here would interrupt it
-	// on every health check round, which closes connections on healthy nodes too.
-	return func() {}
+	// The router knows which node the connection was resolved to, so the connection is
+	// bound to it: only the node that leaves the selection is interrupted, and only
+	// when the tolerance doesn't hold it, see RetainedNodes.
+	return s.interruptGroup.Add(closer, true, outboundTag)
 }
 
 // All implements adapter.OutboundGroup

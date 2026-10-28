@@ -153,7 +153,11 @@ type OutboundGroup interface {
 	Outbound
 	All() []string
 	Selected(network string) Outbound
-	AttachConnection(closer io.Closer) (detach func())
+	// AttachConnection registers a connection carried with the group, so it can be
+	// interrupted when the node it uses is no longer selected. outboundTag is the node
+	// the router resolved for this connection, the same tag the health checks are
+	// stored by.
+	AttachConnection(closer io.Closer, outboundTag string) (detach func())
 	Outbounds() []Outbound
 	Outbound(tag string) (Outbound, bool)
 }

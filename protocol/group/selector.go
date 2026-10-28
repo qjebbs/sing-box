@@ -127,7 +127,7 @@ func (s *Selector) Selected(network string) adapter.Outbound {
 	return s.selected.Load()
 }
 
-func (s *Selector) AttachConnection(closer io.Closer) func() {
+func (s *Selector) AttachConnection(closer io.Closer, _ string) func() {
 	return s.interruptGroup.Add(closer, true)
 }
 

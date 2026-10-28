@@ -14679,6 +14679,9 @@
             "health_check": {
               "$ref": "#/$defs/HealthCheckReference"
             },
+            "objective": {
+              "type": "string"
+            },
             "tolerance": {
               "type": "number"
             },

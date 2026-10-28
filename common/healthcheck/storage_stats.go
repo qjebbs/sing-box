@@ -175,7 +175,14 @@ func (s Stats) mixed(cost uint64) RTT {
 	attempts := uint64(s.All + s.Connections)
 	failures := uint64(s.Fail + s.ConnectionFailures)
 	successes := attempts - failures
-	return RTT((successes*cost + failures*s.failureCost(cost)) / attempts)
+	result := RTT((successes*cost + failures*s.failureCost(cost)) / attempts)
+	if result == Failed && successes > 0 {
+		// A cost of zero is a cost like any other, but RTT reserves zero for a missing
+		// value: the deviation of a steady node is exactly that, and reporting it as
+		// missing would rank the steadiest node behind every measured one.
+		return Millisecond
+	}
+	return result
 }
 
 // failureRatio is how many attempts a failed one is worth. It costs more than one that
