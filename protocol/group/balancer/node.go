@@ -81,10 +81,11 @@ func (n *Node) String() string {
 	// The average is not printed: the median is the typical delay, and the average is
 	// moved by a single spike, so it says less about what the node usually costs.
 	return fmt.Sprintf(
-		"#%d %s [%s] STD=%s MED=%s Latest=%s FAIL=%d/%d",
+		"#%d %s [%s] STD=%s MED=%s Latest=%s FAIL=%d/%d CONNFAIL=%d/%d",
 		n.Index, n.Status, tag,
 		n.deviationString(), n.medianString(), n.latestString(),
 		n.Fail, n.All,
+		n.ConnectionFailures, n.Connections,
 	)
 }
 
