@@ -4,7 +4,6 @@ import (
 	"context"
 	"io"
 	"net"
-	"sort"
 
 	"github.com/sagernet/sing-box/adapter"
 	"github.com/sagernet/sing-box/adapter/outbound"
@@ -14,7 +13,6 @@ import (
 	C "github.com/sagernet/sing-box/constant"
 	"github.com/sagernet/sing-box/log"
 	"github.com/sagernet/sing-box/option"
-	"github.com/sagernet/sing/common"
 	E "github.com/sagernet/sing/common/exceptions"
 	M "github.com/sagernet/sing/common/metadata"
 	N "github.com/sagernet/sing/common/network"
@@ -33,12 +31,14 @@ var (
 	_ adapter.Lifecycle               = (*URLTestProvider)(nil)
 )
 
+// URLTestProvider is the URL test group. It uses the outbound with the lowest
+// median delay of the health check results, and only moves to another one when it is
+// faster by more than the tolerance.
 type URLTestProvider struct {
 	outbound.GroupAdapter
 	*healthcheck.HealthCheck
 
 	ctx            context.Context
-	router         adapter.Router
 	logger         log.ContextLogger
 	outbound       adapter.OutboundManager
 	provider       adapter.ProviderManager
@@ -49,9 +49,7 @@ type URLTestProvider struct {
 	tolerance healthcheck.RTT
 	history   *urltest.HistoryStorage
 
-	// selectedOutbound records the last selection so connections are only
-	// interrupted when the selection actually changes, not on every check.
-	selectedOutbound common.TypedValue[adapter.Outbound]
+	selection *selection
 
 	interruptGroup               *interrupt.Group
 	interruptExternalConnections bool
@@ -65,7 +63,6 @@ func NewURLTestProvider(ctx context.Context, router adapter.Router, logger log.C
 	return &URLTestProvider{
 		GroupAdapter:                 outbound.NewGroupAdapter(C.TypeURLTest, tag, []string{N.NetworkTCP, N.NetworkUDP}, options.ProviderGroupCommonOption),
 		ctx:                          ctx,
-		router:                       router,
 		logger:                       logger,
 		outbound:                     service.FromContext[adapter.OutboundManager](ctx),
 		connection:                   service.FromContext[adapter.ConnectionManager](ctx),
@@ -87,42 +84,30 @@ func (s *URLTestProvider) Start(stage adapter.StartStage, scope *adapter.Scope) 
 	if err := s.InitProviders(s.outbound, s.provider); err != nil {
 		return err
 	}
-	if s.checker == nil || s.checker.IsEmpty() {
-		return E.New("urltest requires 'health_check' in options")
-	}
-	checker, err := s.healthCheckMgr.Get(s.ctx, s.logger, *s.checker)
+	healthCheck, err := s.AttachHealthCheck(
+		s.ctx, s.logger, s.healthCheckMgr, s.checker, s.interruptOutdatedConnections,
+	)
 	if err != nil {
 		return err
 	}
-	checker.RegisterPostCheckListener(s.interruptOutdatedConnections)
-	if err := checker.SetProviders(s.Tag(), s.Providers()); err != nil {
-		return err
-	}
-	healthCheck, ok := checker.(*healthcheck.HealthCheck)
-	if !ok {
-		return E.New("health check is not a health check")
-	}
 	s.HealthCheck = healthCheck
+	s.selection = newSelection(&s.GroupAdapter, healthCheck.Storage, s.tolerance)
 	return nil
 }
 
 // Close implements the cleanup registered on the scope by Start.
 func (s *URLTestProvider) Close() error {
-	if s.HealthCheck == nil {
-		return nil
-	}
-	s.HealthCheck.UnregisterPostCheckListener(s.interruptOutdatedConnections)
-	s.HealthCheck.RemoveProviders(s.Tag())
-	return nil
+	return s.DetachHealthCheck(s.HealthCheck, s.interruptOutdatedConnections)
 }
 
 func (s *URLTestProvider) interruptOutdatedConnections() {
-	selected, err := s.Select(N.NetworkTCP)
-	if err != nil {
+	if s.selection == nil {
+		// the listener is registered before the selection is built
 		return
 	}
-	previous := s.selectedOutbound.Swap(selected)
-	if previous == nil || previous == selected {
+	_, tcpChanged := s.selection.Reselect(N.NetworkTCP)
+	_, udpChanged := s.selection.Reselect(N.NetworkUDP)
+	if !tcpChanged && !udpChanged {
 		return
 	}
 	s.interruptGroup.Interrupt(s.interruptExternalConnections)
@@ -141,11 +126,14 @@ func (s *URLTestProvider) touchHealthCheck() {
 
 // Selected implements adapter.OutboundGroup
 func (s *URLTestProvider) Selected(network string) adapter.Outbound {
-	selected, err := s.Select(network)
-	if err != nil {
+	if s.selection == nil {
 		return nil
 	}
-	return selected
+	node := s.selection.Selected(network)
+	if node == nil {
+		return nil
+	}
+	return node.outbound
 }
 
 // References implements adapter.Referrer
@@ -170,130 +158,36 @@ func (s *URLTestProvider) AttachConnection(closer io.Closer) (detach func()) {
 
 func (s *URLTestProvider) DialContext(ctx context.Context, network string, destination M.Socksaddr) (net.Conn, error) {
 	s.touchHealthCheck()
-	outbound, err := s.Select(network)
-	if err != nil {
-		return nil, err
+	if s.selection == nil {
+		return nil, E.New("urltest group is not started")
 	}
-	conn, err := outbound.DialContext(ctx, network, destination)
-	if err == nil {
-		return conn, nil
-	}
-	s.logger.ErrorContext(ctx, err)
-	s.HealthCheck.ReportFailure(outbound)
-	outbounds := s.Fallback(outbound)
-	for _, fallback := range outbounds {
-		conn, err = fallback.DialContext(ctx, network, destination)
-		if err == nil {
-			return conn, nil
-		}
-		s.logger.ErrorContext(ctx, err)
-		s.HealthCheck.ReportFailure(fallback)
-	}
-	return nil, err
+	return tryEach(ctx, s.logger,
+		func() (*candidate, bool) {
+			node := s.selection.Selected(network)
+			return node, node != nil
+		},
+		s.reportFailure,
+		func(node *candidate) (net.Conn, error) {
+			return node.outbound.DialContext(ctx, network, destination)
+		},
+	)
 }
 
 func (s *URLTestProvider) ListenPacket(ctx context.Context, destination M.Socksaddr) (net.PacketConn, error) {
 	s.touchHealthCheck()
-	outbound, err := s.Select(N.NetworkUDP)
-	if err != nil {
-		return nil, err
+	if s.selection == nil {
+		return nil, E.New("urltest group is not started")
 	}
-	conn, err := outbound.ListenPacket(ctx, destination)
-	if err == nil {
-		return conn, nil
-	}
-	s.logger.ErrorContext(ctx, err)
-	s.HealthCheck.ReportFailure(outbound)
-	outbounds := s.Fallback(outbound)
-	for _, fallback := range outbounds {
-		conn, err = fallback.ListenPacket(ctx, destination)
-		if err == nil {
-			return conn, nil
-		}
-		s.logger.ErrorContext(ctx, err)
-		s.HealthCheck.ReportFailure(fallback)
-	}
-	return nil, err
-}
-
-func (s *URLTestProvider) NewConnectionEx(ctx context.Context, conn net.Conn, metadata adapter.InboundContext, onClose N.CloseHandlerFunc) {
-	ctx = interrupt.ContextWithIsExternalConnection(ctx, true)
-	s.connection.NewConnection(ctx, s, conn, metadata, onClose)
-}
-
-func (s *URLTestProvider) NewPacketConnectionEx(ctx context.Context, conn N.PacketConn, metadata adapter.InboundContext, onClose N.CloseHandlerFunc) {
-	ctx = interrupt.ContextWithIsExternalConnection(ctx, true)
-	s.connection.NewPacketConnection(ctx, s, conn, metadata, onClose)
-}
-
-func (s *URLTestProvider) Select(network string) (adapter.Outbound, error) {
-	var minDelay healthcheck.RTT
-	var minOutbound adapter.Outbound
-	var firstOutbound adapter.Outbound
-	// Iterate the group's providers directly: this runs for every connection, so
-	// avoid Outbounds(), which builds a new slice on each call. The global
-	// provider manager must not be used here, it doesn't contain the outbounds
-	// configured in this group.
-	for _, provider := range s.Providers() {
-		for _, detour := range provider.Outbounds() {
-			if !common.Contains(detour.Network(), network) {
-				continue
-			}
-			if firstOutbound == nil {
-				firstOutbound = detour
-			}
-			history := s.getHistory(detour)
-			if history == nil || history.Delay == healthcheck.Failed {
-				continue
-			}
-			if minDelay == 0 || minDelay > history.Delay+s.tolerance {
-				minDelay = history.Delay
-				minOutbound = detour
-			}
-		}
-	}
-	if minOutbound != nil {
-		return minOutbound, nil
-	}
-	if firstOutbound != nil {
-		return firstOutbound, nil
-	}
-	return nil, E.New("[", s.Tag(), "]: no outbounds available")
-}
-
-func (s *URLTestProvider) Fallback(used adapter.Outbound) []adapter.Outbound {
-	outbounds := make([]adapter.Outbound, 0)
-	for _, provider := range s.Providers() {
-		for _, detour := range provider.Outbounds() {
-			if detour == used {
-				continue
-			}
-			outbounds = append(outbounds, detour)
-		}
-	}
-	sort.Slice(outbounds, func(i, j int) bool {
-		hi := s.getHistory(outbounds[i])
-		hj := s.getHistory(outbounds[j])
-		if hi == nil || hi.Delay == healthcheck.Failed {
-			return false
-		}
-		if hj == nil || hj.Delay == healthcheck.Failed {
-			return false
-		}
-		return hi.Delay < hj.Delay
-	})
-	return outbounds
-}
-
-func (s *URLTestProvider) getHistory(outbound adapter.Outbound) *healthcheck.History {
-	if group, ok := outbound.(adapter.OutboundGroup); ok {
-		real, err := adapter.RealOutbound(group)
-		if err != nil {
-			return nil
-		}
-		outbound = real
-	}
-	return s.HealthCheck.Storage.Latest(outbound.Tag())
+	return tryEach(ctx, s.logger,
+		func() (*candidate, bool) {
+			node := s.selection.Selected(N.NetworkUDP)
+			return node, node != nil
+		},
+		s.reportFailure,
+		func(node *candidate) (net.PacketConn, error) {
+			return node.outbound.ListenPacket(ctx, destination)
+		},
+	)
 }
 
 // URLTest implements adapter.URLTestGroup
@@ -303,9 +197,15 @@ func (s *URLTestProvider) URLTest(ctx context.Context) (map[string]uint16, error
 
 // InterfaceUpdated implements adapter.InterfaceUpdateListener
 func (s *URLTestProvider) InterfaceUpdated(ctx context.Context) {
-	// b can be nil if the parent struct has not initialized it yet.
+	// s.HealthCheck can be nil if the parent struct has not initialized it yet.
 	if s.HealthCheck == nil {
 		return
 	}
 	go s.HealthCheck.CheckAll(ctx, s.Tag())
+}
+
+// reportFailure marks the node as failed, so the next connection avoids it.
+func (s *URLTestProvider) reportFailure(node *candidate) {
+	s.HealthCheck.ReportFailure(node.outbound)
+	s.selection.Invalidate()
 }
