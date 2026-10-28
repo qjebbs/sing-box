@@ -12733,9 +12733,6 @@
                 "$ref": "#/$defs/LoadBalanceProfileOptions"
               }
             },
-            "log_health": {
-              "type": "boolean"
-            },
             "interrupt_exist_connections": {
               "type": "boolean"
             }

@@ -85,7 +85,7 @@ func (s *URLTestProvider) Start(stage adapter.StartStage, scope *adapter.Scope) 
 		return err
 	}
 	healthCheck, err := s.AttachHealthCheck(
-		s.ctx, s.logger, s.healthCheckMgr, s.checker, s.interruptOutdatedConnections,
+		s.ctx, s.logger, s.healthCheckMgr, s.checker, s.healthChecksUpdated,
 	)
 	if err != nil {
 		return err
@@ -97,16 +97,20 @@ func (s *URLTestProvider) Start(stage adapter.StartStage, scope *adapter.Scope) 
 
 // Close implements the cleanup registered on the scope by Start.
 func (s *URLTestProvider) Close() error {
-	return s.DetachHealthCheck(s.HealthCheck, s.interruptOutdatedConnections)
+	return s.DetachHealthCheck(s.HealthCheck, s.healthChecksUpdated)
 }
 
-func (s *URLTestProvider) interruptOutdatedConnections() {
+func (s *URLTestProvider) healthChecksUpdated() {
 	if s.selection == nil {
 		// the listener is registered before the selection is built
 		return
 	}
 	_, tcpChanged := s.selection.Reselect(N.NetworkTCP)
 	_, udpChanged := s.selection.Reselect(N.NetworkUDP)
+	if s.HealthCheck.IsActive(s.Tag()) {
+		// An idle group is not in use, and its statistics only describe the past.
+		s.selection.LogNodes(s.logger, N.NetworkTCP)
+	}
 	if !tcpChanged && !udpChanged {
 		return
 	}

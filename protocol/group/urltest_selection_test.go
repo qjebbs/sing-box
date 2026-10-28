@@ -253,3 +253,86 @@ func TestSelectionReselectWithoutCandidates(t *testing.T) {
 		t.Fatalf("want no node, got %v changed=%v", node, changed)
 	}
 }
+
+func TestCandidateString(t *testing.T) {
+	t.Parallel()
+	testCases := []struct {
+		name  string
+		stats healthcheck.Stats
+		want  string
+	}{
+		{
+			name:  "measured",
+			stats: healthcheck.Stats{All: 10, Deviation: 57, Median: 164, Latest: 155},
+			want:  "#1 OK [node] STD=57ms MED=164ms Latest=155ms FAIL=0/10",
+		},
+		// a node whose checks all failed has no stability to show
+		{
+			name:  "all failed",
+			stats: healthcheck.Stats{All: 1, Fail: 1, Median: 15000},
+			want:  "#1 x [node] STD=None MED=15.00s Latest=None FAIL=1/1",
+		},
+		// a node that was never checked has nothing to show
+		{
+			name:  "never checked",
+			stats: healthcheck.Stats{},
+			want:  "#1 ? [node] STD=None MED=None Latest=None FAIL=0/0",
+		},
+	}
+	for _, testCase := range testCases {
+		testCase := testCase
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+			node := &candidate{tag: "node", stats: testCase.stats, index: 1}
+			if got := node.String(); got != testCase.want {
+				t.Fatalf("want %q, got %q", testCase.want, got)
+			}
+		})
+	}
+}
+
+func TestCandidatesNumberedInConfigOrder(t *testing.T) {
+	t.Parallel()
+	// The number identifies the node in the configuration, like the load balance log,
+	// not its rank: b is first because it is faster, but it is the second configured.
+	selection, storage := newSelectionForTest(t, 0, "a", "b")
+	fill(storage, "a", 200)
+	fill(storage, "b", 100)
+	all := selection.candidates("tcp")
+	if len(all) != 2 {
+		t.Fatalf("want 2 candidates, got %v", len(all))
+	}
+	if all[0].tag != "b" || all[0].index != 2 {
+		t.Fatalf("want b as #2, got %s as #%v", all[0].tag, all[0].index)
+	}
+	if all[1].tag != "a" || all[1].index != 1 {
+		t.Fatalf("want a as #1, got %s as #%v", all[1].tag, all[1].index)
+	}
+}
+
+func TestCandidateScore(t *testing.T) {
+	t.Parallel()
+	testCases := []struct {
+		name   string
+		stats  healthcheck.Stats
+		want   healthcheck.RTT
+		wantOK bool
+	}{
+		// the score is the median delay, the value the selection compares
+		{name: "measured", stats: healthcheck.Stats{All: 10, Median: 164, Latest: 160}, want: 164, wantOK: true},
+		// nothing to compare, and 0ms would read as the best possible result
+		{name: "never checked", stats: healthcheck.Stats{}, want: healthcheck.Failed},
+		{name: "failed", stats: healthcheck.Stats{All: 10, Median: 164, Latest: healthcheck.Failed}, want: healthcheck.Failed},
+	}
+	for _, testCase := range testCases {
+		testCase := testCase
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+			node := &candidate{stats: testCase.stats}
+			got, ok := node.score()
+			if got != testCase.want || ok != testCase.wantOK {
+				t.Fatalf("want %v ok=%v, got %v ok=%v", testCase.want, testCase.wantOK, got, ok)
+			}
+		})
+	}
+}

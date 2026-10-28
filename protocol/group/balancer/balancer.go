@@ -73,42 +73,48 @@ func (b *Balancer) PickNode(ctx context.Context, network string, destination M.S
 	return b.Strategy.Pick(all, selected, metadata)
 }
 
-// AvailableNodes returns all available nodes
-func (b *Balancer) AvailableNodes(logging bool) []string {
-	all, filtered := b.GetNodes()
-	if logging && len(all) > 0 {
-		available := len(filtered)
-		b.logger.Info(
-			b.cfg.Objective, "/", b.cfg.Strategy, ", ",
-			available, " of ", len(all), " nodes available",
-		)
-		b.logger.Info("=== nodes available ===")
-		scorer, isScorer := b.Objective.(Scorer)
-		for i, n := range b.Objective.Rank(all) {
-			if i == available {
-				b.logger.Info("=== nodes unavailable ===")
-			}
-			if isScorer {
-				if score := scorer.Score(n); score != healthcheck.Failed {
-					b.logger.Info(n.String(), " SCORE=", score)
-				} else {
-					// healthcheck.Failed means there is no score to show, printing
-					// 0ms would read as the best possible result.
-					b.logger.Info(n.String(), " SCORE=None")
-				}
-				continue
-			}
-			b.logger.Info(n.String())
-		}
-	}
-	if len(filtered) == 0 {
+// AvailableNodes returns the tags of the nodes new connections may use
+func (b *Balancer) AvailableNodes() []string {
+	_, selected := b.GetNodes()
+	if len(selected) == 0 {
 		return []string{}
 	}
 	return common.Uniq(common.Map(
-		filtered, func(node *Node) string {
+		selected, func(node *Node) string {
 			return node.Tag()
 		},
 	))
+}
+
+// LogNodes logs the statistics of every node, the selected ones first.
+func (b *Balancer) LogNodes() {
+	all, selected := b.GetNodes()
+	if len(all) == 0 {
+		return
+	}
+	available := len(selected)
+	b.logger.Info(
+		b.cfg.Objective, "/", b.cfg.Strategy, ", ",
+		available, " of ", len(all), " nodes available",
+	)
+	b.logger.Info("=== nodes available ===")
+	scorer, isScorer := b.Objective.(Scorer)
+	for i, n := range b.Objective.Rank(all) {
+		if i == available {
+			b.logger.Info("=== nodes unavailable ===")
+		}
+		if isScorer {
+			if score := scorer.Score(n); score != healthcheck.Failed {
+				b.logger.Info(n.String(), " SCORE=", score)
+			} else {
+				// healthcheck.Failed means there is no score to show, printing
+				// 0ms would read as the best possible result.
+				b.logger.Info(n.String(), " SCORE=None")
+			}
+			continue
+		}
+		b.logger.Info(n.String())
+	}
 }
 
 // RetainedNodes returns the tags to keep alive: the selected nodes, plus the nodes

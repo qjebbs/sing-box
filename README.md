@@ -22,6 +22,8 @@ Warn: The `leastload` / `leastping` objectives no longer accept `expected` and `
 
 Warn: The `urltest` outbound now ranks the nodes by the median delay of the health check results, and its `tolerance` is compared with that delay. The selection no longer follows a single check result, so it is more stable, but a node that failed a check recently is demoted. You may need to update your configuration, see [URLTest](./docs/configuration/outbound/urltest.md).
 
+Warn: The `log_health` option of the `loadbalance` outbound is removed. Node statistics are now logged after every health check round, as long as the group is in use, and the `urltest` outbound does the same. You may need to remove `log_health` from your configuration.
+
 ## License
 
 ```

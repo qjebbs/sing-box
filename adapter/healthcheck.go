@@ -17,6 +17,9 @@ type HealthCheck interface {
 	// Touch records that the namespace is in use, so its health checks keep
 	// running and are resumed after an idle timeout.
 	Touch(namespace string)
+	// IsActive reports whether the namespace was in use within the idle timeout,
+	// so its health checks are running and its statistics are current.
+	IsActive(namespace string) bool
 	ReportFailure(outbound Outbound)
 }
 

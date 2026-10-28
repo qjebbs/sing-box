@@ -178,7 +178,7 @@ func (s *LoadBalance) Close() error {
 	if s.Balancer == nil {
 		return nil
 	}
-	detachErr := s.DetachHealthCheck(s.Balancer.HealthCheck, s.interruptOutdatedConnections)
+	detachErr := s.DetachHealthCheck(s.Balancer.HealthCheck, s.healthChecksUpdated)
 	return E.Append(detachErr, s.Balancer.Close(), func(err error) error {
 		return E.Cause(err, "close balancer")
 	})
@@ -194,7 +194,7 @@ func (s *LoadBalance) Start(stage adapter.StartStage, scope *adapter.Scope) erro
 		return err
 	}
 	healthCheck, err := s.AttachHealthCheck(
-		s.ctx, s.logger, s.healthCheckMgr, s.options.HealthCheck, s.interruptOutdatedConnections,
+		s.ctx, s.logger, s.healthCheckMgr, s.options.HealthCheck, s.healthChecksUpdated,
 	)
 	if err != nil {
 		return err
@@ -207,12 +207,16 @@ func (s *LoadBalance) Start(stage adapter.StartStage, scope *adapter.Scope) erro
 	return s.Balancer.Start()
 }
 
-func (s *LoadBalance) interruptOutdatedConnections() {
+func (s *LoadBalance) healthChecksUpdated() {
 	if s.Balancer == nil {
 		// the listener is registered before the balancer is built
 		return
 	}
-	available := s.Balancer.AvailableNodes(s.options.LogHealth)
+	if s.HealthCheck.IsActive(s.Tag()) {
+		// An idle group is not in use, and its statistics only describe the past.
+		s.Balancer.LogNodes()
+	}
+	available := s.Balancer.AvailableNodes()
 	var retained []string
 	if s.options.InterruptExistConnections {
 		// The nodes that are in use and just left the selection keep their

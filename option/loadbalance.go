@@ -8,16 +8,7 @@ type LoadBalanceOutboundOptions struct {
 	HealthCheck               *HealthCheckOptions         `json:"health_check,omitempty"`
 	Pick                      LoadBalancePickOptions      `json:"pick,omitempty"`
 	Profiles                  []LoadBalanceProfileOptions `json:"profiles,omitempty"`
-	LogHealth                 bool                        `json:"log_health,omitempty"`
 	InterruptExistConnections bool                        `json:"interrupt_exist_connections,omitempty"`
-}
-
-// LoadBalanceProfileOutboundOptions is the options for load balance profile
-type LoadBalanceProfileOutboundOptions struct {
-	LoadBalanceTag string                 `json:"loadbalance_tag,omitempty"`
-	Exclude        string                 `json:"exclude,omitempty"`
-	Include        string                 `json:"include,omitempty"`
-	Pick           LoadBalancePickOptions `json:"pick,omitempty"`
 }
 
 // LoadBalancePickOptions is the options for balancer outbound picking
