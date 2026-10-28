@@ -13,6 +13,10 @@ import (
 )
 
 const (
+	// jitterWeight is how much a millisecond of deviation costs, the same as the
+	// default of the load balance objectives. The group uses one node for everything, so
+	// its stability decides the quality of every connection, not of a share of them.
+	jitterWeight = 1
 	// defaultTolerance is the relative advantage another node needs to replace the
 	// selected one, the same default as the load balance objectives. A fraction keeps
 	// its meaning across nodes of different quality: a fixed delay is a third of a
@@ -136,17 +140,24 @@ func (c *candidate) latestString() string {
 }
 
 // score returns the delay an attempt costs on average, which is what the selection
-// compares: an attempt either succeeds after the median delay of the successful
-// checks, or fails after waiting for the whole timeout, so the two are mixed by the
-// share of the checks that failed.
+// compares:
 //
-//	score = (All - Fail) * MED / All + Fail * TIMEOUT / All
+//	cost  = MED + jitterWeight * STD
+//	score = Mixed(cost)
 //
-// The failures are not part of the median, they would be counted twice: a node
-// failing half of its checks would be described by a median that is already half a
-// timeout, and then by the penalty again. A score therefore never exceeds the timeout,
-// which a node that fails every check scores, and it is what a node of that quality
-// really costs.
+// MED and STD are the median and the deviation of the successful checks. The deviation
+// is part of the cost because it is the stability of the node that decides the quality
+// of every connection here: an unstable node stalls the connections it serves, and the
+// group serves all of them.
+//
+// The tolerance is not a substitute. It only decides when the current selection is
+// replaced, it cannot tell a steady node from an unstable one with the same median:
+// the difference would be zero, and whichever node happened to be selected first would
+// be kept for as long as both are measured.
+//
+// The failures are mixed in rather than part of the median, they would be counted
+// twice, see healthcheck.Stats.Mixed. A score therefore never exceeds the timeout,
+// which a node that fails every check scores.
 //
 // healthcheck.Failed means there is no score: the candidate was not measured, and the
 // zero of a missing value would read as the best possible result.
@@ -154,13 +165,18 @@ func (c *candidate) score(failureDelay healthcheck.RTT) healthcheck.RTT {
 	if c.class() == classUnmeasured {
 		return healthcheck.Failed
 	}
-	return c.stats.Mixed(c.stats.Median, failureDelay)
+	cost := uint32(c.stats.Median) + uint32(jitterWeight)*uint32(c.stats.Deviation)
+	if cost > uint32(failureDelay) {
+		// an attempt never costs more than the timeout it waits for
+		cost = uint32(failureDelay)
+	}
+	return c.stats.Mixed(healthcheck.RTT(cost), failureDelay)
 }
 
 // selection is the node selection of the group. It reads the health check statistics
-// and ranks the candidates itself: this group uses one outbound at a time, so it
-// takes the one with the lowest median delay, and keeps it while another one is not
-// faster by more than the tolerance.
+// and ranks the candidates itself: this group uses one outbound at a time, so it takes
+// the one with the best score, and keeps it while another one is not better by more
+// than the tolerance.
 type selection struct {
 	source       outboundSource
 	storage      *healthcheck.Storages

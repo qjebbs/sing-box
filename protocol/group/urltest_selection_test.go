@@ -65,14 +65,13 @@ func TestSelectionUsesMedianDelay(t *testing.T) {
 	}
 }
 
-func TestSelectionIgnoresJitter(t *testing.T) {
+func TestSelectionPenalizesJitter(t *testing.T) {
 	t.Parallel()
-	// A steady node and a jittery one with the same median are the same choice: this
-	// group uses one outbound for everything and takes the fastest one.
-	selection, storage := newSelectionForTest(t, 0.0001, "steady", "jittery")
-	for i := 0; i < storage.Cap(); i++ {
-		storage.Put("steady", 100)
-	}
+	// A steady node and a jittery one with the same median are not the same choice: the
+	// group serves every connection with the one node it uses, so the deviation decides
+	// the quality of all of them. The tolerance cannot replace this, its difference
+	// would be zero, and whichever node was selected first would be kept.
+	selection, storage := newSelectionForTest(t, 0.0001, "jittery", "steady")
 	// 7 fast samples and 3 slow ones: the median is still 100, the deviation is not
 	for i := 0; i < storage.Cap(); i++ {
 		if i%10 < 7 {
@@ -80,25 +79,55 @@ func TestSelectionIgnoresJitter(t *testing.T) {
 		} else {
 			storage.Put("jittery", 850)
 		}
+		storage.Put("steady", 100)
 	}
-	// the medians are equal, the declaration order decides
 	if tag := selectedTag(selection); tag != "steady" {
 		t.Fatalf("want steady, got %s", tag)
 	}
-	// a jittery node that is faster by more than the tolerance still wins
-	selection, storage = newSelectionForTest(t, 0.0001, "steady", "jittery")
-	for i := 0; i < storage.Cap(); i++ {
-		storage.Put("steady", 200)
-	}
+}
+
+func TestSelectionJitterIsWeighted(t *testing.T) {
+	t.Parallel()
+	// A node that is faster by more than its own deviation still wins: the jitter is a
+	// penalty, not a veto.
+	selection, storage := newSelectionForTest(t, 0.0001, "jittery", "steady")
 	for i := 0; i < storage.Cap(); i++ {
 		if i%10 < 7 {
 			storage.Put("jittery", 100)
 		} else {
-			storage.Put("jittery", 850)
+			storage.Put("jittery", 160)
 		}
+		storage.Put("steady", 200)
 	}
 	if tag := selectedTag(selection); tag != "jittery" {
 		t.Fatalf("want jittery, got %s", tag)
+	}
+}
+
+func TestSelectionScoreUsesJitter(t *testing.T) {
+	t.Parallel()
+	// score = Mixed(MED + jitterWeight * STD)
+	selection, _ := newSelectionForTest(t, defaultTolerance)
+	testCases := []struct {
+		name  string
+		stats healthcheck.Stats
+		want  healthcheck.RTT
+	}{
+		// the deviation is added, so an unstable node costs more than a steady one
+		{name: "steady", stats: healthcheck.Stats{All: 10, Median: 160, Deviation: 10, Latest: 160}, want: 170},
+		{name: "jittery", stats: healthcheck.Stats{All: 10, Median: 160, Deviation: 100, Latest: 160}, want: 260},
+		// the failures are mixed in on top of the cost
+		{name: "failures", stats: healthcheck.Stats{All: 10, Fail: 2, Median: 160, Deviation: 10, Latest: 160}, want: 3136},
+	}
+	for _, testCase := range testCases {
+		testCase := testCase
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+			node := &candidate{stats: testCase.stats}
+			if got := node.score(selection.failureDelay); got != testCase.want {
+				t.Fatalf("want %v, got %v", testCase.want, got)
+			}
+		})
 	}
 }
 

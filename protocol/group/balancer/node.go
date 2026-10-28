@@ -78,8 +78,8 @@ func (n *Node) String() string {
 	if n.Outbound != nil {
 		tag = n.Outbound.Tag()
 	}
-	// The average is not printed: since a failed check counts with the delay of the
-	// timeout, it is a mix of the two, and the median is the typical delay now.
+	// The average is not printed: the median is the typical delay, and the average is
+	// moved by a single spike, so it says less about what the node usually costs.
 	return fmt.Sprintf(
 		"#%d %s [%s] STD=%s MED=%s Latest=%s FAIL=%d/%d",
 		n.Index, n.Status, tag,
