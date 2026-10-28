@@ -115,8 +115,8 @@ func TestSelectionScoreUsesJitter(t *testing.T) {
 		// the deviation is added, so an unstable node costs more than a steady one
 		{name: "steady", stats: healthcheck.Stats{All: 10, Median: 160, Deviation: 10, Latest: 160}, want: 170},
 		{name: "jittery", stats: healthcheck.Stats{All: 10, Median: 160, Deviation: 100, Latest: 160}, want: 260},
-		// the failures are mixed in on top of the cost
-		{name: "failures", stats: healthcheck.Stats{All: 10, Fail: 2, Median: 160, Deviation: 10, Latest: 160}, want: 3136},
+		// the failures are mixed in on top of the cost: (8*170 + 2*510) / 10
+		{name: "failures", stats: healthcheck.Stats{All: 10, Fail: 2, Median: 160, Deviation: 10, Latest: 160}, want: 238},
 	}
 	for _, testCase := range testCases {
 		testCase := testCase
@@ -350,10 +350,10 @@ func TestCandidateScore(t *testing.T) {
 	}{
 		// without a failure the score is the median delay itself
 		{name: "measured", stats: healthcheck.Stats{All: 10, Median: 164, Latest: 160}, want: 164},
-		// (9*164 + 1*15000) / 10, a tenth of the attempts wait for the timeout
-		{name: "rare failures", stats: healthcheck.Stats{All: 10, Fail: 1, Median: 164, Latest: 160}, want: 1647},
-		// (5*164 + 5*15000) / 10, half of the attempts wait for the timeout
-		{name: "frequent failures", stats: healthcheck.Stats{All: 10, Fail: 5, Median: 164, Latest: 160}, want: 7582},
+		// (9*164 + 1*492) / 10, a failed attempt is worth three that worked
+		{name: "rare failures", stats: healthcheck.Stats{All: 10, Fail: 1, Median: 164, Latest: 160}, want: 196},
+		// (5*164 + 5*492) / 10
+		{name: "frequent failures", stats: healthcheck.Stats{All: 10, Fail: 5, Median: 164, Latest: 160}, want: 328},
 		// every attempt waits for the timeout
 		{name: "all failed", stats: healthcheck.Stats{All: 10, Fail: 10, Latest: healthcheck.Failed}, want: 15000},
 		// nothing to compare, and 0ms would read as the best possible result
@@ -373,9 +373,9 @@ func TestCandidateScore(t *testing.T) {
 
 func TestSelectionPenalizesFailures(t *testing.T) {
 	t.Parallel()
-	// 3 of 10 checks failed: the median is still 100ms, because the failures are a
-	// minority of the samples. The attempts that waited for the timeout are what
-	// pushes the node behind one that is twice as slow but never fails.
+	// A failed attempt is worth three that worked, in the scale of the node: 3 failures
+	// of 10 cost 60ms on a 100ms node, which still leaves it ahead of one that is twice
+	// as slow.
 	selection, storage := newSelectionForTest(t, defaultTolerance, "flaky", "clean")
 	for i := 0; i < storage.Cap(); i++ {
 		if i < 3 {
@@ -385,6 +385,26 @@ func TestSelectionPenalizesFailures(t *testing.T) {
 		}
 		storage.Put("clean", 200)
 	}
+	// (7*100 + 3*300) / 10 = 160
+	if tag := selectedTag(selection); tag != "flaky" {
+		t.Fatalf("want flaky, got %s", tag)
+	}
+}
+
+func TestSelectionFailurePenaltyGrowsWithTheFailureRate(t *testing.T) {
+	t.Parallel()
+	// 6 failures of 10 cost 120ms on the same node, which puts it behind the clean one:
+	// the penalty follows the failure rate, whatever the delay of the node.
+	selection, storage := newSelectionForTest(t, defaultTolerance, "flaky", "clean")
+	for i := 0; i < storage.Cap(); i++ {
+		if i < 6 {
+			storage.Put("flaky", healthcheck.Failed)
+		} else {
+			storage.Put("flaky", 100)
+		}
+		storage.Put("clean", 200)
+	}
+	// (4*100 + 6*300) / 10 = 220
 	if tag := selectedTag(selection); tag != "clean" {
 		t.Fatalf("want clean, got %s", tag)
 	}

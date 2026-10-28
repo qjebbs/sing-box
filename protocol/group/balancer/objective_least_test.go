@@ -193,9 +193,9 @@ func TestLeastPingScore(t *testing.T) {
 		{name: "clear", stats: healthcheck.Stats{Median: 160, Deviation: 10, All: 10}, want: 170},
 		// the jitter is added, an unstable node costs more than a steady one
 		{name: "jitter", stats: healthcheck.Stats{Median: 160, Deviation: 600, All: 10}, want: 760},
-		// (8*170 + 2*15000) / 10: two attempts in ten wait for the timeout, the value
+		// (8*170 + 2*510) / 10: a failed attempt is worth three that worked, the value
 		// itself describes the checks that succeeded
-		{name: "failures", stats: healthcheck.Stats{Median: 160, Deviation: 10, All: 10, Fail: 2}, want: 3136},
+		{name: "failures", stats: healthcheck.Stats{Median: 160, Deviation: 10, All: 10, Fail: 2}, want: 238},
 		// no attempt ever succeeded, the timeout is all the node costs
 		{name: "never succeeded", stats: healthcheck.Stats{All: 10, Fail: 10}, want: 15000},
 		{name: "never checked", stats: healthcheck.Stats{}, want: 0},

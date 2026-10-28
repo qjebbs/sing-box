@@ -102,20 +102,19 @@ Generally speaking, use `leastload`, `leastping` for better network quality; use
 Both `leastload` and `leastping` rank the nodes by a score, lower is better:
 
 ```
-cost = STD                          # leastload
-cost = MED + jitter_weight * STD    # leastping
+cost    = STD                          # leastload
+cost    = MED + jitter_weight * STD    # leastping
+failure = min(TIMEOUT, 3 * cost)
 
-score = (ALL - FAIL) / ALL * cost + FAIL / ALL * TIMEOUT
+score   = (ALL - FAIL) / ALL * cost + FAIL / ALL * failure
 ```
 
 `MED` and `STD` are the median and the standard deviation of the **successful**
 checks, `FAIL / ALL` the share of the checks that failed, and `TIMEOUT` the timeout a
 failed check waits for, 15s.
 
-The delay statistics describe the checks that worked, so the failures are mixed in by
-their own share: an attempt either succeeds with `cost` or fails after `TIMEOUT`. The
-score is what an attempt costs on average, it never exceeds the timeout, and a node
-that never worked is scored the timeout instead of the zero of a missing value.
+The delay statistics describe the successful checks only, so the failures are mixed in
+by their own share, scored in the scale of the node.
 
 #### strategy
 

@@ -28,16 +28,15 @@
 节点按下述分数排序，并使用其中最好的一个：
 
 ```
-cost  = MED + STD
-score = (ALL - FAIL) / ALL × cost + FAIL / ALL × TIMEOUT
+cost    = MED + STD
+failure = min(TIMEOUT, 3 × cost)
+score   = (ALL - FAIL) / ALL × cost + FAIL / ALL × failure
 ```
 
 `MED` 与 `STD` 是**成功**检查的中位数延迟与标准差，`FAIL / ALL` 是失败检查的占比，
 `TIMEOUT` 是失败检查放弃前等待的超时（15s）。
 
-一次尝试要么以 `cost` 成功，要么等到 `TIMEOUT` 失败，因此分数就是一次尝试的平均开销：
-十次里失败一次的节点，分数比其成本多 1.5s。失败不参与 `MED` 的计算，否则会被计算两次，
-因此分数不会超过超时——全部失败的节点分数即为超时。
+延迟统计只描述成功的检查，因此失败按自身占比混入，失败是按节点自身的尺度度量的。
 
 单次异常的检查结果不会改变选择，只有当另一个节点的分数比当前节点好出 [`tolerance`](#tolerance) 以上时才会替换。
 
