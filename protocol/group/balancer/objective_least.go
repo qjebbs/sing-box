@@ -90,30 +90,24 @@ func float32Option(value float32, defaultValue float32) float32 {
 
 // Score returns the cost of using the node, lower is better:
 //
-//	score = mixed(base + jitterWeight * jitter)
+//	base  = MED or STD of the checks that succeeded
+//	score = Cost(base, STD, jitterWeight)
 //
 // The jitter term is absent when the objective has no jitterFunc, which is the case
-// for leastload: its base is the deviation itself.
-//
-// mixed is what an attempt costs on average: an attempt either succeeds with the
-// value above, or fails after waiting for the timeout. The statistics only describe
-// the checks that succeeded, so a node failing most of its checks is described by the
-// few delays that worked, which would read as the best node of all without this term,
-// and a node that never worked has no value to be the best of.
+// for leastload: its base is the deviation itself. See healthcheck.Stats.Cost for what
+// an attempt costs on average, including the failures.
 func (o *LeastObjective) Score(node *Node) healthcheck.RTT {
-	return node.Stats.Mixed(rttFromFloat(o.scoreOf(node)), healthcheck.FailureDelay())
+	base := o.baseFunc(node)
+	if o.jitterFunc == nil {
+		return node.Stats.Cost(base, 0, 0)
+	}
+	return node.Stats.Cost(base, o.jitterFunc(node), o.jitterWeight)
 }
 
+// scoreOf returns the score as a float, for the noise model of Keep, which compares
+// the scores rather than reporting them.
 func (o *LeastObjective) scoreOf(node *Node) float64 {
-	score := float64(o.baseFunc(node))
-	if o.jitterFunc != nil && o.jitterWeight > 0 {
-		score += float64(o.jitterWeight) * float64(o.jitterFunc(node))
-	}
-	if score <= 0 {
-		// no value to mix with the failures, the node never worked
-		return float64(healthcheck.FailureDelay())
-	}
-	return score
+	return float64(o.Score(node))
 }
 
 // scoreStandardError returns the standard error of the score of the node, i.e. how

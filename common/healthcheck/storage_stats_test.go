@@ -152,39 +152,48 @@ func TestRTTStorageGetFromNil(t *testing.T) {
 	s := (*healthcheck.Storage)(nil)
 	want := healthcheck.Stats{}
 	assertStats(t, "nil.Stats()", want, s.Stats())
-	if got := s.Stats().Mixed(100, healthcheck.Second); got != healthcheck.Failed {
+	if got := s.Stats().Cost(100, 0, 0); got != healthcheck.Failed {
 		t.Fatalf("want no mixed value without samples, got %v", got)
 	}
 }
 
-func TestStatsMixed(t *testing.T) {
+func TestStatsCost(t *testing.T) {
 	t.Parallel()
-	// An attempt either succeeds with the value, or fails after waiting for the
-	// failure delay, so the two are mixed by the share of the checks that failed.
-	const failureDelay = 1000
+	// An attempt either succeeds with the cost, or fails after waiting for the
+	// timeout, so the two are mixed by the share of the checks that failed.
 	testCases := []struct {
-		name  string
-		all   int
-		fail  int
-		value healthcheck.RTT
-		want  healthcheck.RTT
+		name   string
+		all    int
+		fail   int
+		base   healthcheck.RTT
+		jitter healthcheck.RTT
+		weight float32
+		want   healthcheck.RTT
 	}{
-		{name: "no failure", all: 10, fail: 0, value: 100, want: 100},
-		// (9*100 + 1*1000) / 10
-		{name: "one failure", all: 10, fail: 1, value: 100, want: 190},
-		// (5*100 + 5*1000) / 10
-		{name: "half", all: 10, fail: 5, value: 100, want: 550},
+		{name: "no failure", all: 10, base: 100, want: 100},
+		// the jitter is added, a millisecond of it costs a millisecond by default
+		{name: "jitter", all: 10, base: 100, jitter: 20, weight: 1, want: 120},
+		{name: "half weight", all: 10, base: 100, jitter: 20, weight: 0.5, want: 110},
+		// the weight is rounded, not truncated
+		{name: "fractional weight", all: 10, base: 100, jitter: 7, weight: 0.5, want: 104},
+		// (9*100 + 1*15000) / 10
+		{name: "one failure", all: 10, fail: 1, base: 100, want: 1590},
+		// (5*100 + 5*15000) / 10
+		{name: "half failed", all: 10, fail: 5, base: 100, want: 7550},
 		// every attempt waits for the timeout
-		{name: "all failed", all: 10, fail: 10, value: 0, want: failureDelay},
-		// a value measured with a longer timeout is still capped by the attempt
-		{name: "value above the timeout", all: 10, fail: 0, value: 3000, want: failureDelay},
+		{name: "all failed", all: 10, fail: 10, want: 15000},
+		// a cost measured with a longer timeout is still capped by the attempt
+		{name: "cost above the timeout", all: 10, base: 30000, want: 15000},
+		// no sample at all, the zero of a missing value would read as the best result
+		{name: "never checked", want: healthcheck.Failed},
 	}
 	for _, testCase := range testCases {
 		testCase := testCase
 		t.Run(testCase.name, func(t *testing.T) {
 			t.Parallel()
 			stats := healthcheck.Stats{All: testCase.all, Fail: testCase.fail}
-			if got := stats.Mixed(testCase.value, failureDelay); got != testCase.want {
+			got := stats.Cost(testCase.base, testCase.jitter, testCase.weight)
+			if got != testCase.want {
 				t.Fatalf("want %v, got %v", testCase.want, got)
 			}
 		})

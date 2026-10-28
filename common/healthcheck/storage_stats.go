@@ -4,7 +4,13 @@ import (
 	"math"
 	"slices"
 	"time"
+
+	C "github.com/sagernet/sing-box/constant"
 )
+
+// failureDelay is the delay a failed check waited for: a check fails only after the
+// whole timeout, so this is what an attempt that fails costs.
+var failureDelay = RTTOf(C.TCPTimeout)
 
 // Stats is the statistics of RTTs
 type Stats struct {
@@ -27,7 +33,7 @@ type Stats struct {
 // The delay statistics describe the checks that succeeded only. A failed check waited
 // for the timeout, so it says nothing about the delay the node has when it works: a
 // score that has to account for the failures reads Fail and All, and mixes the timeout
-// in by their own share, see Stats.Mixed. Counting a failure as a delay of the
+// in by their own share, see Stats.Cost. Counting a failure as a delay of the
 // timeout instead would make the delays a description of both, and the consumer would
 // have no way to tell them apart.
 func (s *Storage) Stats() Stats {
@@ -119,18 +125,33 @@ func (s Stats) Succeeded() int {
 	return s.All - s.Fail
 }
 
-// Mixed returns the expected value of value per attempt: an attempt either succeeds
-// with value, or fails after waiting for failureDelay, so the two are mixed by the
-// share of the checks that failed. The result never exceeds failureDelay.
-func (s Stats) Mixed(value RTT, failureDelay RTT) RTT {
+// Cost returns what an attempt costs on average, which is what the groups rank their
+// nodes by: base plus the jitter added to it, mixed with the failures.
+//
+// The caller chooses the metric: the median delay of the checks that succeeded, or
+// their deviation, scaled by whatever weight the group gives the jitter.
+func (s Stats) Cost(base RTT, jitter RTT, jitterWeight float32) RTT {
 	if s.All == 0 {
 		return Failed
 	}
-	mixed := (uint64(s.Succeeded())*uint64(value) + uint64(s.Fail)*uint64(failureDelay)) / uint64(s.All)
-	if mixed > uint64(failureDelay) {
-		return failureDelay
+	cost := uint64(base)
+	if jitterWeight > 0 {
+		// round instead of truncate, so the weight never loses a millisecond
+		cost += uint64(float32(jitter)*jitterWeight + 0.5)
 	}
-	return RTT(mixed)
+	return s.mixed(cost)
+}
+
+// mixed returns the expected value of cost per attempt: an attempt either succeeds
+// with cost, or fails after waiting for the timeout, so the two are mixed by the share
+// of the checks that failed. The result never exceeds the timeout.
+func (s Stats) mixed(cost uint64) RTT {
+	failureDelay := uint64(failureDelay)
+	if cost > failureDelay {
+		// an attempt never costs more than the timeout it waits for
+		cost = failureDelay
+	}
+	return RTT((uint64(s.Succeeded())*cost + uint64(s.Fail)*failureDelay) / uint64(s.All))
 }
 
 // medianOf returns the median of the values, the slice is reordered.

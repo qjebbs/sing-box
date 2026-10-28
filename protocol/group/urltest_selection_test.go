@@ -106,8 +106,7 @@ func TestSelectionJitterIsWeighted(t *testing.T) {
 
 func TestSelectionScoreUsesJitter(t *testing.T) {
 	t.Parallel()
-	// score = Mixed(MED + jitterWeight * STD)
-	selection, _ := newSelectionForTest(t, defaultTolerance)
+	// score = Cost(MED, STD, jitterWeight)
 	testCases := []struct {
 		name  string
 		stats healthcheck.Stats
@@ -124,7 +123,7 @@ func TestSelectionScoreUsesJitter(t *testing.T) {
 		t.Run(testCase.name, func(t *testing.T) {
 			t.Parallel()
 			node := &candidate{stats: testCase.stats}
-			if got := node.score(selection.failureDelay); got != testCase.want {
+			if got := node.score(); got != testCase.want {
 				t.Fatalf("want %v, got %v", testCase.want, got)
 			}
 		})
@@ -344,7 +343,6 @@ func TestCandidateScore(t *testing.T) {
 	t.Parallel()
 	// The score is the average cost of an attempt: the median of the successful checks
 	// mixed with the timeout the failed ones waited for.
-	const failureDelay = 10000
 	testCases := []struct {
 		name  string
 		stats healthcheck.Stats
@@ -352,12 +350,12 @@ func TestCandidateScore(t *testing.T) {
 	}{
 		// without a failure the score is the median delay itself
 		{name: "measured", stats: healthcheck.Stats{All: 10, Median: 164, Latest: 160}, want: 164},
-		// (9*164 + 1*10000) / 10, a tenth of the attempts wait for the timeout
-		{name: "rare failures", stats: healthcheck.Stats{All: 10, Fail: 1, Median: 164, Latest: 160}, want: 1147},
-		// (5*164 + 5*10000) / 10, half of the attempts wait for the timeout
-		{name: "frequent failures", stats: healthcheck.Stats{All: 10, Fail: 5, Median: 164, Latest: 160}, want: 5082},
+		// (9*164 + 1*15000) / 10, a tenth of the attempts wait for the timeout
+		{name: "rare failures", stats: healthcheck.Stats{All: 10, Fail: 1, Median: 164, Latest: 160}, want: 1647},
+		// (5*164 + 5*15000) / 10, half of the attempts wait for the timeout
+		{name: "frequent failures", stats: healthcheck.Stats{All: 10, Fail: 5, Median: 164, Latest: 160}, want: 7582},
 		// every attempt waits for the timeout
-		{name: "all failed", stats: healthcheck.Stats{All: 10, Fail: 10, Latest: healthcheck.Failed}, want: failureDelay},
+		{name: "all failed", stats: healthcheck.Stats{All: 10, Fail: 10, Latest: healthcheck.Failed}, want: 15000},
 		// nothing to compare, and 0ms would read as the best possible result
 		{name: "never checked", stats: healthcheck.Stats{}, want: healthcheck.Failed},
 	}
@@ -366,7 +364,7 @@ func TestCandidateScore(t *testing.T) {
 		t.Run(testCase.name, func(t *testing.T) {
 			t.Parallel()
 			node := &candidate{stats: testCase.stats}
-			if got := node.score(failureDelay); got != testCase.want {
+			if got := node.score(); got != testCase.want {
 				t.Fatalf("want %v, got %v", testCase.want, got)
 			}
 		})
@@ -513,7 +511,7 @@ func TestCandidateScoreIsBoundedByTheTimeout(t *testing.T) {
 	// A node checked with a longer timeout can have a successful delay above the
 	// current one. An attempt still cannot cost more than the timeout it waits for.
 	node := &candidate{stats: healthcheck.Stats{All: 1, Median: 30000, Latest: 30000}}
-	if got := node.score(15000); got != 15000 {
+	if got := node.score(); got != 15000 {
 		t.Fatalf("want the score capped at 15s, got %v", got)
 	}
 }

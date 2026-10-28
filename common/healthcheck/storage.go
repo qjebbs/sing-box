@@ -2,8 +2,6 @@ package healthcheck
 
 import (
 	"time"
-
-	C "github.com/sagernet/sing-box/constant"
 )
 
 // Storage holds ping rtts for health Checker, it's not thread safe
@@ -20,12 +18,6 @@ type Storage struct {
 type History struct {
 	Time  time.Time `json:"time"`
 	Delay RTT       `json:"delay"`
-}
-
-// FailureDelay is the delay a failed check waited for: a check fails only after the
-// whole timeout, so this is what an attempt that fails costs.
-func FailureDelay() RTT {
-	return RTTOf(C.TCPTimeout)
 }
 
 // NewStorage returns a new rtt storage with specified capacity
