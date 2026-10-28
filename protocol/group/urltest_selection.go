@@ -10,7 +10,35 @@ import (
 	"github.com/sagernet/sing-box/common/healthcheck"
 	"github.com/sagernet/sing-box/log"
 	"github.com/sagernet/sing/common"
+	E "github.com/sagernet/sing/common/exceptions"
 )
+
+const (
+	// defaultTolerance is the relative advantage another node needs to replace the
+	// selected one, the same default as the load balance objectives. A fraction keeps
+	// its meaning across nodes of different quality: a fixed delay is a third of a
+	// 150ms median and a tenth of a 500ms one, so one value would split the nodes of a
+	// fast set and merge the nodes of a slow one.
+	defaultTolerance float32 = 0.2
+	// toleranceFloor is the absolute floor of the tolerance, so the tiny delays of a
+	// local node, where a fifth is a few milliseconds, are not split by noise.
+	toleranceFloor = 10 * healthcheck.Millisecond
+)
+
+// relativeTolerance validates the configured tolerance, it is a fraction of the score
+// of the best node.
+func relativeTolerance(tolerance float32) (float32, error) {
+	if tolerance < 0 {
+		return 0, E.New("tolerance must not be negative")
+	}
+	if tolerance == 0 {
+		return defaultTolerance, nil
+	}
+	if tolerance >= 1 {
+		return 0, E.New("tolerance must be less than 1, it is relative to the best score: 0.2 means 20%")
+	}
+	return tolerance, nil
+}
 
 // outboundSource is the provider side of the group: the outbounds it may use.
 type outboundSource interface {
@@ -135,7 +163,7 @@ func (c *candidate) score(failureDelay healthcheck.RTT) healthcheck.RTT {
 type selection struct {
 	source       outboundSource
 	storage      *healthcheck.Storages
-	tolerance    healthcheck.RTT
+	tolerance    float32
 	failureDelay healthcheck.RTT
 
 	access   sync.Mutex
@@ -149,7 +177,7 @@ type selectionEntry struct {
 	stale bool
 }
 
-func newSelection(source outboundSource, storage *healthcheck.Storages, tolerance healthcheck.RTT) *selection {
+func newSelection(source outboundSource, storage *healthcheck.Storages, tolerance float32) *selection {
 	return &selection{
 		source:       source,
 		storage:      storage,
@@ -290,6 +318,16 @@ func (s *selection) selectNode(network string) *candidate {
 	return best
 }
 
+// band returns the score advantage another candidate needs over bestScore to replace
+// the selected one: the relative tolerance of the best score, with an absolute floor.
+func (s *selection) band(bestScore uint32) uint32 {
+	band := uint32(float32(bestScore) * s.tolerance)
+	if band < uint32(toleranceFloor) {
+		return uint32(toleranceFloor)
+	}
+	return band
+}
+
 // keep reports whether the previous candidate should stay selected although another
 // one is better. The difference must be within the tolerance, so a switch that the
 // statistics cannot tell apart from noise doesn't drop the connections of the
@@ -303,7 +341,9 @@ func (s *selection) keep(previous, best *candidate) bool {
 		// no delay to compare, don't switch between nodes that look the same
 		return true
 	}
-	return uint32(previous.score(s.failureDelay)) <= uint32(best.score(s.failureDelay))+uint32(s.tolerance)
+	previousScore := uint32(previous.score(s.failureDelay))
+	bestScore := uint32(best.score(s.failureDelay))
+	return previousScore <= bestScore+s.band(bestScore)
 }
 
 // healthCheckTag returns the tag the health check statistics of the outbound are

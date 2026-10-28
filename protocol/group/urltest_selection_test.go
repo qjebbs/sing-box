@@ -30,7 +30,7 @@ func (s stubSource) Outbounds() []adapter.Outbound {
 	return s
 }
 
-func newSelectionForTest(t *testing.T, tolerance healthcheck.RTT, tags ...string) (*selection, *healthcheck.Storages) {
+func newSelectionForTest(t *testing.T, tolerance float32, tags ...string) (*selection, *healthcheck.Storages) {
 	t.Helper()
 	outbounds := make([]adapter.Outbound, 0, len(tags))
 	for _, tag := range tags {
@@ -57,7 +57,7 @@ func selectedTag(selection *selection) string {
 
 func TestSelectionUsesMedianDelay(t *testing.T) {
 	t.Parallel()
-	selection, storage := newSelectionForTest(t, 0, "slow", "fast")
+	selection, storage := newSelectionForTest(t, 0.0001, "slow", "fast")
 	fill(storage, "slow", 200)
 	fill(storage, "fast", 100)
 	if tag := selectedTag(selection); tag != "fast" {
@@ -69,7 +69,7 @@ func TestSelectionIgnoresJitter(t *testing.T) {
 	t.Parallel()
 	// A steady node and a jittery one with the same median are the same choice: this
 	// group uses one outbound for everything and takes the fastest one.
-	selection, storage := newSelectionForTest(t, 0, "steady", "jittery")
+	selection, storage := newSelectionForTest(t, 0.0001, "steady", "jittery")
 	for i := 0; i < storage.Cap(); i++ {
 		storage.Put("steady", 100)
 	}
@@ -86,7 +86,7 @@ func TestSelectionIgnoresJitter(t *testing.T) {
 		t.Fatalf("want steady, got %s", tag)
 	}
 	// a jittery node that is faster by more than the tolerance still wins
-	selection, storage = newSelectionForTest(t, 0, "steady", "jittery")
+	selection, storage = newSelectionForTest(t, 0.0001, "steady", "jittery")
 	for i := 0; i < storage.Cap(); i++ {
 		storage.Put("steady", 200)
 	}
@@ -104,7 +104,7 @@ func TestSelectionIgnoresJitter(t *testing.T) {
 
 func TestSelectionWithoutOutbounds(t *testing.T) {
 	t.Parallel()
-	selection, _ := newSelectionForTest(t, 50)
+	selection, _ := newSelectionForTest(t, defaultTolerance)
 	if node := selection.Selected("tcp"); node != nil {
 		t.Fatalf("want no node, got %s", node.tag)
 	}
@@ -112,7 +112,7 @@ func TestSelectionWithoutOutbounds(t *testing.T) {
 
 func TestSelectionCachedUntilInvalidated(t *testing.T) {
 	t.Parallel()
-	selection, storage := newSelectionForTest(t, 0, "fast", "slow")
+	selection, storage := newSelectionForTest(t, 0.0001, "fast", "slow")
 	fill(storage, "fast", 100)
 	fill(storage, "slow", 200)
 	if tag := selectedTag(selection); tag != "fast" {
@@ -131,14 +131,15 @@ func TestSelectionCachedUntilInvalidated(t *testing.T) {
 
 func TestSelectionKeepsNodeWithinTolerance(t *testing.T) {
 	t.Parallel()
-	selection, storage := newSelectionForTest(t, 50, "selected", "better")
-	fill(storage, "selected", 100)
-	fill(storage, "better", 130)
+	selection, storage := newSelectionForTest(t, defaultTolerance, "selected", "better")
+	fill(storage, "selected", 600)
+	fill(storage, "better", 700)
 	if tag := selectedTag(selection); tag != "selected" {
 		t.Fatalf("want selected, got %s", tag)
 	}
-	// 100 is within the 50ms tolerance of 60, switching would only follow noise
-	fill(storage, "better", 60)
+	// the best node is 120ms better at most (20% of 600), 700 is not worth a switch
+	fill(storage, "better", 600)
+	fill(storage, "selected", 700)
 	selection.Invalidate()
 	if tag := selectedTag(selection); tag != "selected" {
 		t.Fatalf("want selected within the tolerance, got %s", tag)
@@ -147,14 +148,14 @@ func TestSelectionKeepsNodeWithinTolerance(t *testing.T) {
 
 func TestSelectionSwitchesBeyondTolerance(t *testing.T) {
 	t.Parallel()
-	selection, storage := newSelectionForTest(t, 20, "selected", "better")
-	fill(storage, "selected", 100)
-	fill(storage, "better", 130)
+	selection, storage := newSelectionForTest(t, defaultTolerance, "selected", "better")
+	fill(storage, "selected", 900)
+	fill(storage, "better", 1000)
 	if tag := selectedTag(selection); tag != "selected" {
 		t.Fatalf("want selected, got %s", tag)
 	}
-	// 100 is beyond the 20ms tolerance of 60
-	fill(storage, "better", 60)
+	// 600 is 180ms better at most, well beyond 900
+	fill(storage, "better", 600)
 	selection.Invalidate()
 	if tag := selectedTag(selection); tag != "better" {
 		t.Fatalf("want better, got %s", tag)
@@ -163,7 +164,7 @@ func TestSelectionSwitchesBeyondTolerance(t *testing.T) {
 
 func TestSelectionSwitchesWhenNodeFails(t *testing.T) {
 	t.Parallel()
-	selection, storage := newSelectionForTest(t, 1000, "failed", "alive")
+	selection, storage := newSelectionForTest(t, 0.9, "failed", "alive")
 	fill(storage, "failed", 100)
 	fill(storage, "alive", 300)
 	if tag := selectedTag(selection); tag != "failed" {
@@ -181,7 +182,7 @@ func TestSelectionKeepsUnmeasuredNode(t *testing.T) {
 	t.Parallel()
 	// No checks ran yet: there is no delay to compare, the selection must not move
 	// on every call.
-	selection, _ := newSelectionForTest(t, 50, "a", "b")
+	selection, _ := newSelectionForTest(t, defaultTolerance, "a", "b")
 	node := selection.Selected("tcp")
 	if node == nil {
 		t.Fatal("want a node")
@@ -195,7 +196,7 @@ func TestSelectionKeepsUnmeasuredNode(t *testing.T) {
 
 func TestSelectionPrefersMeasuredOverUnmeasured(t *testing.T) {
 	t.Parallel()
-	selection, storage := newSelectionForTest(t, 0, "unmeasured", "measured")
+	selection, storage := newSelectionForTest(t, 0.0001, "unmeasured", "measured")
 	fill(storage, "measured", 900)
 	if tag := selectedTag(selection); tag != "measured" {
 		t.Fatalf("want the measured node, got %s", tag)
@@ -205,7 +206,7 @@ func TestSelectionPrefersMeasuredOverUnmeasured(t *testing.T) {
 func TestSelectionFallsBackToFailedNode(t *testing.T) {
 	t.Parallel()
 	// Nothing passed a check: the group still tries a node instead of failing.
-	selection, storage := newSelectionForTest(t, 0, "failed")
+	selection, storage := newSelectionForTest(t, 0.0001, "failed")
 	fill(storage, "failed", 100)
 	storage.Update("failed", healthcheck.Failed)
 	if tag := selectedTag(selection); tag != "failed" {
@@ -215,7 +216,7 @@ func TestSelectionFallsBackToFailedNode(t *testing.T) {
 
 func TestSelectionReselectReportsChange(t *testing.T) {
 	t.Parallel()
-	selection, storage := newSelectionForTest(t, 20, "a", "b")
+	selection, storage := newSelectionForTest(t, defaultTolerance, "a", "b")
 	fill(storage, "a", 100)
 	fill(storage, "b", 200)
 	// nothing was selected before, so nothing can be using the group yet
@@ -235,12 +236,12 @@ func TestSelectionReselectReportsChange(t *testing.T) {
 
 func TestSelectionReselectKeepsWithinTolerance(t *testing.T) {
 	t.Parallel()
-	selection, storage := newSelectionForTest(t, 100, "a", "b")
+	selection, storage := newSelectionForTest(t, defaultTolerance, "a", "b")
 	fill(storage, "a", 100)
 	fill(storage, "b", 200)
 	selection.Reselect("tcp")
-	// within the 100ms tolerance: the change would only follow noise
-	fill(storage, "b", 50)
+	// 95 is 19ms better at most, within the 20% of the 95ms best node
+	fill(storage, "b", 95)
 	if node, changed := selection.Reselect("tcp"); node.tag != "a" || changed {
 		t.Fatalf("want a unchanged, got %s changed=%v", node.tag, changed)
 	}
@@ -248,7 +249,7 @@ func TestSelectionReselectKeepsWithinTolerance(t *testing.T) {
 
 func TestSelectionReselectWithoutCandidates(t *testing.T) {
 	t.Parallel()
-	selection, _ := newSelectionForTest(t, 50)
+	selection, _ := newSelectionForTest(t, defaultTolerance)
 	if node, changed := selection.Reselect("tcp"); node != nil || changed {
 		t.Fatalf("want no node, got %v changed=%v", node, changed)
 	}
@@ -295,7 +296,7 @@ func TestCandidatesNumberedInConfigOrder(t *testing.T) {
 	t.Parallel()
 	// The number identifies the node in the configuration, like the load balance log,
 	// not its rank: b is first because it is faster, but it is the second configured.
-	selection, storage := newSelectionForTest(t, 0, "a", "b")
+	selection, storage := newSelectionForTest(t, 0.0001, "a", "b")
 	fill(storage, "a", 200)
 	fill(storage, "b", 100)
 	all := selection.candidates("tcp")
@@ -347,7 +348,7 @@ func TestSelectionPenalizesFailures(t *testing.T) {
 	// 3 of 10 checks failed: the median is still 100ms, because the failures are a
 	// minority of the samples. The attempts that waited for the timeout are what
 	// pushes the node behind one that is twice as slow but never fails.
-	selection, storage := newSelectionForTest(t, 50, "flaky", "clean")
+	selection, storage := newSelectionForTest(t, defaultTolerance, "flaky", "clean")
 	for i := 0; i < storage.Cap(); i++ {
 		if i < 3 {
 			storage.Put("flaky", healthcheck.Failed)
@@ -366,7 +367,7 @@ func TestSelectionFailurePenaltyIsProportional(t *testing.T) {
 	// One failure in ten makes a tenth of the attempts wait for the 15s timeout,
 	// which is 1.5s of average delay: still better than a node that is 4s slower
 	// every time.
-	selection, storage := newSelectionForTest(t, 0, "flaky", "slow")
+	selection, storage := newSelectionForTest(t, 0.0001, "flaky", "slow")
 	for i := 0; i < storage.Cap(); i++ {
 		if i == 0 {
 			storage.Put("flaky", healthcheck.Failed)
@@ -377,5 +378,102 @@ func TestSelectionFailurePenaltyIsProportional(t *testing.T) {
 	}
 	if tag := selectedTag(selection); tag != "flaky" {
 		t.Fatalf("want flaky, got %s", tag)
+	}
+}
+
+func TestRelativeTolerance(t *testing.T) {
+	t.Parallel()
+	testCases := []struct {
+		name    string
+		value   float32
+		want    float32
+		wantErr bool
+	}{
+		{name: "default", value: 0, want: defaultTolerance},
+		{name: "configured", value: 0.35, want: 0.35},
+		// a delay in milliseconds used to be the unit, it is a fraction now
+		{name: "absolute value from an old configuration", value: 50, wantErr: true},
+		{name: "a hundred percent", value: 1, wantErr: true},
+		{name: "negative", value: -1, wantErr: true},
+	}
+	for _, testCase := range testCases {
+		testCase := testCase
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+			got, err := relativeTolerance(testCase.value)
+			if testCase.wantErr {
+				if err == nil {
+					t.Fatalf("want an error, got %v", got)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("want no error, got %v", err)
+			}
+			if got != testCase.want {
+				t.Fatalf("want %v, got %v", testCase.want, got)
+			}
+		})
+	}
+}
+
+func TestBand(t *testing.T) {
+	t.Parallel()
+	testCases := []struct {
+		name      string
+		tolerance float32
+		bestScore uint32
+		want      uint32
+	}{
+		// a fifth of the best score, so the band follows the quality of the nodes
+		{name: "fast set", tolerance: defaultTolerance, bestScore: 150, want: 30},
+		{name: "slow set", tolerance: defaultTolerance, bestScore: 500, want: 100},
+		// the floor keeps a local node, where a fifth is a few milliseconds, from
+		// being split by noise
+		{name: "floor", tolerance: defaultTolerance, bestScore: 5, want: uint32(toleranceFloor)},
+	}
+	for _, testCase := range testCases {
+		testCase := testCase
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+			selection := &selection{tolerance: testCase.tolerance}
+			if got := selection.band(testCase.bestScore); got != testCase.want {
+				t.Fatalf("want %v, got %v", testCase.want, got)
+			}
+		})
+	}
+}
+
+func TestSelectionIsScaleInvariant(t *testing.T) {
+	t.Parallel()
+	// The same relative tolerance keeps a node that is 15% worse in both a fast and a
+	// slow set, and switches away from one that is 35% worse.
+	testCases := []struct {
+		name     string
+		selected healthcheck.RTT
+		better   healthcheck.RTT
+		want     string
+	}{
+		{name: "fast set, within", selected: 150, better: 130, want: "selected"},
+		{name: "slow set, within", selected: 500, better: 430, want: "selected"},
+		{name: "fast set, beyond", selected: 150, better: 100, want: "better"},
+		{name: "slow set, beyond", selected: 500, better: 330, want: "better"},
+	}
+	for _, testCase := range testCases {
+		testCase := testCase
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+			selection, storage := newSelectionForTest(t, defaultTolerance, "selected", "better")
+			fill(storage, "selected", testCase.selected)
+			// the other node starts out worse, so the selection is the one under test
+			fill(storage, "better", testCase.selected*2)
+			selection.Reselect("tcp")
+			// it then becomes faster by the amount of the test case
+			fill(storage, "better", testCase.better)
+			node, _ := selection.Reselect("tcp")
+			if node.tag != testCase.want {
+				t.Fatalf("want %s, got %s", testCase.want, node.tag)
+			}
+		})
 	}
 }
