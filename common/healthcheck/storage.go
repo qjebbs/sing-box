@@ -4,12 +4,6 @@ import (
 	"time"
 )
 
-// connectionCapacity is how many connections are remembered for the failure rate. The
-// checks are bounded by the sampling of the health check, which is about how often the
-// probes run; a rate needs a longer run of connections than that to be stable, so the
-// bound is its own. The ring keeps the memory of a busy node constant either way.
-const connectionCapacity = 1024
-
 // Storage holds ping rtts for health Checker, it's not thread safe
 type Storage struct {
 	validity time.Duration
@@ -24,8 +18,12 @@ type Storage struct {
 	// with the traffic of the node, so a busy node would be scored worse than an idle
 	// one whatever its quality.
 	//
-	// The ring is allocated by the first connection reported, so a node whose traffic
-	// never reaches its group doesn't pay for it.
+	// The ring holds as many connections as the checks do. The two describe the same
+	// window of the same node, and are mixed by their counts, so a longer run of one
+	// would outweigh the other instead of corroborating it.
+	//
+	// It is allocated by the first connection reported, so a node whose traffic never
+	// reaches its group doesn't pay for it.
 	connections *ring[connectionOutcome]
 
 	stats Stats
@@ -85,7 +83,7 @@ func (s *Storage) ReportConnection(at time.Time, established bool) {
 		return
 	}
 	if s.connections == nil {
-		s.connections = newRing[connectionOutcome](connectionCapacity)
+		s.connections = newRing[connectionOutcome](s.history.Capacity())
 	}
 	s.connections.Push(connectionOutcome{time: at, established: established})
 	// statistics is not valid any more

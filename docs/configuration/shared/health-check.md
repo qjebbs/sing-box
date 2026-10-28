@@ -23,7 +23,8 @@ Health checks are used to check and provide health status information of nodes f
 They can be shared by multiple outbound groups to avoid redundant health check overhead.
 
 The connections the groups carry are counted as well, so a node that passes its checks
-and then drops a share of the traffic is scored for it.
+and then drops a share of the traffic is scored for it. As many of them are kept as
+`sampling` health check results, so the two describe the same length of the same window.
 
 Each entry of the top-level `health_checks` uses the same object structure, with an additional `tag` field:
 
