@@ -315,19 +315,25 @@ func TestCandidateString(t *testing.T) {
 		{
 			name:  "measured",
 			stats: healthcheck.Stats{All: 10, Deviation: 57, Median: 164, Latest: 155},
-			want:  "#1 OK [node] STD=57ms MED=164ms Latest=155ms FAIL=0/10",
+			want:  "#1 OK [node] STD=57ms MED=164ms Latest=155ms FAIL=0/10 CONNFAIL=0/0",
 		},
 		// a node whose checks all failed has no successful delay to show
 		{
 			name:  "all failed",
 			stats: healthcheck.Stats{All: 1, Fail: 1},
-			want:  "#1 x [node] STD=None MED=None Latest=None FAIL=1/1",
+			want:  "#1 x [node] STD=None MED=None Latest=None FAIL=1/1 CONNFAIL=0/0",
 		},
 		// a node that was never checked has nothing to show
 		{
 			name:  "never checked",
 			stats: healthcheck.Stats{},
-			want:  "#1 ? [node] STD=None MED=None Latest=None FAIL=0/0",
+			want:  "#1 ? [node] STD=None MED=None Latest=None FAIL=0/0 CONNFAIL=0/0",
+		},
+		// the connections the group carried are shown next to the checks
+		{
+			name:  "with connections",
+			stats: healthcheck.Stats{All: 10, Median: 164, Latest: 160, Connections: 40, ConnectionFailures: 3},
+			want:  "#1 OK [node] STD=0ms MED=164ms Latest=160ms FAIL=0/10 CONNFAIL=3/40",
 		},
 	}
 	for _, testCase := range testCases {

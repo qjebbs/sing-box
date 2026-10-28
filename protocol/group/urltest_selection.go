@@ -95,10 +95,11 @@ func (c *candidate) class() class {
 // node of the same health check.
 func (c *candidate) String() string {
 	return fmt.Sprintf(
-		"#%d %s [%s] STD=%s MED=%s Latest=%s FAIL=%d/%d",
+		"#%d %s [%s] STD=%s MED=%s Latest=%s FAIL=%d/%d CONNFAIL=%d/%d",
 		c.index, c.class().label(), c.tag,
 		c.deviationString(), c.medianString(), c.latestString(),
 		c.stats.Fail, c.stats.All,
+		c.stats.ConnectionFailures, c.stats.Connections,
 	)
 }
 
