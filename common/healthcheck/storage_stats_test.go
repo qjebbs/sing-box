@@ -260,20 +260,16 @@ func TestStorageConnectionOutcomes(t *testing.T) {
 
 func TestStorageConnectionOutcomesLimit(t *testing.T) {
 	t.Parallel()
-	// The ring bounds the memory of a busy node: only the most recent connections are
-	// remembered, and the rate describes that run rather than the whole window.
+	// The connections are bounded like the checks, so the two describe the same length of
+	// the same window instead of one outweighing the other.
 	s := healthcheck.NewStorage(10, time.Hour)
 	at := time.Now()
-	const total = 5000
-	for i := 0; i < total; i++ {
+	for i := 0; i < 100; i++ {
 		s.ReportConnection(at, true)
 	}
 	attempts, failures := s.ConnectionOutcomes(at)
-	if attempts >= total {
-		t.Fatalf("want the outcomes bounded, got %v", attempts)
-	}
-	if attempts < 100 {
-		t.Fatalf("want a run long enough to be a rate, got %v", attempts)
+	if attempts != 10 {
+		t.Fatalf("want the connections bounded like the checks, got %v", attempts)
 	}
 	if failures != 0 {
 		t.Fatalf("want no failure, got %v", failures)
