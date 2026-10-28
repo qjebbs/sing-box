@@ -28,13 +28,19 @@ type History struct {
 	Delay RTT       `json:"delay"`
 }
 
+// FailureDelay is the delay a failed check is counted with. A check fails only after
+// it waited for the whole timeout, so this is what the delay would have been.
+func FailureDelay() RTT {
+	return RTTOf(C.TCPTimeout)
+}
+
 // NewStorage returns a new rtt storage with specified capacity
 func NewStorage(cap uint, validity time.Duration) *Storage {
 	return &Storage{
 		cap:          int(cap),
 		validity:     validity,
 		history:      make([]History, cap),
-		FailureDelay: RTTOf(C.TCPTimeout),
+		FailureDelay: FailureDelay(),
 	}
 }
 
