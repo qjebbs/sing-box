@@ -14680,9 +14680,7 @@
               "$ref": "#/$defs/HealthCheckReference"
             },
             "tolerance": {
-              "type": "integer",
-              "minimum": 0,
-              "maximum": 65535
+              "type": "number"
             },
             "interrupt_exist_connections": {
               "type": "boolean"

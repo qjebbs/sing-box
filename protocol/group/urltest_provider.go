@@ -31,9 +31,9 @@ var (
 	_ adapter.Lifecycle               = (*URLTestProvider)(nil)
 )
 
-// URLTestProvider is the URL test group. It uses the outbound with the lowest
-// median delay of the health check results, and only moves to another one when it is
-// faster by more than the tolerance.
+// URLTestProvider is the URL test group. It uses the outbound with the best score of
+// the health check results, and only moves to another one when it is better by more
+// than the tolerance.
 type URLTestProvider struct {
 	outbound.GroupAdapter
 	*healthcheck.HealthCheck
@@ -46,7 +46,7 @@ type URLTestProvider struct {
 	healthCheckMgr adapter.HealthCheckManager
 
 	checker   *option.HealthCheckOptions
-	tolerance healthcheck.RTT
+	tolerance float32
 	history   *urltest.HistoryStorage
 
 	selection *selection
@@ -56,9 +56,9 @@ type URLTestProvider struct {
 }
 
 func NewURLTestProvider(ctx context.Context, router adapter.Router, logger log.ContextLogger, tag string, options option.ProviderURLTestOptions) (adapter.Outbound, error) {
-	tolerance := healthcheck.RTT(options.Tolerance)
-	if tolerance == 0 {
-		tolerance = 50
+	tolerance, err := relativeTolerance(options.Tolerance)
+	if err != nil {
+		return nil, err
 	}
 	return &URLTestProvider{
 		GroupAdapter:                 outbound.NewGroupAdapter(C.TypeURLTest, tag, []string{N.NetworkTCP, N.NetworkUDP}, options.ProviderGroupCommonOption),

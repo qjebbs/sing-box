@@ -10,9 +10,11 @@ type ProviderSelectorOptions struct {
 // ProviderURLTestOptions is the options for urltest outbounds with providers support
 type ProviderURLTestOptions struct {
 	ProviderGroupCommonOption
-	HealthCheck               *HealthCheckOptions `json:"health_check,omitempty"`
-	Tolerance                 uint16              `json:"tolerance,omitempty"`
-	InterruptExistConnections bool                `json:"interrupt_exist_connections,omitempty"`
+	HealthCheck *HealthCheckOptions `json:"health_check,omitempty"`
+	// tolerance is the relative score advantage another node needs to replace the
+	// selected one, e.g. 0.2 means 20% of the score of the best node.
+	Tolerance                 float32 `json:"tolerance,omitempty"`
+	InterruptExistConnections bool    `json:"interrupt_exist_connections,omitempty"`
 }
 
 // ChainOptions is the chain of outbounds

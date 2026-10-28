@@ -18,7 +18,7 @@
   "exclude": "",
   "include": "",
   "health_check": "",
-  "tolerance": 50,
+  "tolerance": 0.2,
   "interrupt_exist_connections": false
 }
 ```
@@ -80,12 +80,14 @@ Required. There is no implicit default health check.
 
 #### tolerance
 
-How many milliseconds better a node must be scored, to replace the selected one. `50`
-will be used if empty.
+The relative score advantage another node needs to replace the selected one, default
+is `0.2`, i.e. 20% of the score of the best node. The value must be less than `1`.
 
 The score compared is the one in [Selection](#selection), the median delay plus the
-failure penalty, not a single check result. A node whose latest check failed is not
-affected by this value, since it doesn't belong to the same class as the others.
+failure penalty, not a single check result.
+
+A node whose latest check failed is not affected by this value, since it doesn't
+belong to the same class as the others.
 
 #### interrupt_exist_connections
 
