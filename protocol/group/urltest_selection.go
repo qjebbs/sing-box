@@ -75,8 +75,8 @@ const (
 	// expired. It is preferred over a failed candidate, but there is no delay to
 	// compare it with the measured ones.
 	classUnmeasured
-	// classFailed is a candidate whose latest health check failed. It is only used
-	// when nothing else is left, until a check gives it a result again.
+	// classFailed is a candidate that never passed a check. It is only used when nothing
+	// else is left.
 	classFailed
 )
 
@@ -84,7 +84,8 @@ func (c *candidate) class() class {
 	switch {
 	case c.stats.All == 0:
 		return classUnmeasured
-	case c.stats.Latest == healthcheck.Failed:
+	case c.stats.Succeeded() == 0:
+		// nothing ever worked, there is no delay to rank
 		return classFailed
 	default:
 		return classMeasured

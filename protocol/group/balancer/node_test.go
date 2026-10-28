@@ -42,8 +42,16 @@ func TestNodeStatus(t *testing.T) {
 			},
 		},
 		{
-			"latest_fail", StatusDead, healthcheck.Stats{
+			// one failure of ten is within max_fail, and the delay describes the nine
+			// that worked: a single failed check is scored, it doesn't kill the node
+			"latest_fail", StatusQualified, healthcheck.Stats{
 				All: 10, Fail: 1, Latest: healthcheck.Failed, Average: healthcheck.Second, Median: healthcheck.Second,
+			},
+		},
+		{
+			// nothing ever worked: there is no delay to rank and nothing to fall back on
+			"never succeeded", StatusDead, healthcheck.Stats{
+				All: 10, Fail: 10, Latest: healthcheck.Failed,
 			},
 		},
 		{
