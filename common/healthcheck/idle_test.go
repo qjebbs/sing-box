@@ -295,3 +295,41 @@ func TestFailedResultsAreDroppedWhenAllFailed(t *testing.T) {
 		t.Fatal("failed result is not visible in the global history")
 	}
 }
+
+func TestIsActive(t *testing.T) {
+	now := time.Now()
+	tests := []struct {
+		name       string
+		idle       time.Duration
+		lastActive time.Time
+		want       bool
+	}{
+		// never used, and not used since longer than the idle timeout
+		{name: "never used", idle: 30 * time.Minute, want: false},
+		{name: "idle", idle: 30 * time.Minute, lastActive: now.Add(-time.Hour), want: false},
+		{name: "active", idle: 30 * time.Minute, lastActive: now, want: true},
+		// without an idle timeout the loop checks every namespace each round
+		{name: "no idle timeout, never used", idle: 0, want: false},
+		{name: "no idle timeout, used", idle: 0, lastActive: now.Add(-24 * time.Hour), want: true},
+	}
+	for _, testCase := range tests {
+		testCase := testCase
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+			checker := newIdleTestChecker(testCase.idle, time.Minute)
+			if !testCase.lastActive.IsZero() {
+				checker.lastActive["a"] = testCase.lastActive
+			}
+			if got := checker.IsActive("a"); got != testCase.want {
+				t.Fatalf("want %v, got %v", testCase.want, got)
+			}
+		})
+	}
+}
+
+func TestIsActiveWithoutChecker(t *testing.T) {
+	var checker *HealthCheck
+	if checker.IsActive("a") {
+		t.Fatal("a missing checker has no active namespace")
+	}
+}

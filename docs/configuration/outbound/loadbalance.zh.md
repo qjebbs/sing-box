@@ -36,7 +36,6 @@
       }
     ]
   },
-  "log_health": false,
   "interrupt_exist_connections": false
 }
 ```
@@ -178,11 +177,6 @@ leastping_score = MED + jitter_weight * STD
 - `regexp` 表示节点标签匹配某个正则表达式时匹配。
 
 如果配置了多个条件，满足任一条件即可匹配。
-
-#### log_health
-
-是否在执行健康检查后输出节点的统计信息到日志。
-默认为 `false`。
 
 #### interrupt_exist_connections
 

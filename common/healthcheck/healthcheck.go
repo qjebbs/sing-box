@@ -200,6 +200,28 @@ func (h *HealthCheck) ReportFailure(outbound adapter.Outbound) {
 	h.Storage.Update(tag, Failed)
 }
 
+// IsActive reports whether the namespace was in use within the idle timeout, so its
+// health checks are running and its statistics are current. A namespace that was
+// never used, or has been idle for longer, is not checked, so its statistics would
+// only describe the past.
+func (h *HealthCheck) IsActive(namespace string) bool {
+	if h == nil {
+		return false
+	}
+	h.idleMu.Lock()
+	lastActive := h.lastActive[namespace]
+	h.idleMu.Unlock()
+	if lastActive.IsZero() {
+		return false
+	}
+	idleTimeout := time.Duration(h.options.IdleTimeout)
+	if idleTimeout <= 0 {
+		// without an idle timeout the loop checks every namespace each round
+		return true
+	}
+	return time.Since(lastActive) < idleTimeout
+}
+
 // Touch records that the namespace is in use, so its health checks keep running.
 // When the loop was suspended because every namespace was idle, it is restarted
 // and a catch-up check is performed for this namespace, since the statistics of

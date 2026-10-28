@@ -212,7 +212,11 @@ func (s *LoadBalance) interruptOutdatedConnections() {
 		// the listener is registered before the balancer is built
 		return
 	}
-	available := s.Balancer.AvailableNodes(s.options.LogHealth)
+	if s.HealthCheck.IsActive(s.Tag()) {
+		// An idle group is not in use, and its statistics only describe the past.
+		s.Balancer.LogNodes()
+	}
+	available := s.Balancer.AvailableNodes()
 	var retained []string
 	if s.options.InterruptExistConnections {
 		// The nodes that are in use and just left the selection keep their

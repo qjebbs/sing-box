@@ -107,6 +107,10 @@ func (s *URLTestProvider) interruptOutdatedConnections() {
 	}
 	_, tcpChanged := s.selection.Reselect(N.NetworkTCP)
 	_, udpChanged := s.selection.Reselect(N.NetworkUDP)
+	if s.HealthCheck.IsActive(s.Tag()) {
+		// An idle group is not in use, and its statistics only describe the past.
+		s.selection.LogNodes(s.logger, N.NetworkTCP)
+	}
 	if !tcpChanged && !udpChanged {
 		return
 	}

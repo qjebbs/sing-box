@@ -1,11 +1,13 @@
 package group
 
 import (
+	"fmt"
 	"sort"
 	"sync"
 
 	"github.com/sagernet/sing-box/adapter"
 	"github.com/sagernet/sing-box/common/healthcheck"
+	"github.com/sagernet/sing-box/log"
 	"github.com/sagernet/sing/common"
 )
 
@@ -24,6 +26,9 @@ type candidate struct {
 	// checked by the outbound it resolves to.
 	tag   string
 	stats healthcheck.Stats
+	// index is the position of the candidate in the configuration order, so a log
+	// line identifies the same node as the load balance log does, whatever the rank.
+	index int
 }
 
 // class is the group a candidate is ranked in. The classes are ordered, a candidate
@@ -52,6 +57,63 @@ func (c *candidate) class() class {
 	default:
 		return classMeasured
 	}
+}
+
+// String returns the candidate with its statistics, in the form load balance logs a
+// node of the same health check.
+func (c *candidate) String() string {
+	return fmt.Sprintf(
+		"#%d %s [%s] STD=%s MED=%s Latest=%s FAIL=%d/%d",
+		c.index, c.class().label(), c.tag,
+		c.deviationString(), c.medianString(), c.latestString(),
+		c.stats.Fail, c.stats.All,
+	)
+}
+
+func (c class) label() string {
+	switch c {
+	case classMeasured:
+		return "OK"
+	case classUnmeasured:
+		return "?"
+	default:
+		return "x"
+	}
+}
+
+// deviationString has no value to show when the checks all failed: their deviation is
+// the zero of a single repeated value, which reads as the best possible result.
+func (c *candidate) deviationString() string {
+	if c.stats.All == 0 || c.stats.Fail == c.stats.All {
+		return "None"
+	}
+	return c.stats.Deviation.String()
+}
+
+// medianString has no value to show without a sample.
+func (c *candidate) medianString() string {
+	if c.stats.All == 0 {
+		return "None"
+	}
+	return c.stats.Median.String()
+}
+
+// latestString has no value to show when the latest check failed: its delay is
+// healthcheck.Failed, which is not a delay of zero.
+func (c *candidate) latestString() string {
+	if c.stats.Latest == healthcheck.Failed {
+		return "None"
+	}
+	return c.stats.Latest.String()
+}
+
+// score is the value the selection compares. There is none to show for a candidate
+// that was not measured: printing 0ms would read as the best possible result.
+func (c *candidate) score() (healthcheck.RTT, bool) {
+	if c.class() != classMeasured {
+		return healthcheck.Failed, false
+	}
+	return c.stats.Median, true
 }
 
 // selection is the node selection of the group. It reads the health check statistics
@@ -130,7 +192,9 @@ func (s *selection) Invalidate() {
 func (s *selection) candidates(network string) []*candidate {
 	var all []*candidate
 	seen := make(map[string]struct{})
+	idx := 0
 	for _, outbound := range s.source.Outbounds() {
+		idx++
 		if !common.Contains(outbound.Network(), network) {
 			continue
 		}
@@ -144,6 +208,7 @@ func (s *selection) candidates(network string) []*candidate {
 			outbound: outbound,
 			tag:      tag,
 			stats:    s.storage.Stats(tag),
+			index:    idx,
 		})
 	}
 	sort.SliceStable(all, func(i, j int) bool {
@@ -159,6 +224,32 @@ func (s *selection) candidates(network string) []*candidate {
 		return left.stats.Median < right.stats.Median
 	})
 	return all
+}
+
+// LogNodes logs the statistics of every candidate in rank order, with the selected
+// one marked. Unlike load balance, a single node is used, so the rest are the ones a
+// better measurement would switch to.
+func (s *selection) LogNodes(logger log.ContextLogger, network string) {
+	all := s.candidates(network)
+	if len(all) == 0 {
+		return
+	}
+	s.access.Lock()
+	selected := s.selected[network].node
+	s.access.Unlock()
+	logger.Info("median delay, ", len(all), " nodes, tolerance ", s.tolerance)
+	for _, node := range all {
+		line := []any{node.String(), " SCORE="}
+		if score, ok := node.score(); ok {
+			line = append(line, score)
+		} else {
+			line = append(line, "None")
+		}
+		if selected != nil && node.tag == selected.tag {
+			line = append(line, " SELECTED")
+		}
+		logger.Info(line...)
+	}
 }
 
 // selectNode returns the candidate for the network. The current selection is kept
