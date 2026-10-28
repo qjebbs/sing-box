@@ -102,16 +102,16 @@
 `leastload` 和 `leastping` 目标都以分数排序，越低越好。计算公式为：
 
 ```
-cost = STD                         # leastload
-cost = MED + jitter_weight * STD   # leastping
+cost    = STD                         # leastload
+cost    = MED + jitter_weight * STD   # leastping
+failure = min(TIMEOUT, 3 × cost)
 
-score = (ALL - FAIL) / ALL × cost + FAIL / ALL × TIMEOUT
+score   = (ALL - FAIL) / ALL × cost + FAIL / ALL × failure
 ```
 
 `MED` 与 `STD` 是**成功**检查的中位数与标准差，`FAIL / ALL` 是失败检查的占比，`TIMEOUT` 是失败检查放弃前等待的超时（15s）。
 
-延迟统计只描述成功的检查，因此失败按自身占比混入：一次尝试要么以 `cost` 成功，要么等到 `TIMEOUT` 失败。
-分数就是一次尝试的平均开销，不会超过超时；从未成功过的节点分数为超时，而不是缺失值的零。
+延迟统计只描述成功的检查，因此失败按自身占比混入，失败是按节点自身的尺度度量的。
 
 #### strategy
 

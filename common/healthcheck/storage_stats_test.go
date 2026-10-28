@@ -176,10 +176,12 @@ func TestStatsCost(t *testing.T) {
 		{name: "half weight", all: 10, base: 100, jitter: 20, weight: 0.5, want: 110},
 		// the weight is rounded, not truncated
 		{name: "fractional weight", all: 10, base: 100, jitter: 7, weight: 0.5, want: 104},
-		// (9*100 + 1*15000) / 10
-		{name: "one failure", all: 10, fail: 1, base: 100, want: 1590},
-		// (5*100 + 5*15000) / 10
-		{name: "half failed", all: 10, fail: 5, base: 100, want: 7550},
+		// (9*100 + 1*300) / 10: a failed attempt is worth three that worked
+		{name: "one failure", all: 10, fail: 1, base: 100, want: 120},
+		// (5*100 + 5*300) / 10
+		{name: "half failed", all: 10, fail: 5, base: 100, want: 200},
+		// (9*6000 + 1*15000) / 10, the failure cost is capped by the timeout
+		{name: "slow node, one failure", all: 10, fail: 1, base: 6000, want: 6900},
 		// every attempt waits for the timeout
 		{name: "all failed", all: 10, fail: 10, want: 15000},
 		// a cost measured with a longer timeout is still capped by the attempt
@@ -206,5 +208,34 @@ func assertStats(t *testing.T, name string, want, got healthcheck.Stats) {
 	got.Expires = time.Time{}
 	if !reflect.DeepEqual(want, got) {
 		t.Fatalf("[%s] want: %v, got: %v", name, want, got)
+	}
+}
+
+func TestStatsCostScalesWithTheNode(t *testing.T) {
+	t.Parallel()
+	// A failed attempt is scored in the scale of the node, so the same failure rate
+	// costs a fast and a slow node the same share of their delay. Scoring it with the
+	// timeout would bury the fast node behind every node that never failed, and barely
+	// move the slow one.
+	testCases := []struct {
+		name string
+		base healthcheck.RTT
+		want healthcheck.RTT
+	}{
+		// (9*100 + 1*300) / 10
+		{name: "fast", base: 100, want: 120},
+		// (9*600 + 1*1800) / 10
+		{name: "slow", base: 600, want: 720},
+	}
+	for _, testCase := range testCases {
+		testCase := testCase
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+			stats := healthcheck.Stats{All: 10, Fail: 1}
+			got := stats.Cost(testCase.base, 0, 0)
+			if got != testCase.want {
+				t.Fatalf("want %v, got %v", testCase.want, got)
+			}
+		})
 	}
 }

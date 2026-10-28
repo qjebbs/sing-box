@@ -9,7 +9,8 @@ import (
 )
 
 // failureDelay is the delay a failed check waited for: a check fails only after the
-// whole timeout, so this is what an attempt that fails costs.
+// whole timeout. It is the cost of a failed attempt only for a node that never worked,
+// see Stats.failureCost, and the upper bound of any cost.
 var failureDelay = RTTOf(C.TCPTimeout)
 
 // Stats is the statistics of RTTs
@@ -143,15 +144,35 @@ func (s Stats) Cost(base RTT, jitter RTT, jitterWeight float32) RTT {
 }
 
 // mixed returns the expected value of cost per attempt: an attempt either succeeds
-// with cost, or fails after waiting for the timeout, so the two are mixed by the share
-// of the checks that failed. The result never exceeds the timeout.
+// with cost, or fails, and the two are mixed by the share of the checks that failed.
+// The result never exceeds the timeout.
 func (s Stats) mixed(cost uint64) RTT {
-	failureDelay := uint64(failureDelay)
-	if cost > failureDelay {
+	timeout := uint64(failureDelay)
+	if cost > timeout {
 		// an attempt never costs more than the timeout it waits for
-		cost = failureDelay
+		cost = timeout
 	}
-	return RTT((uint64(s.Succeeded())*cost + uint64(s.Fail)*failureDelay) / uint64(s.All))
+	return RTT((uint64(s.Succeeded())*cost + uint64(s.Fail)*s.failureCost(cost)) / uint64(s.All))
+}
+
+// failureRatio is how many attempts a failed one is worth. It costs more than one that
+// worked, since the connection it carried had to be tried again, but far less than the
+// timeout the check waited for: that is an absolute value, which buries a node that
+// failed once behind every node that never failed, whatever its delay.
+const failureRatio = 3
+
+// failureCost returns what a failed attempt costs, in the scale of the node, the same
+// way the tolerance is relative to the score of the best one.
+func (s Stats) failureCost(cost uint64) uint64 {
+	if s.Succeeded() == 0 {
+		// nothing worked, the timeout is all that is known about the node
+		return uint64(failureDelay)
+	}
+	timeout := uint64(failureDelay)
+	if cost > timeout/failureRatio {
+		return timeout
+	}
+	return cost * failureRatio
 }
 
 // medianOf returns the median of the values, the slice is reordered.
