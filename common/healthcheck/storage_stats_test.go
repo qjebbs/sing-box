@@ -202,15 +202,6 @@ func TestStatsCost(t *testing.T) {
 	}
 }
 
-func assertStats(t *testing.T, name string, want, got healthcheck.Stats) {
-	// do not comapre times
-	want.Expires = time.Time{}
-	got.Expires = time.Time{}
-	if !reflect.DeepEqual(want, got) {
-		t.Fatalf("[%s] want: %v, got: %v", name, want, got)
-	}
-}
-
 func TestStatsCostScalesWithTheNode(t *testing.T) {
 	t.Parallel()
 	// A failed attempt is scored in the scale of the node, so the same failure rate
@@ -237,5 +228,113 @@ func TestStatsCostScalesWithTheNode(t *testing.T) {
 				t.Fatalf("want %v, got %v", testCase.want, got)
 			}
 		})
+	}
+}
+
+func TestStorageConnectionOutcomes(t *testing.T) {
+	t.Parallel()
+	s := healthcheck.NewStorage(10, time.Hour)
+	now := time.Now()
+	s.ReportConnection(now, true)
+	s.ReportConnection(now, true)
+	s.ReportConnection(now, false)
+	attempts, failures := s.ConnectionOutcomes(now)
+	if attempts != 3 || failures != 1 {
+		t.Fatalf("want 3 attempts and 1 failure, got %v and %v", attempts, failures)
+	}
+	// the checks are untouched: a connection is not a sample
+	stats := s.Stats()
+	if stats.All != 0 {
+		t.Fatalf("want no check sample, got %v", stats.All)
+	}
+	if stats.Connections != 3 || stats.ConnectionFailures != 1 {
+		t.Fatalf("want 3 attempts and 1 failure in the statistics, got %v and %v",
+			stats.Connections, stats.ConnectionFailures)
+	}
+	// a connection leaves the window with the checks it is counted next to
+	attempts, failures = s.ConnectionOutcomes(now.Add(2 * time.Hour))
+	if attempts != 0 || failures != 0 {
+		t.Fatalf("want the connections expired, got %v and %v", attempts, failures)
+	}
+}
+
+func TestStorageConnectionOutcomesAreCapped(t *testing.T) {
+	t.Parallel()
+	// A longer run says no more than a full sampling window of it, so the list cannot
+	// grow with the traffic of the node.
+	s := healthcheck.NewStorage(4, time.Hour)
+	now := time.Now()
+	for i := 0; i < 100; i++ {
+		s.ReportConnection(now, i%2 == 0)
+	}
+	attempts, failures := s.ConnectionOutcomes(now)
+	if attempts != 4 {
+		t.Fatalf("want the count capped at 4, got %v", attempts)
+	}
+	// the last four of the loop are 96..99, two of them failed
+	if failures != 2 {
+		t.Fatalf("want 2 failures in the window, got %v", failures)
+	}
+}
+
+func TestStatsCostWithConnections(t *testing.T) {
+	t.Parallel()
+	// A connection is an attempt too, so it is mixed in next to the checks. Only the
+	// share that failed counts, not how many were carried: (10*100 + 2*300) / 12
+	stats := healthcheck.Stats{All: 10, Connections: 2, ConnectionFailures: 2}
+	if got := stats.Cost(100, 0, 0); got != 133 {
+		t.Fatalf("want 133, got %v", got)
+	}
+	// the same share over more traffic scores worse only because the sample is larger,
+	// a busy node is not punished for the traffic itself: (10*100 + 20*300) / 30
+	stats = healthcheck.Stats{All: 10, Connections: 20, ConnectionFailures: 20}
+	if got := stats.Cost(100, 0, 0); got != 233 {
+		t.Fatalf("want 233, got %v", got)
+	}
+	// without a check but with connections there is no delay, the timeout is all that is
+	// known about the node
+	stats = healthcheck.Stats{Connections: 3, ConnectionFailures: 3}
+	if got := stats.Cost(0, 0, 0); got != 15000 {
+		t.Fatalf("want the timeout, got %v", got)
+	}
+}
+
+func TestStatsCostIsIndependentOfTraffic(t *testing.T) {
+	t.Parallel()
+	// The same failure rate must score the same however much traffic the node carries:
+	// a node that drops one connection in ten is as good with 10 connections as with
+	// 100, and neither is worse than a node that is simply not used.
+	for _, connections := range []int{10, 100} {
+		stats := healthcheck.Stats{All: 10, Connections: connections, ConnectionFailures: connections / 10}
+		got := stats.Cost(100, 0, 0)
+		// (9 attempts in 19, 99 in 109 ... see the assertion below for the exact share)
+		if got < 100 || got > 300 {
+			t.Fatalf("%v connections: want a cost between the delay and the failure cost, got %v", connections, got)
+		}
+	}
+	// ten connections, one failed: (19*100 + 1*300) / 20 = 110
+	stats := healthcheck.Stats{All: 10, Connections: 10, ConnectionFailures: 1}
+	if got := stats.Cost(100, 0, 0); got != 110 {
+		t.Fatalf("want 110, got %v", got)
+	}
+	// a hundred connections, ten failed: the same tenth, (100*100 + 10*300) / 110 = 118
+	stats = healthcheck.Stats{All: 10, Connections: 100, ConnectionFailures: 10}
+	if got := stats.Cost(100, 0, 0); got != 118 {
+		t.Fatalf("want 118, got %v", got)
+	}
+	// a node that is not used at all keeps the cost of its checks: no penalty, and no
+	// credit either
+	stats = healthcheck.Stats{All: 10}
+	if got := stats.Cost(100, 0, 0); got != 100 {
+		t.Fatalf("want 100, got %v", got)
+	}
+}
+
+func assertStats(t *testing.T, name string, want, got healthcheck.Stats) {
+	// do not comapre times
+	want.Expires = time.Time{}
+	got.Expires = time.Time{}
+	if !reflect.DeepEqual(want, got) {
+		t.Fatalf("[%s] want: %v, got: %v", name, want, got)
 	}
 }

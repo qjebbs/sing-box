@@ -20,7 +20,10 @@ type HealthCheck interface {
 	// IsActive reports whether the namespace was in use within the idle timeout,
 	// so its health checks are running and its statistics are current.
 	IsActive(namespace string) bool
-	ReportFailure(outbound Outbound)
+	// ReportConnection records the outcome of a connection the group carried with the
+	// outbound, so a node that passes its checks and then drops the traffic is scored
+	// for it.
+	ReportConnection(outbound Outbound, established bool)
 }
 
 // HealthCheckManager manages named health checks from the top-level

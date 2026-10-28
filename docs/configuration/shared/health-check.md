@@ -22,6 +22,9 @@ When object:
 Health checks are used to check and provide health status information of nodes for outbound groups.
 They can be shared by multiple outbound groups to avoid redundant health check overhead.
 
+The connections the groups carry are counted as well, so a node that passes its checks
+and then drops a share of the traffic is scored for it.
+
 Each entry of the top-level `health_checks` uses the same object structure, with an additional `tag` field:
 
 ```json

@@ -23,6 +23,16 @@ type Stats struct {
 	Max       RTT // maximum RTT of all health checks
 	Min       RTT // minimum RTT of all health checks
 	Latest    RTT // latest RTT of all health checks
+	// Connections is the number of connections the group carried, and
+	// ConnectionFailures how many of them failed, see Storage.ReportConnection. They are
+	// attempts as well, so they are mixed into the cost next to the checks, but they are
+	// not samples: a connection is not a probe on a schedule, and there is no delay to
+	// learn from it.
+	//
+	// Both outcomes are counted, so the share of them that failed doesn't grow with the
+	// traffic of the node: a busy node is not scored worse than an idle one.
+	Connections        int
+	ConnectionFailures int
 
 	Expires time.Time // time of the statistics expires
 }
@@ -50,7 +60,13 @@ func (s *Storage) Stats() Stats {
 }
 
 func (s *Storage) refreshStats(now time.Time) {
-	s.stats = Stats{}
+	// the connections outlive the checks they are counted next to, a node can drop the
+	// traffic it carries without ever being checked
+	connections, connectionFailures := s.ConnectionOutcomes(now)
+	s.stats = Stats{
+		Connections:        connections,
+		ConnectionFailures: connectionFailures,
+	}
 	latest := s.history[s.idx]
 	if now.Sub(latest.Time) > s.validity {
 		return
@@ -75,7 +91,10 @@ func (s *Storage) refreshStats(now time.Time) {
 			delays = append(delays, delay)
 		}
 	}
-	s.stats = newStats(len(delays)+fail, fail, latest.Delay, expiresAt, delays)
+	stats := newStats(len(delays)+fail, fail, latest.Delay, expiresAt, delays)
+	stats.Connections = connections
+	stats.ConnectionFailures = connectionFailures
+	s.stats = stats
 }
 
 // newStats returns the statistics of the values, all of the checks they are a part of,
@@ -132,7 +151,7 @@ func (s Stats) Succeeded() int {
 // The caller chooses the metric: the median delay of the checks that succeeded, or
 // their deviation, scaled by whatever weight the group gives the jitter.
 func (s Stats) Cost(base RTT, jitter RTT, jitterWeight float32) RTT {
-	if s.All == 0 {
+	if s.All == 0 && s.Connections == 0 {
 		return Failed
 	}
 	cost := uint64(base)
@@ -152,7 +171,12 @@ func (s Stats) mixed(cost uint64) RTT {
 		// an attempt never costs more than the timeout it waits for
 		cost = timeout
 	}
-	return RTT((uint64(s.Succeeded())*cost + uint64(s.Fail)*s.failureCost(cost)) / uint64(s.All))
+	// the connections are attempts too, only the probes have a delay: a connection that
+	// was established counts like a probe that succeeded
+	attempts := uint64(s.All + s.Connections)
+	failures := uint64(s.Fail + s.ConnectionFailures)
+	successes := attempts - failures
+	return RTT((successes*cost + failures*s.failureCost(cost)) / attempts)
 }
 
 // failureRatio is how many attempts a failed one is worth. It costs more than one that

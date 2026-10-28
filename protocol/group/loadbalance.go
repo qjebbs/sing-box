@@ -26,11 +26,12 @@ func RegisterLoadBalance(registry *outbound.Registry) {
 }
 
 var (
-	_ adapter.Outbound                = (*LoadBalance)(nil)
-	_ adapter.URLTestGroup            = (*LoadBalance)(nil)
-	_ adapter.Referrer                = (*LoadBalance)(nil)
-	_ adapter.Lifecycle               = (*LoadBalance)(nil)
-	_ adapter.InterfaceUpdateListener = (*LoadBalance)(nil)
+	_ adapter.Outbound                   = (*LoadBalance)(nil)
+	_ adapter.URLTestGroup               = (*LoadBalance)(nil)
+	_ adapter.OutboundConnectionReporter = (*LoadBalance)(nil)
+	_ adapter.Referrer                   = (*LoadBalance)(nil)
+	_ adapter.Lifecycle                  = (*LoadBalance)(nil)
+	_ adapter.InterfaceUpdateListener    = (*LoadBalance)(nil)
 )
 
 // LoadBalance is a load balance group
@@ -139,7 +140,7 @@ func (s *LoadBalance) DialContext(ctx context.Context, network string, destinati
 			node := s.PickNode(ctx, network, destination)
 			return node, node != nil
 		},
-		s.reportFailure,
+		s.reportConnection,
 		func(node *balancer.Node) (net.Conn, error) {
 			conn, err := node.DialContext(ctx, network, destination)
 			if err != nil {
@@ -158,7 +159,7 @@ func (s *LoadBalance) ListenPacket(ctx context.Context, destination M.Socksaddr)
 			node := s.PickNode(ctx, N.NetworkUDP, destination)
 			return node, node != nil
 		},
-		s.reportFailure,
+		s.reportConnection,
 		func(node *balancer.Node) (net.PacketConn, error) {
 			conn, err := node.ListenPacket(ctx, destination)
 			if err != nil {
@@ -169,8 +170,17 @@ func (s *LoadBalance) ListenPacket(ctx context.Context, destination M.Socksaddr)
 	)
 }
 
-func (s *LoadBalance) reportFailure(node *balancer.Node) {
-	s.HealthCheck.ReportFailure(node.Outbound)
+func (s *LoadBalance) reportConnection(node *balancer.Node, established bool) {
+	s.HealthCheck.ReportConnection(node.Outbound, established)
+}
+
+// ReportConnection implements adapter.OutboundConnectionReporter, for the connections the
+// root router carries with this group.
+func (s *LoadBalance) ReportConnection(outbound adapter.Outbound, established bool) {
+	if s.HealthCheck == nil {
+		return
+	}
+	s.HealthCheck.ReportConnection(outbound, established)
 }
 
 // Close releases the load balancer resources, it is registered on the scope by Start.

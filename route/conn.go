@@ -122,11 +122,13 @@ func (m *ConnectionManager) NewConnection(ctx context.Context, this N.Dialer, co
 			dialerString = " using outbound/" + outbound.Type() + "[" + outbound.Tag() + "]"
 		}
 		err = E.Cause(err, "open connection to ", remoteString, dialerString)
+		m.reportOutboundConnection(metadata.OutboundChain, false)
 		m.deleteURLTestHistory(metadata.OutboundChain)
 		N.CloseOnHandshakeFailure(conn, onClose, err)
 		m.logger.ErrorContext(ctx, err)
 		return
 	}
+	m.reportOutboundConnection(metadata.OutboundChain, true)
 	err = N.ReportConnHandshakeSuccess(conn, remoteConn)
 	if err != nil {
 		err = E.Cause(err, "report handshake success")
@@ -198,11 +200,13 @@ func (m *ConnectionManager) NewPacketConnection(ctx context.Context, this N.Dial
 				dialerString = " using outbound/" + outbound.Type() + "[" + outbound.Tag() + "]"
 			}
 			err = E.Cause(err, "open packet connection to ", remoteString, dialerString)
+			m.reportOutboundConnection(metadata.OutboundChain, false)
 			m.deleteURLTestHistory(metadata.OutboundChain)
 			N.CloseOnHandshakeFailure(conn, onClose, err)
 			m.logger.ErrorContext(ctx, err)
 			return
 		}
+		m.reportOutboundConnection(metadata.OutboundChain, true)
 		remotePacketConn = bufio.NewUnbindPacketConn(remoteConn)
 		connRemoteAddr := M.AddrFromNet(remoteConn.RemoteAddr())
 		if connRemoteAddr != metadata.Destination.Addr {
@@ -222,12 +226,14 @@ func (m *ConnectionManager) NewPacketConnection(ctx context.Context, this N.Dial
 				dialerString = " using outbound/" + outbound.Type() + "[" + outbound.Tag() + "]"
 			}
 			err = E.Cause(err, "listen packet connection using ", dialerString)
+			m.reportOutboundConnection(metadata.OutboundChain, false)
 			m.deleteURLTestHistory(metadata.OutboundChain)
 			N.CloseOnHandshakeFailure(conn, onClose, err)
 			m.logger.ErrorContext(ctx, err)
 			return
 		}
 	}
+	m.reportOutboundConnection(metadata.OutboundChain, true)
 	err = N.ReportPacketConnHandshakeSuccess(conn, remotePacketConn)
 	if err != nil {
 		err = E.Cause(err, "report handshake success")
@@ -279,6 +285,24 @@ func (m *ConnectionManager) NewPacketConnection(ctx context.Context, this N.Dial
 	var done atomic.Bool
 	go m.packetConnectionCopy(ctx, conn, destination, false, &done, onClose)
 	go m.packetConnectionCopy(ctx, destination, conn, true, &done, onClose)
+}
+
+// reportOutboundConnection tells the groups of the chain the outcome of the connection
+// they carried, so a node that passes its health checks and then drops the connections it
+// is asked to carry is scored for it. Both outcomes are reported: a count of failures
+// alone would grow with the traffic of the node.
+func (m *ConnectionManager) reportOutboundConnection(chain []adapter.Outbound, established bool) {
+	if len(chain) < 2 {
+		// without a group, the connection belongs to a single node
+		return
+	}
+	node := chain[len(chain)-1]
+	for _, it := range chain[:len(chain)-1] {
+		reporter, isReporter := it.(adapter.OutboundConnectionReporter)
+		if isReporter {
+			reporter.ReportConnection(node, established)
+		}
+	}
 }
 
 func (m *ConnectionManager) deleteURLTestHistory(chain []adapter.Outbound) {

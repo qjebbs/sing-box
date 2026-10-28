@@ -14,7 +14,7 @@ import (
 type Status int
 
 const (
-	// StatusDead is the status of a node that is dead
+	// StatusDead is the status of a node whose latest check failed
 	StatusDead Status = iota
 	// StatusUnknown is the status of a node that is not tested yet
 	StatusUnknown

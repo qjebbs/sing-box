@@ -24,11 +24,12 @@ func RegisterURLTestProvider(registry *outbound.Registry) {
 }
 
 var (
-	_ adapter.Outbound                = (*URLTestProvider)(nil)
-	_ adapter.URLTestGroup            = (*URLTestProvider)(nil)
-	_ adapter.Referrer                = (*URLTestProvider)(nil)
-	_ adapter.InterfaceUpdateListener = (*URLTestProvider)(nil)
-	_ adapter.Lifecycle               = (*URLTestProvider)(nil)
+	_ adapter.Outbound                   = (*URLTestProvider)(nil)
+	_ adapter.URLTestGroup               = (*URLTestProvider)(nil)
+	_ adapter.OutboundConnectionReporter = (*URLTestProvider)(nil)
+	_ adapter.Referrer                   = (*URLTestProvider)(nil)
+	_ adapter.InterfaceUpdateListener    = (*URLTestProvider)(nil)
+	_ adapter.Lifecycle                  = (*URLTestProvider)(nil)
 )
 
 // URLTestProvider is the URL test group. It uses the outbound with the best score of
@@ -170,7 +171,7 @@ func (s *URLTestProvider) DialContext(ctx context.Context, network string, desti
 			node := s.selection.Selected(network)
 			return node, node != nil
 		},
-		s.reportFailure,
+		s.reportConnection,
 		func(node *candidate) (net.Conn, error) {
 			return node.outbound.DialContext(ctx, network, destination)
 		},
@@ -187,7 +188,7 @@ func (s *URLTestProvider) ListenPacket(ctx context.Context, destination M.Socksa
 			node := s.selection.Selected(N.NetworkUDP)
 			return node, node != nil
 		},
-		s.reportFailure,
+		s.reportConnection,
 		func(node *candidate) (net.PacketConn, error) {
 			return node.outbound.ListenPacket(ctx, destination)
 		},
@@ -208,8 +209,20 @@ func (s *URLTestProvider) InterfaceUpdated(ctx context.Context) {
 	go s.HealthCheck.CheckAll(ctx, s.Tag())
 }
 
-// reportFailure marks the node as failed, so the next connection avoids it.
-func (s *URLTestProvider) reportFailure(node *candidate) {
-	s.HealthCheck.ReportFailure(node.outbound)
-	s.selection.Invalidate()
+// reportConnection records the outcome of an attempt, so a failed node is scored and the
+// next pick avoids it.
+func (s *URLTestProvider) reportConnection(node *candidate, established bool) {
+	s.selection.ReportConnection(node, established)
+}
+
+// ReportConnection implements adapter.OutboundConnectionReporter, for the connections the
+// root router carries with this group.
+func (s *URLTestProvider) ReportConnection(outbound adapter.Outbound, established bool) {
+	if s.selection == nil {
+		return
+	}
+	s.selection.ReportConnection(&candidate{
+		outbound: outbound,
+		tag:      healthCheckTag(outbound),
+	}, established)
 }
