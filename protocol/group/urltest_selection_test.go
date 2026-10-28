@@ -190,20 +190,37 @@ func TestSelectionSwitchesBeyondTolerance(t *testing.T) {
 	}
 }
 
-func TestSelectionSwitchesWhenNodeFails(t *testing.T) {
+func TestSelectionSwitchesWhenNodeNeverWorked(t *testing.T) {
 	t.Parallel()
-	selection, storage := newSelectionForTest(t, 0.9, "failed", "alive")
-	fill(storage, "failed", 100)
+	selection, storage := newSelectionForTest(t, 0.9, "dead", "alive")
+	fill(storage, "dead", 100)
 	fill(storage, "alive", 300)
-	if tag := selectedTag(selection); tag != "failed" {
-		t.Fatalf("want failed, got %s", tag)
+	if tag := selectedTag(selection); tag != "dead" {
+		t.Fatalf("want dead, got %s", tag)
 	}
-	// the latest check failed: the node is down until a check gives it a result again,
-	// so the wide tolerance cannot keep it
-	storage.Update("failed", healthcheck.Failed)
+	// every check failed: there is no delay left to compare, so the wide tolerance
+	// cannot keep the node
+	for i := 0; i < storage.Cap(); i++ {
+		storage.Put("dead", healthcheck.Failed)
+	}
 	selection.Invalidate()
 	if tag := selectedTag(selection); tag != "alive" {
 		t.Fatalf("want alive, got %s", tag)
+	}
+}
+
+func TestSelectionKeepsNodeWithAFailedCheck(t *testing.T) {
+	t.Parallel()
+	// A single failed check is scored, it doesn't send the node to the back: the class is
+	// decided by whether the node ever worked, not by its latest result.
+	selection, storage := newSelectionForTest(t, 0.9, "flaky", "alive")
+	fill(storage, "flaky", 100)
+	fill(storage, "alive", 300)
+	// the latest check failed, the nine before it did not
+	storage.Update("flaky", healthcheck.Failed)
+	selection.Invalidate()
+	if tag := selectedTag(selection); tag != "flaky" {
+		t.Fatalf("want flaky, got %s", tag)
 	}
 }
 

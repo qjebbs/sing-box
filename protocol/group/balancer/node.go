@@ -14,7 +14,7 @@ import (
 type Status int
 
 const (
-	// StatusDead is the status of a node whose latest check failed
+	// StatusDead is the status of a node that never passed a check
 	StatusDead Status = iota
 	// StatusUnknown is the status of a node that is not tested yet
 	StatusUnknown
@@ -135,7 +135,8 @@ func calcStatus(s *healthcheck.Stats, maxRTT healthcheck.RTT, maxFailRate float3
 		// untetsted
 		return StatusUnknown
 	}
-	if s.Latest == healthcheck.Failed {
+	if s.Succeeded() == 0 {
+		// nothing ever worked, there is no delay to rank and nothing to fall back on
 		return StatusDead
 	}
 	if s.Fail > 0 && float32(s.Fail)/float32(s.All) > maxFailRate {
