@@ -27,6 +27,6 @@ func benchmarkObjective(b *testing.B, f balancer.Objective, count int) {
 	alive := allNodes(outbounds, store)
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		f.Filter(alive)
+		balancer.Filter(f, alive)
 	}
 }

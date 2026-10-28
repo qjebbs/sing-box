@@ -85,7 +85,7 @@ func benchmarkBalancer(b *testing.B, f balancer.Objective, s balancer.Strategy, 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		all := allNodes(outbounds, store)
-		filtered := f.Filter(all)
+		filtered := balancer.Filter(f, all)
 		s.Pick(all, filtered, ctx)
 	}
 }
@@ -226,7 +226,7 @@ func TestRetainNodesUsesObjective(t *testing.T) {
 		},
 	}
 	all[0].Outbound, all[1].Outbound = tagOutbound("fast"), tagOutbound("jittery")
-	selected := objective.Filter(all)
+	selected := balancer.Filter(objective, all)
 	if len(selected) != 1 || selected[0].Tag() != "fast" {
 		t.Fatalf("want only the fast node selected, got %v", tagList(selected))
 	}
@@ -235,7 +235,7 @@ func TestRetainNodesUsesObjective(t *testing.T) {
 		t.Fatalf("want the jittery node kept, got %v", got)
 	}
 	// it is not selected, new connections must not use it
-	if filtered := objective.Filter(all); len(filtered) != 1 {
+	if filtered := balancer.Filter(objective, all); len(filtered) != 1 {
 		t.Fatalf("the selection must stay strict, got %v", tagList(filtered))
 	}
 }

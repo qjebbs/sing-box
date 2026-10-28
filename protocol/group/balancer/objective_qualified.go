@@ -1,7 +1,5 @@
 package balancer
 
-import "sort"
-
 var _ Objective = (*QualifiedObjective)(nil)
 
 // QualifiedObjective is the qualified balancing objective
@@ -16,25 +14,21 @@ func NewQualifiedObjective() *QualifiedObjective {
 	}
 }
 
-// Filter implements Objective.
-// NOTICE: be aware of the coding convention of this function
-func (o *QualifiedObjective) Filter(all []*Node) []*Node {
-	qulifaied := make([]*Node, 0, len(all))
-	for _, node := range all {
-		if node.Status == StatusQualified {
-			qulifaied = append(qulifaied, node)
-		}
-	}
-	if len(qulifaied) > 0 {
-		return qulifaied
-	}
-	// fallback to alive nodes, AliveObjective will fallback to all nodes if no alive
-	return o.AliveObjective.Filter(all)
+// Rank implements Objective, the nodes of a better status come first.
+func (o *QualifiedObjective) Rank(all []*Node) []*Node {
+	return o.AliveObjective.Rank(all)
 }
 
-// Sort implements Objective.
-func (o *QualifiedObjective) Sort(all []*Node) {
-	sort.Slice(all, func(i, j int) bool {
-		return all[i].Status > all[j].Status
-	})
+// Select implements Objective.
+// NOTICE: be aware of the coding convention of this function
+func (o *QualifiedObjective) Select(ranked []*Node) []*Node {
+	count := 0
+	for count < len(ranked) && ranked[count].Status == StatusQualified {
+		count++
+	}
+	if count > 0 {
+		return ranked[:count]
+	}
+	// fallback to alive nodes, AliveObjective will fallback to all nodes if no alive
+	return o.AliveObjective.Select(ranked)
 }

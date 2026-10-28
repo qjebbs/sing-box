@@ -92,7 +92,7 @@ func TestSelectClusterSortsFirst(t *testing.T) {
 		{Index: 2, Status: balancer.StatusQualified, Stats: healthcheck.Stats{Deviation: 18, All: 10}},
 		{Index: 3, Status: balancer.StatusQualified, Stats: healthcheck.Stats{Deviation: 191, All: 10}},
 	}
-	selected := objective.Filter(nodes)
+	selected := balancer.Filter(objective, nodes)
 	if len(selected) != 2 {
 		t.Fatalf("want 2 nodes, got %v", len(selected))
 	}
@@ -173,7 +173,7 @@ func TestLeastPingUsesMedian(t *testing.T) {
 		Stats:  healthcheck.Stats{All: 10, Average: 520, Median: 500},
 	}
 	nodes := []*balancer.Node{steady, spiky}
-	selected := balancer.NewLeastPingObjective(option.LoadBalancePickOptions{}).Filter(nodes)
+	selected := balancer.Filter(balancer.NewLeastPingObjective(option.LoadBalancePickOptions{}), nodes)
 	if len(selected) != 1 {
 		t.Fatalf("want 1 node, got %v", len(selected))
 	}
@@ -264,7 +264,7 @@ func TestLeastPingScoreRanks(t *testing.T) {
 		Stats: healthcheck.Stats{Median: 164, Deviation: 8, All: 10},
 	}
 	// 161 + 10 = 171, 164 + 8 = 172, both are in the cluster, the score orders them
-	selected := balancer.NewLeastPingObjective(option.LoadBalancePickOptions{}).Filter([]*balancer.Node{flaky, steady})
+	selected := balancer.Filter(balancer.NewLeastPingObjective(option.LoadBalancePickOptions{}), []*balancer.Node{flaky, steady})
 	if len(selected) != 2 {
 		t.Fatalf("want both nodes, got %v", selected)
 	}
@@ -285,7 +285,7 @@ func TestLeastPingOrdersFasterFirst(t *testing.T) {
 		Index: 2, Status: balancer.StatusQualified,
 		Stats: healthcheck.Stats{Median: 170, Deviation: 10, All: 10},
 	}
-	selected := balancer.NewLeastPingObjective(option.LoadBalancePickOptions{}).Filter([]*balancer.Node{slow, fast})
+	selected := balancer.Filter(balancer.NewLeastPingObjective(option.LoadBalancePickOptions{}), []*balancer.Node{slow, fast})
 	if len(selected) == 0 || selected[0].Index != 1 {
 		t.Fatalf("want node 1 first, got %v", selected)
 	}

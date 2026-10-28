@@ -8,7 +8,6 @@ import (
 
 	"github.com/sagernet/sing-box/adapter"
 	"github.com/sagernet/sing-box/adapter/outbound"
-	"github.com/sagernet/sing-box/common/healthcheck"
 	"github.com/sagernet/sing-box/common/interrupt"
 	"github.com/sagernet/sing-box/common/urltest"
 	C "github.com/sagernet/sing-box/constant"
@@ -80,7 +79,11 @@ func (s *LoadBalance) Selected(network string) adapter.Outbound {
 	if s.Balancer == nil {
 		return nil
 	}
-	return s.Pick(context.Background(), network, M.Socksaddr{})
+	node := s.PickNode(context.Background(), network, M.Socksaddr{})
+	if node == nil {
+		return nil
+	}
+	return node.Outbound
 }
 
 // References implements adapter.Referrer
@@ -91,7 +94,7 @@ func (s *LoadBalance) References() []string {
 	// Every node that isn't dead may serve the next connection, so it may keep its
 	// idle connections. The objective is deliberately not applied here: it depends
 	// on pick thresholds, which would make the references flap on jitter.
-	return s.Balancer.AliveNodes()
+	return s.Balancer.AliveTags()
 }
 
 // touchHealthCheck keeps the health checks of this group running while it is in
@@ -131,55 +134,54 @@ func (s *LoadBalance) Network() []string {
 // DialContext implements adapter.Outbound
 func (s *LoadBalance) DialContext(ctx context.Context, network string, destination M.Socksaddr) (net.Conn, error) {
 	s.touchHealthCheck()
-	var lastErr error
-	maxRetry := 5
-	for i := 0; i < maxRetry; i++ {
-		picked := s.Pick(ctx, network, destination)
-		if picked == nil {
-			lastErr = E.New("no outbound available")
-			break
-		}
-		conn, err := picked.DialContext(ctx, network, destination)
-		if err == nil {
-			return s.interruptGroup.NewConn(conn, interrupt.IsExternalConnectionFromContext(ctx), picked.Tag()), nil
-		}
-		lastErr = err
-		s.logger.ErrorContext(ctx, err)
-		s.ReportFailure(picked)
-	}
-	return nil, lastErr
+	return tryEach(ctx, s.logger,
+		func() (*balancer.Node, bool) {
+			node := s.PickNode(ctx, network, destination)
+			return node, node != nil
+		},
+		s.reportFailure,
+		func(node *balancer.Node) (net.Conn, error) {
+			conn, err := node.DialContext(ctx, network, destination)
+			if err != nil {
+				return nil, err
+			}
+			return s.interruptGroup.NewConn(conn, interrupt.IsExternalConnectionFromContext(ctx), node.Tag()), nil
+		},
+	)
 }
 
 // ListenPacket implements adapter.Outbound
 func (s *LoadBalance) ListenPacket(ctx context.Context, destination M.Socksaddr) (net.PacketConn, error) {
 	s.touchHealthCheck()
-	var lastErr error
-	maxRetry := 5
-	for i := 0; i < maxRetry; i++ {
-		picked := s.Pick(ctx, N.NetworkUDP, destination)
-		if picked == nil {
-			lastErr = E.New("no outbound available")
-			break
-		}
-		conn, err := picked.ListenPacket(ctx, destination)
-		if err == nil {
-			return s.interruptGroup.NewPacketConn(conn, interrupt.IsExternalConnectionFromContext(ctx), picked.Tag()), nil
-		}
-		lastErr = err
-		s.logger.ErrorContext(ctx, err)
-		s.ReportFailure(picked)
-	}
-	return nil, lastErr
+	return tryEach(ctx, s.logger,
+		func() (*balancer.Node, bool) {
+			node := s.PickNode(ctx, N.NetworkUDP, destination)
+			return node, node != nil
+		},
+		s.reportFailure,
+		func(node *balancer.Node) (net.PacketConn, error) {
+			conn, err := node.ListenPacket(ctx, destination)
+			if err != nil {
+				return nil, err
+			}
+			return s.interruptGroup.NewPacketConn(conn, interrupt.IsExternalConnectionFromContext(ctx), node.Tag()), nil
+		},
+	)
+}
+
+func (s *LoadBalance) reportFailure(node *balancer.Node) {
+	s.HealthCheck.ReportFailure(node.Outbound)
 }
 
 // Close releases the load balancer resources, it is registered on the scope by Start.
 func (s *LoadBalance) Close() error {
-	if s.Balancer != nil {
-		s.Balancer.HealthCheck.UnregisterPostCheckListener(s.interruptOutdatedConnections)
-		s.Balancer.HealthCheck.RemoveProviders(s.Tag())
-		return s.Balancer.Close()
+	if s.Balancer == nil {
+		return nil
 	}
-	return nil
+	detachErr := s.DetachHealthCheck(s.Balancer.HealthCheck, s.interruptOutdatedConnections)
+	return E.Append(detachErr, s.Balancer.Close(), func(err error) error {
+		return E.Cause(err, "close balancer")
+	})
 }
 
 // Start implements adapter.Lifecycle
@@ -191,21 +193,11 @@ func (s *LoadBalance) Start(stage adapter.StartStage, scope *adapter.Scope) erro
 	if err := s.InitProviders(s.outbound, s.provider); err != nil {
 		return err
 	}
-	if s.options.HealthCheck == nil || s.options.HealthCheck.IsEmpty() {
-		return E.New("loadbalance requires 'health_check' in options")
-	}
-	checker, err := s.healthCheckMgr.Get(s.ctx, s.logger, *s.options.HealthCheck)
+	healthCheck, err := s.AttachHealthCheck(
+		s.ctx, s.logger, s.healthCheckMgr, s.options.HealthCheck, s.interruptOutdatedConnections,
+	)
 	if err != nil {
 		return err
-	}
-	checker.RegisterPostCheckListener(s.interruptOutdatedConnections)
-	// Submit all providers to the shared checker.
-	if err := checker.SetProviders(s.Tag(), s.Providers()); err != nil {
-		return err
-	}
-	healthCheck, ok := checker.(*healthcheck.HealthCheck)
-	if !ok {
-		return E.New("health check is not a health check")
 	}
 	b, err := balancer.New(s.logger, &s.GroupAdapter, healthCheck, s.options.Pick)
 	if err != nil {
@@ -216,6 +208,10 @@ func (s *LoadBalance) Start(stage adapter.StartStage, scope *adapter.Scope) erro
 }
 
 func (s *LoadBalance) interruptOutdatedConnections() {
+	if s.Balancer == nil {
+		// the listener is registered before the balancer is built
+		return
+	}
 	available := s.Balancer.AvailableNodes(s.options.LogHealth)
 	var retained []string
 	if s.options.InterruptExistConnections {
@@ -227,7 +223,7 @@ func (s *LoadBalance) interruptOutdatedConnections() {
 		retained = s.Balancer.RetainedNodes(s.interruptGroup.Tags())
 	}
 	s.interruptGroup.Interrupt(s.options.InterruptExistConnections, available, retained)
-	referenced := s.Balancer.AliveNodes()
+	referenced := s.Balancer.AliveTags()
 	if previous := s.lastReferenced.Swap(referenced); !slices.Equal(previous, referenced) {
 		// The nodes this group may use changed.
 		if s.history != nil {

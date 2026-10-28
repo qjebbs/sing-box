@@ -8,7 +8,6 @@ import (
 	"github.com/sagernet/sing-box/log"
 	"github.com/sagernet/sing-box/option"
 	"github.com/sagernet/sing/common"
-	E "github.com/sagernet/sing/common/exceptions"
 	M "github.com/sagernet/sing/common/metadata"
 	N "github.com/sagernet/sing/common/network"
 )
@@ -34,11 +33,6 @@ type providersAdapter interface {
 }
 
 // New creates a new load balancer
-//
-// The globalHistory is optional and is only used to sync latency history
-// between different health checkers. Each HealthCheck will maintain its own
-// history storage since different ones can have different check destinations,
-// sampling numbers, etc.
 func New(
 	logger log.ContextLogger,
 	adapter providersAdapter,
@@ -49,60 +43,34 @@ func New(
 	if err != nil {
 		return nil, err
 	}
-	var (
-		objective Objective
-		strategy  Strategy
-	)
-	switch cfg.Objective {
-	case ObjectiveAlive:
-		objective = NewAliveObjective()
-	case ObjectiveQualified:
-		objective = NewQualifiedObjective()
-	case ObjectiveLeastLoad:
-		objective = NewLeastLoadObjective(options)
-	case ObjectiveLeastPing:
-		objective = NewLeastPingObjective(options)
-	default:
-		return nil, E.New("unknown objective: ", cfg.Objective)
+	objective, err := newObjective(cfg)
+	if err != nil {
+		return nil, err
 	}
-	switch cfg.Strategy {
-	case StrategyRandom:
-		strategy = NewRandomStrategy()
-	case StrategyRoundrobin:
-		strategy = NewRoundRobinStrategy()
-	case StrategyConsistentHash:
-		if cfg.Objective != ObjectiveAlive {
-			return nil, E.New("consistenthash strategy works only with 'alive' objective")
-		}
-		strategy = NewConsistentHashStrategy()
-	default:
-		return nil, E.New("unknown strategy: ", cfg.Strategy)
+	strategy, err := newStrategy(cfg)
+	if err != nil {
+		return nil, err
 	}
-
 	return &Balancer{
-		cfg:         cfg,
-		logger:      logger,
-		Adapter:     adapter,
 		HealthCheck: hc,
+		Adapter:     adapter,
+		logger:      logger,
+		cfg:         cfg,
 		Objective:   objective,
 		Strategy:    strategy,
 	}, nil
 }
 
-// Pick picks a node
-func (b *Balancer) Pick(ctx context.Context, network string, destination M.Socksaddr) adapter.Outbound {
+// PickNode picks the node for a connection, nil when no node is available.
+func (b *Balancer) PickNode(ctx context.Context, network string, destination M.Socksaddr) *Node {
 	metadata := adapter.ContextFrom(ctx)
 	if metadata == nil {
 		metadata = &adapter.InboundContext{}
 	}
 	metadata.Destination = destination
 	all := b.Nodes(network)
-	filtered := b.Objective.Filter(all)
-	picked := b.Strategy.Pick(all, filtered, metadata)
-	if picked == nil {
-		return nil
-	}
-	return picked.Outbound
+	selected := Filter(b.Objective, all)
+	return b.Strategy.Pick(all, selected, metadata)
 }
 
 // AvailableNodes returns all available nodes
@@ -115,9 +83,8 @@ func (b *Balancer) AvailableNodes(logging bool) []string {
 			available, " of ", len(all), " nodes available",
 		)
 		b.logger.Info("=== nodes available ===")
-		b.Objective.Sort(all)
 		scorer, isScorer := b.Objective.(Scorer)
-		for i, n := range all {
+		for i, n := range b.Objective.Rank(all) {
 			if i == available {
 				b.logger.Info("=== nodes unavailable ===")
 			}
@@ -167,44 +134,16 @@ func (b *Balancer) RetainedNodes(inUse []string) []string {
 	return retained
 }
 
-// AliveNodes returns the tags of nodes that are not dead. Unlike AvailableNodes,
-// it ignores the objective, so the result only changes when a node's health
-// changes, not when it merely stops being the preferred one.
-func (b *Balancer) AliveNodes() []string {
-	nodes := b.Nodes("")
-	alive := make([]string, 0, len(nodes))
-	for _, node := range nodes {
-		if node.Status != StatusDead {
-			alive = append(alive, node.Tag())
-		}
-	}
-	if len(alive) == 0 {
-		// No node is alive: nothing can be served, but outbounds may still be
-		// tried, keep them referenced like AvailableNodes does.
-		return common.Uniq(common.Map(nodes, func(node *Node) string {
-			return node.Tag()
-		}))
-	}
-	return common.Uniq(alive)
-}
-
-// Networks returns all networks supported by this balancer
-func (b *Balancer) Networks() []string {
-	if b.networks == nil {
-		b.networks = b.availableNetworks()
-	}
-	return b.networks
-}
-
-// Nodes returns all Nodes for the network
+// Nodes returns all nodes of the network with their health status. A node of an
+// outbound group is replaced by the outbound it resolves to, so nested groups are
+// measured and picked by the node they actually use.
 func (b *Balancer) Nodes(network string) []*Node {
 	all := make([]*Node, 0)
 	idx := 0
 	for _, provider := range b.Adapter.Providers() {
 		for _, outbound := range provider.Outbounds() {
 			idx++
-			networks := outbound.Network()
-			if network != "" && !common.Contains(networks, network) {
+			if network != "" && !common.Contains(outbound.Network(), network) {
 				continue
 			}
 			if group, ok := outbound.(adapter.OutboundGroup); ok {
@@ -217,14 +156,40 @@ func (b *Balancer) Nodes(network string) []*Node {
 			scale := calcFactor(outbound.Tag(), b.cfg.pickBiases)
 			stats := b.HealthCheck.Storage.Stats(outbound.Tag())
 			status := calcStatus(&stats, b.cfg.maxRTT, b.cfg.maxFailRate)
-			node := NewNode(outbound, idx, scale, stats, status)
-			all = append(all, node)
+			all = append(all, NewNode(outbound, idx, scale, stats, status))
 		}
 	}
 	return all
 }
 
-// availableNetworks returns available networks of qualified nodes
+// Networks returns the networks supported by the nodes of the group.
+func (b *Balancer) Networks() []string {
+	if b.networks == nil {
+		b.networks = b.availableNetworks()
+	}
+	return b.networks
+}
+
+// AliveTags returns the tags of the nodes that are not dead. Unlike the objective,
+// it ignores the selection, so the result only changes when a node's health
+// changes, not when it merely stops being the preferred one.
+func (b *Balancer) AliveTags() []string {
+	nodes := b.Nodes("")
+	alive := make([]string, 0, len(nodes))
+	for _, node := range nodes {
+		if node.Status != StatusDead {
+			alive = append(alive, node.Tag())
+		}
+	}
+	if len(alive) == 0 {
+		// No node is alive: nothing can be served, but outbounds may still be
+		// tried, keep them referenced like the selection does.
+		return common.Uniq(nodeTags(nodes))
+	}
+	return common.Uniq(alive)
+}
+
+// availableNetworks returns available networks of the nodes of the group.
 func (b *Balancer) availableNetworks() []string {
 	var hasTCP, hasUDP bool
 	nodes := b.Nodes("")
@@ -251,11 +216,11 @@ func (b *Balancer) availableNetworks() []string {
 	}
 }
 
-// GetNodes returns all nodes and filtered nodes, and logs the nodes if logging is true
-func (b *Balancer) GetNodes() (all, filtered []*Node) {
+// GetNodes returns all nodes and the selected ones, in preference order
+func (b *Balancer) GetNodes() (all, selected []*Node) {
 	all = b.Nodes(N.NetworkTCP)
-	filtered = b.Objective.Filter(all)
-	return all, filtered
+	selected = Filter(b.Objective, all)
+	return all, selected
 }
 
 // RetainNodes returns the tags of selected, plus the tags of inUse that the keeper

@@ -168,18 +168,23 @@ func rttFromFloat(value float64) healthcheck.RTT {
 	return healthcheck.RTT(value + 0.5)
 }
 
-// Filter implements Objective.
-// NOTICE: be aware of the coding convention of this function
-func (o *LeastObjective) Filter(all []*Node) []*Node {
-	// nodes are either qualified, alive or all nodes
-	nodes := o.QualifiedObjective.Filter(all)
-	o.Sort(nodes)
-	return SelectCluster(nodes, o.tolerance, o.minNodes, o.maxNodes, o.Score)
+// Rank implements Objective, the nodes of a better status come first, then the
+// nodes are ordered by score.
+func (o *LeastObjective) Rank(all []*Node) []*Node {
+	ranked := o.QualifiedObjective.Rank(all)
+	SortByLeast(ranked, o.Score)
+	return ranked
 }
 
-// Sort implements Objective.
-func (o *LeastObjective) Sort(all []*Node) {
-	SortByLeast(all, o.Score)
+// Select implements Objective.
+// NOTICE: be aware of the coding convention of this function
+func (o *LeastObjective) Select(ranked []*Node) []*Node {
+	// nodes are either qualified, alive or all nodes
+	nodes := o.QualifiedObjective.Select(ranked)
+	if len(nodes) == 0 {
+		return nil
+	}
+	return SelectCluster(nodes, o.tolerance, o.minNodes, o.maxNodes, o.Score)
 }
 
 // SelectCluster selects the nodes that are statistically close enough to the best
