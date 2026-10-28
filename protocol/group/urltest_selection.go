@@ -142,8 +142,7 @@ func (c *candidate) latestString() string {
 // score returns the delay an attempt costs on average, which is what the selection
 // compares:
 //
-//	cost  = MED + jitterWeight * STD
-//	score = Mixed(cost)
+//	score = Cost(MED, STD, jitterWeight)
 //
 // MED and STD are the median and the deviation of the successful checks. The deviation
 // is part of the cost because it is the stability of the node that decides the quality
@@ -156,21 +155,16 @@ func (c *candidate) latestString() string {
 // be kept for as long as both are measured.
 //
 // The failures are mixed in rather than part of the median, they would be counted
-// twice, see healthcheck.Stats.Mixed. A score therefore never exceeds the timeout,
+// twice, see healthcheck.Stats.Cost. A score therefore never exceeds the timeout,
 // which a node that fails every check scores.
 //
 // healthcheck.Failed means there is no score: the candidate was not measured, and the
 // zero of a missing value would read as the best possible result.
-func (c *candidate) score(failureDelay healthcheck.RTT) healthcheck.RTT {
+func (c *candidate) score() healthcheck.RTT {
 	if c.class() == classUnmeasured {
 		return healthcheck.Failed
 	}
-	cost := uint32(c.stats.Median) + uint32(jitterWeight)*uint32(c.stats.Deviation)
-	if cost > uint32(failureDelay) {
-		// an attempt never costs more than the timeout it waits for
-		cost = uint32(failureDelay)
-	}
-	return c.stats.Mixed(healthcheck.RTT(cost), failureDelay)
+	return c.stats.Cost(c.stats.Median, c.stats.Deviation, jitterWeight)
 }
 
 // selection is the node selection of the group. It reads the health check statistics
@@ -178,10 +172,9 @@ func (c *candidate) score(failureDelay healthcheck.RTT) healthcheck.RTT {
 // the one with the best score, and keeps it while another one is not better by more
 // than the tolerance.
 type selection struct {
-	source       outboundSource
-	storage      *healthcheck.Storages
-	tolerance    float32
-	failureDelay healthcheck.RTT
+	source    outboundSource
+	storage   *healthcheck.Storages
+	tolerance float32
 
 	access   sync.Mutex
 	selected map[string]selectionEntry
@@ -196,11 +189,10 @@ type selectionEntry struct {
 
 func newSelection(source outboundSource, storage *healthcheck.Storages, tolerance float32) *selection {
 	return &selection{
-		source:       source,
-		storage:      storage,
-		tolerance:    tolerance,
-		failureDelay: healthcheck.FailureDelay(),
-		selected:     make(map[string]selectionEntry),
+		source:    source,
+		storage:   storage,
+		tolerance: tolerance,
+		selected:  make(map[string]selectionEntry),
 	}
 }
 
@@ -280,7 +272,7 @@ func (s *selection) candidates(network string) []*candidate {
 			// no delay to compare, the declaration order is the best guess
 			return false
 		}
-		return left.score(s.failureDelay) < right.score(s.failureDelay)
+		return left.score() < right.score()
 	})
 	return all
 }
@@ -300,7 +292,7 @@ func (s *selection) LogNodes(logger log.ContextLogger, network string) {
 	logger.Info("median delay + failures, ", len(all), " nodes, tolerance ", s.tolerance)
 	for _, node := range all {
 		line := []any{node.String(), " SCORE="}
-		if score := node.score(s.failureDelay); score != healthcheck.Failed {
+		if score := node.score(); score != healthcheck.Failed {
 			line = append(line, score)
 		} else {
 			line = append(line, "None")
@@ -359,8 +351,8 @@ func (s *selection) keep(previous, best *candidate) bool {
 		// no delay to compare, don't switch between nodes that look the same
 		return true
 	}
-	previousScore := uint32(previous.score(s.failureDelay))
-	bestScore := uint32(best.score(s.failureDelay))
+	previousScore := uint32(previous.score())
+	bestScore := uint32(best.score())
 	return previousScore <= bestScore+s.band(bestScore)
 }
 
