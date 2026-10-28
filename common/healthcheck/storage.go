@@ -13,12 +13,6 @@ type Storage struct {
 	validity time.Duration
 	history  []History
 
-	// FailureDelay is the delay attributed to a failed check when computing the
-	// statistics. A check fails because the connection waited for the whole
-	// timeout, so this is what the delay would have been, and dropping it would
-	// make a node failing most of its checks look like the most stable one.
-	FailureDelay RTT
-
 	stats Stats
 }
 
@@ -28,8 +22,8 @@ type History struct {
 	Delay RTT       `json:"delay"`
 }
 
-// FailureDelay is the delay a failed check is counted with. A check fails only after
-// it waited for the whole timeout, so this is what the delay would have been.
+// FailureDelay is the delay a failed check waited for: a check fails only after the
+// whole timeout, so this is what an attempt that fails costs.
 func FailureDelay() RTT {
 	return RTTOf(C.TCPTimeout)
 }
@@ -37,10 +31,9 @@ func FailureDelay() RTT {
 // NewStorage returns a new rtt storage with specified capacity
 func NewStorage(cap uint, validity time.Duration) *Storage {
 	return &Storage{
-		cap:          int(cap),
-		validity:     validity,
-		history:      make([]History, cap),
-		FailureDelay: FailureDelay(),
+		cap:      int(cap),
+		validity: validity,
+		history:  make([]History, cap),
 	}
 }
 

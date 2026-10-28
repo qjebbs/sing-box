@@ -22,7 +22,14 @@ type Stats struct {
 
 // Stats get statistics and write cache for next call
 // Make sure use Mutex.Lock() before calling it, RWMutex.RLock()
-// is not an option since it writes cache
+// is not an option since it writes cache.
+//
+// The delay statistics describe the checks that succeeded only. A failed check waited
+// for the timeout, so it says nothing about the delay the node has when it works: a
+// score that has to account for the failures reads Fail and All, and mixes the timeout
+// in by their own share, see Stats.Mixed. Counting a failure as a delay of the
+// timeout instead would make the delays a description of both, and the consumer would
+// have no way to tell them apart.
 func (s *Storage) Stats() Stats {
 	if s == nil {
 		return Stats{}
@@ -41,16 +48,9 @@ func (s *Storage) refreshStats(now time.Time) {
 	if now.Sub(latest.Time) > s.validity {
 		return
 	}
-	s.stats.Latest = latest.Delay
-	failureDelay := s.FailureDelay
-	if failureDelay == Failed {
-		failureDelay = FailureDelay()
-	}
-	// A failed check is not dropped from the distribution, it is counted with the
-	// delay it would have had. Otherwise a node failing most of its checks would be
-	// described by the few successful ones, and its stability would look excellent.
 	delays := make([]RTT, 0, s.cap)
 	var expiresAt time.Time
+	fail := 0
 	for i := 0; i < s.cap; i++ {
 		// from latest to oldest
 		idx := s.offset(-i)
@@ -63,44 +63,74 @@ func (s *Storage) refreshStats(now time.Time) {
 		expiresAt = itemExpiresAt
 		delay := s.history[idx].Delay
 		if delay == Failed {
-			s.stats.Fail++
-			delay = failureDelay
+			fail++
+		} else {
+			delays = append(delays, delay)
 		}
-		delays = append(delays, delay)
 	}
+	s.stats = newStats(len(delays)+fail, fail, latest.Delay, expiresAt, delays)
+}
 
-	s.stats.Expires = expiresAt
-	s.stats.All = len(delays)
-	if s.stats.All == 0 {
-		return
+// newStats returns the statistics of the values, all of the checks they are a part of,
+// and the number of those that failed.
+func newStats(all int, fail int, latest RTT, expires time.Time, values []RTT) Stats {
+	stats := Stats{
+		All:     all,
+		Fail:    fail,
+		Latest:  latest,
+		Expires: expires,
+	}
+	if len(values) == 0 {
+		return stats
 	}
 	// the values are kept in milliseconds, sum them as int to not overflow
 	sum := 0
 	min := RTT(math.MaxUint16)
-	for _, delay := range delays {
+	for _, delay := range values {
 		sum += int(delay)
 		if min > delay {
 			min = delay
 		}
-		if s.stats.Max < delay {
-			s.stats.Max = delay
+		if stats.Max < delay {
+			stats.Max = delay
 		}
 	}
-	s.stats.Average = RTT(sum / len(delays))
-	s.stats.Median = medianOf(delays)
-	s.stats.Min = min
-	if len(delays) < 2 {
+	stats.Average = RTT(sum / len(values))
+	stats.Median = medianOf(values)
+	stats.Min = min
+	if len(values) < 2 {
 		// no enough data for standard deviation, we assume it's half of the average rtt
 		// if we don't do this, standard deviation of 1 round tested nodes is 0, will always
 		// selected before 2 or more rounds tested nodes
-		s.stats.Deviation = s.stats.Average / 2
-		return
+		stats.Deviation = stats.Average / 2
+		return stats
 	}
 	variance := float64(0)
-	for _, delay := range delays {
-		variance += math.Pow(float64(delay)-float64(s.stats.Average), 2)
+	for _, delay := range values {
+		variance += math.Pow(float64(delay)-float64(stats.Average), 2)
 	}
-	s.stats.Deviation = RTT(math.Sqrt(variance / float64(len(delays))))
+	stats.Deviation = RTT(math.Sqrt(variance / float64(len(values))))
+	return stats
+}
+
+// Succeeded returns the number of checks that succeeded, the samples the delay
+// statistics are computed from.
+func (s Stats) Succeeded() int {
+	return s.All - s.Fail
+}
+
+// Mixed returns the expected value of value per attempt: an attempt either succeeds
+// with value, or fails after waiting for failureDelay, so the two are mixed by the
+// share of the checks that failed. The result never exceeds failureDelay.
+func (s Stats) Mixed(value RTT, failureDelay RTT) RTT {
+	if s.All == 0 {
+		return Failed
+	}
+	mixed := (uint64(s.Succeeded())*uint64(value) + uint64(s.Fail)*uint64(failureDelay)) / uint64(s.All)
+	if mixed > uint64(failureDelay) {
+		return failureDelay
+	}
+	return RTT(mixed)
 }
 
 // medianOf returns the median of the values, the slice is reordered.

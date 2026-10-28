@@ -77,11 +77,12 @@ func TestNodeString(t *testing.T) {
 		stats  healthcheck.Stats
 		want   string
 	}{
-		// a node whose checks all failed has no stability to show
+		// a node whose checks all failed has no delay to show: the statistics describe
+		// the checks that succeeded, and none did
 		{
 			name:  "all failed",
-			stats: healthcheck.Stats{All: 1, Fail: 1, Median: 15000, Average: 15000},
-			want:  "#0 x [nil] STD=None MED=15.00s Latest=None FAIL=1/1",
+			stats: healthcheck.Stats{All: 1, Fail: 1},
+			want:  "#0 x [nil] STD=None MED=None Latest=None FAIL=1/1",
 		},
 		// one successful check among failures still has a deviation
 		{
@@ -135,7 +136,7 @@ func TestNodeStringScaled(t *testing.T) {
 		RTTSacale: 2,
 		Stats:     healthcheck.Stats{All: 1, Fail: 1, Median: 15000},
 	}
-	want = "STD=None MED=15.00s(30.00s) Latest=None"
+	want = "STD=None MED=None Latest=None"
 	if got := node.String(); !strings.Contains(got, want) {
 		t.Fatalf("want %q, got %q", want, got)
 	}

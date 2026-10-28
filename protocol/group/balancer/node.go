@@ -88,19 +88,19 @@ func (n *Node) String() string {
 	)
 }
 
-// deviationString returns the deviation to show. A node whose checks all failed has
-// no stability to speak of: its deviation is the zero of a single repeated value,
-// which reads as the best possible result.
+// deviationString returns the deviation to show. A node that never worked has no
+// stability to speak of: the zero of a missing value reads as the best possible
+// result.
 func (n *Node) deviationString() string {
-	if n.All == 0 || n.Fail == n.All {
+	if n.Stats.Succeeded() == 0 {
 		return "None"
 	}
 	return n.formatRTT(n.Deviation)
 }
 
-// medianString returns the median to show, there is none without a sample.
+// medianString returns the median to show, there is none without a successful check.
 func (n *Node) medianString() string {
-	if n.All == 0 {
+	if n.Stats.Succeeded() == 0 {
 		return "None"
 	}
 	return n.formatRTT(n.Median)

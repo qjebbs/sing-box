@@ -36,7 +36,7 @@ type LeastObjective struct {
 	minNodes  int
 	maxNodes  int
 	// baseFunc is the primary statistic of the objective, it is the first term of
-	// the score.
+	// the score. It is a delay of the checks that succeeded, see healthcheck.Stats.
 	baseFunc func(node *Node) healthcheck.RTT
 	// jitterFunc is added to the score as a penalty, it is nil when baseFunc is the
 	// jitter itself, since adding it again would only scale every score.
@@ -88,26 +88,30 @@ func float32Option(value float32, defaultValue float32) float32 {
 	return value
 }
 
-// Score returns the cost of using the node, lower is better. It starts from the
-// base value of the objective and adds the jitter, since an unstable node stalls
-// connections:
+// Score returns the cost of using the node, lower is better:
 //
-//	score = base + jitterWeight * jitter
+//	score = mixed(base + jitterWeight * jitter)
 //
-// The jitter term is absent when the objective has no jitterFunc, which is the
-// case for leastload: its base is the deviation itself.
+// The jitter term is absent when the objective has no jitterFunc, which is the case
+// for leastload: its base is the deviation itself.
 //
-// Failures are not scored here, they are part of the base already: the statistics
-// count a failed check with the delay of the timeout it waited for, see
-// healthcheck.Storage.FailureDelay.
+// mixed is what an attempt costs on average: an attempt either succeeds with the
+// value above, or fails after waiting for the timeout. The statistics only describe
+// the checks that succeeded, so a node failing most of its checks is described by the
+// few delays that worked, which would read as the best node of all without this term,
+// and a node that never worked has no value to be the best of.
 func (o *LeastObjective) Score(node *Node) healthcheck.RTT {
-	return rttFromFloat(o.scoreOf(node))
+	return node.Stats.Mixed(rttFromFloat(o.scoreOf(node)), healthcheck.FailureDelay())
 }
 
 func (o *LeastObjective) scoreOf(node *Node) float64 {
 	score := float64(o.baseFunc(node))
 	if o.jitterFunc != nil && o.jitterWeight > 0 {
 		score += float64(o.jitterWeight) * float64(o.jitterFunc(node))
+	}
+	if score <= 0 {
+		// no value to mix with the failures, the node never worked
+		return float64(healthcheck.FailureDelay())
 	}
 	return score
 }
@@ -118,11 +122,11 @@ func (o *LeastObjective) scoreOf(node *Node) float64 {
 // error of 1.25σ/√n, and the deviation itself of σ/√(2(n-1)).
 func (o *LeastObjective) scoreStandardError(node *Node) float64 {
 	deviation := float64(node.ScaleRTT(node.Deviation))
-	if node.All < 2 {
+	n := float64(node.Stats.Succeeded())
+	if n < 2 {
 		// a single sample says nothing about the accuracy of its own estimate
 		return deviation
 	}
-	n := float64(node.All)
 	if o.jitterFunc == nil {
 		// the score is the deviation
 		return deviation / math.Sqrt(2*(n-1))

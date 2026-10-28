@@ -102,9 +102,16 @@
 `leastload` 和 `leastping` 目标都以分数排序，越低越好。计算公式为：
 
 ```
-leastload_score = STD
-leastping_score = MED + jitter_weight * STD
+cost = STD                         # leastload
+cost = MED + jitter_weight * STD   # leastping
+
+score = (ALL - FAIL) / ALL × cost + FAIL / ALL × TIMEOUT
 ```
+
+`MED` 与 `STD` 是**成功**检查的中位数与标准差，`FAIL / ALL` 是失败检查的占比，`TIMEOUT` 是失败检查放弃前等待的超时（15s）。
+
+延迟统计只描述成功的检查，因此失败按自身占比混入：一次尝试要么以 `cost` 成功，要么等到 `TIMEOUT` 失败。
+分数就是一次尝试的平均开销，不会超过超时；从未成功过的节点分数为超时，而不是缺失值的零。
 
 #### strategy
 
@@ -120,7 +127,7 @@ leastping_score = MED + jitter_weight * STD
 
 #### max_rtt
 
-合格节点可接受的健康检查最大往返时间。比较的是往返时间中位数，因此单次尖刺不会淘汰一个本来不错的节点。默认为 `0`，即接受任何往返时间。
+合格节点可接受的健康检查最大往返时间。比较的是成功检查的往返时间中位数，因此单次尖刺不会淘汰一个本来不错的节点。默认为 `0`，即接受任何往返时间。
 
 #### max_fail
 
@@ -132,7 +139,7 @@ leastping_score = MED + jitter_weight * STD
 
 与最优节点的最大相对差距，默认为 `0.2`，即最多比最优节点慢 20% 的节点会与它一起被选中。
 
-比较的是[分数](#objective)：`leastping` 的分数包含抖动，两个目标的分数都包含失败的检查，因为统计时它按超时时长计入。
+比较的是[分数](#objective)：`leastping` 的分数包含抖动，两个目标的分数都按失败检查的占比计入失败。
 
 容差以选择中最优的节点为基准计算，因此不会为了凑数而选中明显更差的节点。
 同时始终应用 `10ms` 的绝对下限，避免过小的数值（例如始终稳定节点的标准差）被噪声拆开。

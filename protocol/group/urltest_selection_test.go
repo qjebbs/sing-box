@@ -267,11 +267,11 @@ func TestCandidateString(t *testing.T) {
 			stats: healthcheck.Stats{All: 10, Deviation: 57, Median: 164, Latest: 155},
 			want:  "#1 OK [node] STD=57ms MED=164ms Latest=155ms FAIL=0/10",
 		},
-		// a node whose checks all failed has no stability to show
+		// a node whose checks all failed has no successful delay to show
 		{
 			name:  "all failed",
-			stats: healthcheck.Stats{All: 1, Fail: 1, Median: 15000},
-			want:  "#1 x [node] STD=None MED=15.00s Latest=None FAIL=1/1",
+			stats: healthcheck.Stats{All: 1, Fail: 1},
+			want:  "#1 x [node] STD=None MED=None Latest=None FAIL=1/1",
 		},
 		// a node that was never checked has nothing to show
 		{
@@ -313,8 +313,8 @@ func TestCandidatesNumberedInConfigOrder(t *testing.T) {
 
 func TestCandidateScore(t *testing.T) {
 	t.Parallel()
-	// The failure delay is what a failed check waited for, 15s by default, so one
-	// failure in ten samples adds 1.5s to the median.
+	// The score is the average cost of an attempt: the median of the successful checks
+	// mixed with the timeout the failed ones waited for.
 	const failureDelay = 10000
 	testCases := []struct {
 		name  string
@@ -323,13 +323,14 @@ func TestCandidateScore(t *testing.T) {
 	}{
 		// without a failure the score is the median delay itself
 		{name: "measured", stats: healthcheck.Stats{All: 10, Median: 164, Latest: 160}, want: 164},
-		// a tenth of the attempts wait for the timeout
-		{name: "rare failures", stats: healthcheck.Stats{All: 10, Fail: 1, Median: 164, Latest: 160}, want: 1164},
-		// half of the attempts wait for the timeout
-		{name: "frequent failures", stats: healthcheck.Stats{All: 10, Fail: 5, Median: 164, Latest: 160}, want: 5164},
+		// (9*164 + 1*10000) / 10, a tenth of the attempts wait for the timeout
+		{name: "rare failures", stats: healthcheck.Stats{All: 10, Fail: 1, Median: 164, Latest: 160}, want: 1147},
+		// (5*164 + 5*10000) / 10, half of the attempts wait for the timeout
+		{name: "frequent failures", stats: healthcheck.Stats{All: 10, Fail: 5, Median: 164, Latest: 160}, want: 5082},
+		// every attempt waits for the timeout
+		{name: "all failed", stats: healthcheck.Stats{All: 10, Fail: 10, Latest: healthcheck.Failed}, want: failureDelay},
 		// nothing to compare, and 0ms would read as the best possible result
 		{name: "never checked", stats: healthcheck.Stats{}, want: healthcheck.Failed},
-		{name: "failed", stats: healthcheck.Stats{All: 10, Median: 164, Latest: healthcheck.Failed}, want: healthcheck.Failed},
 	}
 	for _, testCase := range testCases {
 		testCase := testCase
@@ -475,5 +476,15 @@ func TestSelectionIsScaleInvariant(t *testing.T) {
 				t.Fatalf("want %s, got %s", testCase.want, node.tag)
 			}
 		})
+	}
+}
+
+func TestCandidateScoreIsBoundedByTheTimeout(t *testing.T) {
+	t.Parallel()
+	// A node checked with a longer timeout can have a successful delay above the
+	// current one. An attempt still cannot cost more than the timeout it waits for.
+	node := &candidate{stats: healthcheck.Stats{All: 1, Median: 30000, Latest: 30000}}
+	if got := node.score(15000); got != 15000 {
+		t.Fatalf("want the score capped at 15s, got %v", got)
 	}
 }
