@@ -2,6 +2,7 @@ package group
 
 import (
 	"fmt"
+	"math"
 	"sort"
 	"sync"
 
@@ -107,13 +108,24 @@ func (c *candidate) latestString() string {
 	return c.stats.Latest.String()
 }
 
-// score is the value the selection compares. There is none to show for a candidate
-// that was not measured: printing 0ms would read as the best possible result.
-func (c *candidate) score() (healthcheck.RTT, bool) {
+// score returns the delay the selection compares: the median, plus what the failures
+// of the sampling window cost. A check fails only after it waited for the whole
+// timeout, so a node that fails a tenth of its checks makes one attempt in ten wait
+// that long, which adds a tenth of the timeout to the average attempt. A median alone
+// hides that: it stays low while the failures are a minority of the samples.
+//
+// healthcheck.Failed means there is no score: the candidate was not measured, and
+// printing the zero of a missing value would read as the best possible result.
+func (c *candidate) score(failureDelay healthcheck.RTT) healthcheck.RTT {
 	if c.class() != classMeasured {
-		return healthcheck.Failed, false
+		return healthcheck.Failed
 	}
-	return c.stats.Median, true
+	penalty := uint64(c.stats.Fail) * uint64(failureDelay) / uint64(c.stats.All)
+	score := uint64(c.stats.Median) + penalty
+	if score >= math.MaxUint16 {
+		return healthcheck.RTT(math.MaxUint16)
+	}
+	return healthcheck.RTT(score)
 }
 
 // selection is the node selection of the group. It reads the health check statistics
@@ -121,9 +133,10 @@ func (c *candidate) score() (healthcheck.RTT, bool) {
 // takes the one with the lowest median delay, and keeps it while another one is not
 // faster by more than the tolerance.
 type selection struct {
-	source    outboundSource
-	storage   *healthcheck.Storages
-	tolerance healthcheck.RTT
+	source       outboundSource
+	storage      *healthcheck.Storages
+	tolerance    healthcheck.RTT
+	failureDelay healthcheck.RTT
 
 	access   sync.Mutex
 	selected map[string]selectionEntry
@@ -138,10 +151,11 @@ type selectionEntry struct {
 
 func newSelection(source outboundSource, storage *healthcheck.Storages, tolerance healthcheck.RTT) *selection {
 	return &selection{
-		source:    source,
-		storage:   storage,
-		tolerance: tolerance,
-		selected:  make(map[string]selectionEntry),
+		source:       source,
+		storage:      storage,
+		tolerance:    tolerance,
+		failureDelay: healthcheck.FailureDelay(),
+		selected:     make(map[string]selectionEntry),
 	}
 }
 
@@ -221,7 +235,7 @@ func (s *selection) candidates(network string) []*candidate {
 			// no delay to compare, the declaration order is the best guess
 			return false
 		}
-		return left.stats.Median < right.stats.Median
+		return left.score(s.failureDelay) < right.score(s.failureDelay)
 	})
 	return all
 }
@@ -237,10 +251,10 @@ func (s *selection) LogNodes(logger log.ContextLogger, network string) {
 	s.access.Lock()
 	selected := s.selected[network].node
 	s.access.Unlock()
-	logger.Info("median delay, ", len(all), " nodes, tolerance ", s.tolerance)
+	logger.Info("median delay + failures, ", len(all), " nodes, tolerance ", s.tolerance)
 	for _, node := range all {
 		line := []any{node.String(), " SCORE="}
-		if score, ok := node.score(); ok {
+		if score := node.score(s.failureDelay); score != healthcheck.Failed {
 			line = append(line, score)
 		} else {
 			line = append(line, "None")
@@ -289,7 +303,7 @@ func (s *selection) keep(previous, best *candidate) bool {
 		// no delay to compare, don't switch between nodes that look the same
 		return true
 	}
-	return uint32(previous.stats.Median) <= uint32(best.stats.Median)+uint32(s.tolerance)
+	return uint32(previous.score(s.failureDelay)) <= uint32(best.score(s.failureDelay))+uint32(s.tolerance)
 }
 
 // healthCheckTag returns the tag the health check statistics of the outbound are

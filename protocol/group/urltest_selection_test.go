@@ -312,14 +312,20 @@ func TestCandidatesNumberedInConfigOrder(t *testing.T) {
 
 func TestCandidateScore(t *testing.T) {
 	t.Parallel()
+	// The failure delay is what a failed check waited for, 15s by default, so one
+	// failure in ten samples adds 1.5s to the median.
+	const failureDelay = 10000
 	testCases := []struct {
-		name   string
-		stats  healthcheck.Stats
-		want   healthcheck.RTT
-		wantOK bool
+		name  string
+		stats healthcheck.Stats
+		want  healthcheck.RTT
 	}{
-		// the score is the median delay, the value the selection compares
-		{name: "measured", stats: healthcheck.Stats{All: 10, Median: 164, Latest: 160}, want: 164, wantOK: true},
+		// without a failure the score is the median delay itself
+		{name: "measured", stats: healthcheck.Stats{All: 10, Median: 164, Latest: 160}, want: 164},
+		// a tenth of the attempts wait for the timeout
+		{name: "rare failures", stats: healthcheck.Stats{All: 10, Fail: 1, Median: 164, Latest: 160}, want: 1164},
+		// half of the attempts wait for the timeout
+		{name: "frequent failures", stats: healthcheck.Stats{All: 10, Fail: 5, Median: 164, Latest: 160}, want: 5164},
 		// nothing to compare, and 0ms would read as the best possible result
 		{name: "never checked", stats: healthcheck.Stats{}, want: healthcheck.Failed},
 		{name: "failed", stats: healthcheck.Stats{All: 10, Median: 164, Latest: healthcheck.Failed}, want: healthcheck.Failed},
@@ -329,10 +335,47 @@ func TestCandidateScore(t *testing.T) {
 		t.Run(testCase.name, func(t *testing.T) {
 			t.Parallel()
 			node := &candidate{stats: testCase.stats}
-			got, ok := node.score()
-			if got != testCase.want || ok != testCase.wantOK {
-				t.Fatalf("want %v ok=%v, got %v ok=%v", testCase.want, testCase.wantOK, got, ok)
+			if got := node.score(failureDelay); got != testCase.want {
+				t.Fatalf("want %v, got %v", testCase.want, got)
 			}
 		})
+	}
+}
+
+func TestSelectionPenalizesFailures(t *testing.T) {
+	t.Parallel()
+	// 3 of 10 checks failed: the median is still 100ms, because the failures are a
+	// minority of the samples. The attempts that waited for the timeout are what
+	// pushes the node behind one that is twice as slow but never fails.
+	selection, storage := newSelectionForTest(t, 50, "flaky", "clean")
+	for i := 0; i < storage.Cap(); i++ {
+		if i < 3 {
+			storage.Put("flaky", healthcheck.Failed)
+		} else {
+			storage.Put("flaky", 100)
+		}
+		storage.Put("clean", 200)
+	}
+	if tag := selectedTag(selection); tag != "clean" {
+		t.Fatalf("want clean, got %s", tag)
+	}
+}
+
+func TestSelectionFailurePenaltyIsProportional(t *testing.T) {
+	t.Parallel()
+	// One failure in ten makes a tenth of the attempts wait for the 15s timeout,
+	// which is 1.5s of average delay: still better than a node that is 4s slower
+	// every time.
+	selection, storage := newSelectionForTest(t, 0, "flaky", "slow")
+	for i := 0; i < storage.Cap(); i++ {
+		if i == 0 {
+			storage.Put("flaky", healthcheck.Failed)
+		} else {
+			storage.Put("flaky", 100)
+		}
+		storage.Put("slow", 4000)
+	}
+	if tag := selectedTag(selection); tag != "flaky" {
+		t.Fatalf("want flaky, got %s", tag)
 	}
 }

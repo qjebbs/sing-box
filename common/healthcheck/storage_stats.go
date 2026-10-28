@@ -4,8 +4,6 @@ import (
 	"math"
 	"slices"
 	"time"
-
-	C "github.com/sagernet/sing-box/constant"
 )
 
 // Stats is the statistics of RTTs
@@ -46,7 +44,7 @@ func (s *Storage) refreshStats(now time.Time) {
 	s.stats.Latest = latest.Delay
 	failureDelay := s.FailureDelay
 	if failureDelay == Failed {
-		failureDelay = RTTOf(C.TCPTimeout)
+		failureDelay = FailureDelay()
 	}
 	// A failed check is not dropped from the distribution, it is counted with the
 	// delay it would have had. Otherwise a node failing most of its checks would be
