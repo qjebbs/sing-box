@@ -4,12 +4,16 @@ import (
 	"time"
 )
 
+// connectionCapacity is how many connections are remembered for the failure rate. The
+// checks are bounded by the sampling of the health check, which is about how often the
+// probes run; a rate needs a longer run of connections than that to be stable, so the
+// bound is its own. The ring keeps the memory of a busy node constant either way.
+const connectionCapacity = 1024
+
 // Storage holds ping rtts for health Checker, it's not thread safe
 type Storage struct {
-	idx      int
-	cap      int
 	validity time.Duration
-	history  []History
+	history  *ring[History]
 
 	// connections holds the outcomes of the connections the group carried, see
 	// Stats.Connections. They are kept apart from the checks: a check is one probe on a
@@ -19,7 +23,10 @@ type Storage struct {
 	// Both outcomes are kept, not only the failures: a count of failures alone grows
 	// with the traffic of the node, so a busy node would be scored worse than an idle
 	// one whatever its quality.
-	connections []connectionOutcome
+	//
+	// The ring is allocated by the first connection reported, so a node whose traffic
+	// never reaches its group doesn't pay for it.
+	connections *ring[connectionOutcome]
 
 	stats Stats
 }
@@ -33,10 +40,15 @@ type History struct {
 // NewStorage returns a new rtt storage with specified capacity
 func NewStorage(cap uint, validity time.Duration) *Storage {
 	return &Storage{
-		cap:      int(cap),
 		validity: validity,
-		history:  make([]History, cap),
+		history:  newRing[History](int(cap)),
 	}
+}
+
+// now returns the current time without the monotonic clock, so the history survives a
+// computer sleep: https://pkg.go.dev/time#hdr-Monotonic_Clocks
+func now() time.Time {
+	return time.Now().Round(0)
 }
 
 // Put puts a new rtt to the HealthPingResult
@@ -44,8 +56,9 @@ func (s *Storage) Put(d RTT) {
 	if s == nil {
 		return
 	}
-	s.idx = s.offset(1)
-	s.Update(d)
+	s.history.Push(History{Time: now(), Delay: d})
+	// statistics is not valid any more
+	s.stats = Stats{}
 }
 
 // Update updates the last history
@@ -53,11 +66,7 @@ func (s *Storage) Update(d RTT) {
 	if s == nil {
 		return
 	}
-	// strip monotonic clock from `now` to avoid inaccurate
-	// time comparison after computer sleep
-	// https://pkg.go.dev/time#hdr-Monotonic_Clocks
-	s.history[s.idx].Time = time.Now().Round(0)
-	s.history[s.idx].Delay = d
+	s.history.Replace(History{Time: now(), Delay: d})
 	// statistics is not valid any more
 	s.stats = Stats{}
 }
@@ -71,54 +80,50 @@ type connectionOutcome struct {
 
 // ReportConnection records the outcome of a connection the group carried with the node,
 // it is counted until it leaves the validity window.
-func (s *Storage) ReportConnection(now time.Time, established bool) {
+func (s *Storage) ReportConnection(at time.Time, established bool) {
 	if s == nil {
 		return
 	}
-	s.pruneConnections(now)
-	s.connections = append(s.connections, connectionOutcome{time: now, established: established})
-	if len(s.connections) > s.cap {
-		// a longer run says no more about the node than a full sampling window of it
-		s.connections = s.connections[len(s.connections)-s.cap:]
+	if s.connections == nil {
+		s.connections = newRing[connectionOutcome](connectionCapacity)
 	}
+	s.connections.Push(connectionOutcome{time: at, established: established})
 	// statistics is not valid any more
 	s.stats = Stats{}
 }
 
-// pruneConnections drops the connections that left the validity window.
-func (s *Storage) pruneConnections(now time.Time) {
-	if len(s.connections) == 0 {
-		return
-	}
-	cutoff := now.Add(-s.validity)
-	kept := s.connections[:0]
-	for _, connection := range s.connections {
-		if connection.time.After(cutoff) {
-			kept = append(kept, connection)
-		}
-	}
-	s.connections = kept
-}
-
 // ConnectionOutcomes returns how many connections were carried inside the validity
 // window, and how many of them failed.
-func (s *Storage) ConnectionOutcomes(now time.Time) (attempts int, failures int) {
-	s.pruneConnections(now)
-	for _, connection := range s.connections {
+//
+// The oldest connections leave the window first, so the walk stops at the first expired
+// one. When more than the capacity were carried inside the window, the count describes
+// the most recent ones.
+func (s *Storage) ConnectionOutcomes(at time.Time) (attempts int, failures int) {
+	if s.connections == nil {
+		return 0, 0
+	}
+	cutoff := at.Add(-s.validity)
+	for i := 0; i < s.connections.Length(); i++ {
+		connection, _ := s.connections.At(i)
+		if !connection.time.After(cutoff) {
+			break
+		}
+		attempts++
 		if !connection.established {
 			failures++
 		}
 	}
-	return len(s.connections), failures
+	return attempts, failures
 }
 
-// Get gets the history at the offset to the latest history, ignores the validity
+// Get gets the history at the offset to the latest history, ignores the validity.
+// The offset is counted backwards: 0 is the latest, -1 the one before it.
 func (s *Storage) Get(offset int) *History {
 	if s == nil {
 		return nil
 	}
-	rtt := s.history[s.offset(offset)]
-	if rtt.Time.IsZero() {
+	rtt, loaded := s.history.At(-offset)
+	if !loaded || rtt.Time.IsZero() {
 		return nil
 	}
 	return &rtt
@@ -134,25 +139,13 @@ func (s *Storage) All() []*History {
 	if s == nil {
 		return nil
 	}
-	all := make([]*History, 0, s.cap)
-	for i := 0; i < s.cap; i++ {
-		rtt := s.history[s.offset(-i)]
+	all := make([]*History, 0, s.history.Length())
+	for i := 0; i < s.history.Length(); i++ {
+		rtt, _ := s.history.At(i)
 		if rtt.Time.IsZero() {
 			break
 		}
 		all = append(all, &rtt)
 	}
 	return all
-}
-
-func (s *Storage) offset(n int) int {
-	idx := s.idx
-	idx += n
-	if idx >= s.cap {
-		idx %= s.cap
-	} else if idx < 0 {
-		idx %= s.cap
-		idx += s.cap
-	}
-	return idx
 }
