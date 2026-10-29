@@ -51,6 +51,7 @@ const (
 
 	TypeLoadBalance = "loadbalance"
 	TypeChain       = "chain"
+	TypeFallback    = "fallback"
 )
 
 func ProxyDisplayName(proxyType string) string {
@@ -123,6 +124,8 @@ func ProxyDisplayName(proxyType string) string {
 		return "LoadBalance"
 	case TypeChain:
 		return "Chain"
+	case TypeFallback:
+		return "Fallback"
 	default:
 		return "Unknown"
 	}
