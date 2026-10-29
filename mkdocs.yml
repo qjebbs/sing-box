@@ -206,6 +206,7 @@ nav:
           - URLTest: configuration/outbound/urltest.md
           - LoadBalance: configuration/outbound/loadbalance.md
           - Chain: configuration/outbound/chain.md
+          - Fallback: configuration/outbound/fallback.md
       - Provider:
           - configuration/provider/index.md
       - Service:

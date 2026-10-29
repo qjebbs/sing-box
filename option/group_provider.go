@@ -26,6 +26,15 @@ type ChainOptions struct {
 	Outbounds []string `json:"outbounds" reference:"outbound"`
 }
 
+// FallbackOutboundOptions is the options for the fallback outbound
+type FallbackOutboundOptions struct {
+	ProviderGroupCommonOption
+	// HealthCheck is optional here, unlike the load balancing groups: when it is not
+	// set, no health checker is attached at all, no check round is ever started and
+	// the outbounds are simply tried in the declared order.
+	HealthCheck *HealthCheckOptions `json:"health_check,omitempty"`
+}
+
 // ProviderGroupCommonOption is the common options for group outbounds with providers support
 type ProviderGroupCommonOption struct {
 	Outbounds    []string `json:"outbounds" reference:"outbound"`

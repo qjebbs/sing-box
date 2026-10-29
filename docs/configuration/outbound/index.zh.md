@@ -41,6 +41,7 @@
 | `naive`        | [NaiveProxy](./naive/)          |
 | `loadbalance`  | [LoadBalance](./loadbalance/)   |
 | `chain`  | [Chain](./chain/)   |
+| `fallback`     | [Fallback](./fallback/)         |
 
 #### tag
 

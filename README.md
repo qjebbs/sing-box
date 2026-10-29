@@ -17,6 +17,7 @@ For extended features
 - URL Test: [中文](./docs/configuration/outbound/urltest.zh.md), [English](./docs/configuration/outbound/urltest.md)
 - Load Balance: [中文](./docs/configuration/outbound/loadbalance.zh.md), [English](./docs/configuration/outbound/loadbalance.md)
 - Proxy Chain: [中文](./docs/configuration/outbound/chain.zh.md), [English](./docs/configuration/outbound/chain.md)
+- Fallback: [中文](./docs/configuration/outbound/fallback.zh.md), [English](./docs/configuration/outbound/fallback.md)
 - Health Check: [中文](./docs/configuration/shared/health-check.zh.md), [English](./docs/configuration/shared/health-check.md)
 - Muiltifile Configuration Extended: [中文](./docs/configuration/index.zh.md), [English](./docs/configuration/index.md)
 
