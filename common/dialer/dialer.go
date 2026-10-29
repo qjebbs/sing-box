@@ -38,16 +38,15 @@ func New(ctx context.Context, options option.DialerOptions, remoteIsDomain bool)
 }
 
 func NewWithOptions(options Options) (N.Dialer, error) {
-	if detour := detourOverrideFromContext(options.Context); detour != nil {
-		return detour, nil
-	}
 	dialOptions := options.Options
 	var (
 		dialer N.Dialer
 		err    error
 	)
-	hasDetour := dialOptions.Detour != "" || options.DefaultOutbound
-	if dialOptions.Detour != "" {
+	hasDetour := dialOptions.Detour != "" || dialOptions.DetourDialer != nil || options.DefaultOutbound
+	if dialOptions.DetourDialer != nil {
+		dialer = dialOptions.DetourDialer
+	} else if dialOptions.Detour != "" {
 		outboundManager := service.FromContext[adapter.OutboundManager](options.Context)
 		if outboundManager == nil {
 			return nil, E.New("missing outbound manager")

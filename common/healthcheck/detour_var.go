@@ -28,14 +28,15 @@ func detourVarFromContext(ctx context.Context) N.Dialer {
 	return value.(N.Dialer)
 }
 
-// newDetourVar creates a new Dialer that uses the detour from the context.
-// To set the detour, use service.ContextWith[DetourVar]().
-func newDetourVar() N.Dialer {
-	return &detourVar{}
-}
+// sharedDetourVar is the innermost detour of every detour_of chain. It carries no state: the
+// outbound it stands for is taken from the context of each check, so every checker can share one.
+var sharedDetourVar N.Dialer = &detourVar{}
 
 var _ N.Dialer = (*detourVar)(nil)
 
+// detourVar stands for the outbound a check carries, which is only known at dial time. It is
+// handed to CreateDetour as the innermost detour and resolves the outbound from the context of
+// the dial, see contextWithDetourVar.
 type detourVar struct{}
 
 func (d *detourVar) DialContext(ctx context.Context, network string, destination M.Socksaddr) (net.Conn, error) {

@@ -11,6 +11,7 @@ import (
 	"github.com/sagernet/sing/common/json/badjson"
 	"github.com/sagernet/sing/common/json/badoption"
 	M "github.com/sagernet/sing/common/metadata"
+	N "github.com/sagernet/sing/common/network"
 	"github.com/sagernet/sing/service"
 )
 
@@ -79,6 +80,10 @@ type DialerOptionsWrapper interface {
 
 type DialerOptions struct {
 	Detour string `json:"detour,omitempty" reference:"outbound"`
+	// DetourDialer is a detour that is already resolved, and takes precedence over Detour. It is
+	// never configured: a chained outbound is created from a copy of the options with its detour
+	// set to the node it must dial through, which has no tag of its own.
+	DetourDialer N.Dialer `json:"-"`
 	AbstractDialerOptions
 }
 

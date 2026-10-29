@@ -28,7 +28,6 @@ var (
 // Chain is a chain of outbounds.
 type Chain struct {
 	outbound.Adapter
-	ctx        context.Context
 	router     adapter.Router
 	logger     log.ContextLogger
 	outbound   adapter.OutboundManager
@@ -45,7 +44,6 @@ func NewChain(ctx context.Context, router adapter.Router, logger log.ContextLogg
 	}
 	Chain := &Chain{
 		Adapter:    outbound.NewAdapter(C.TypeChain, tag, []string{N.NetworkTCP, N.NetworkUDP}, options.Outbounds),
-		ctx:        ctx,
 		router:     router,
 		logger:     logger,
 		outbound:   service.FromContext[adapter.OutboundManager](ctx),
@@ -70,7 +68,7 @@ func (s *Chain) Start(stage adapter.StartStage, scope *adapter.Scope) error {
 	}
 	for i := len(s.outboundTags) - 2; i >= 0; i-- {
 		tag := s.outboundTags[i]
-		outbound, err := s.outbound.DupOverrideDetour(s.ctx, scope, s.router, tag, s.logger, detour)
+		outbound, err := s.outbound.CreateDetour(scope.Context(), s.router, s.logger, tag, detour, scope)
 		if err != nil {
 			return E.New("failed to create [", tag, "] for chain [", s.Tag(), "]: ", err)
 		}

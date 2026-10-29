@@ -14,6 +14,7 @@ import (
 	"github.com/sagernet/sing/common/batch"
 	E "github.com/sagernet/sing/common/exceptions"
 	"github.com/sagernet/sing/common/json/badoption"
+	N "github.com/sagernet/sing/common/network"
 	"github.com/sagernet/sing/service"
 	"github.com/sagernet/sing/service/pause"
 )
@@ -37,7 +38,7 @@ type HealthCheck struct {
 	mergedProviders *mergedProvider
 	cancel          context.CancelFunc
 	detourOf        []adapter.Outbound
-	// detourScope holds the lifetime of the outbounds returned by DupOverrideDetour.
+	// detourScope holds the lifetime of the outbounds returned by CreateDetour.
 	detourScope   *adapter.Scope
 	globalHistory *urltest.HistoryStorage
 
@@ -133,18 +134,20 @@ func (h *HealthCheck) Start() error {
 		if h.om == nil {
 			return E.New("missing outbound manager")
 		}
-		detour := newDetourVar()
 		h.detourOf = make([]adapter.Outbound, len(h.options.DetourOf))
 		// All detour duplicates share a single scope and are torn down together in Close.
 		h.detourScope = adapter.NewScope(h.ctx, h.logger)
+		// The innermost detour is the checked outbound itself, which the check supplies through
+		// the context, so one set of duplicates serves every node, see checkOutbound.
+		var detour N.Dialer = sharedDetourVar
 		for i := len(h.options.DetourOf) - 1; i >= 0; i-- {
 			tag := h.options.DetourOf[i]
-			outbound, err := h.om.DupOverrideDetour(h.ctx, h.detourScope, h.router, tag, h.logger, detour)
+			detoured, err := h.om.CreateDetour(h.detourScope.Context(), h.router, h.logger, tag, detour, h.detourScope)
 			if err != nil {
 				return E.Cause(err, "detour_of")
 			}
-			h.detourOf[i] = outbound
-			detour = outbound
+			h.detourOf[i] = detoured
+			detour = detoured
 		}
 	}
 	ctx, cancel := context.WithCancel(context.Background())
