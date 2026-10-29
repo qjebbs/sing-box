@@ -18,7 +18,7 @@
   "include": "",
   "health_check": "",
   "pick": {
-    "objective": "leastload",
+    "objective": "alive",
     "strategy": "random",
     "max_fail": 0,
     "max_rtt": "1000ms",
