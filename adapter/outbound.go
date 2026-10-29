@@ -49,11 +49,12 @@ type OutboundManager interface {
 	Default() Outbound
 	Remove(tag string) error
 	Create(ctx context.Context, router Router, logger log.ContextLogger, tag string, outboundType string, options any) error
-	// DupOverrideDetour duplicates the outbound with the specified tag and sets the override and detour for the duplicated outbound.
+	// CreateDetour creates a copy of the outbound with the specified tag, dialing through detour
+	// instead of its configured detour. The copy keeps the tag of the outbound it copies and is
+	// not managed by the manager: it starts in the given scope and lives until that scope is
+	// closed, so several detoured outbounds can share one scope.
 	// The original outbound is not affected.
-	// The duplicated outbound is not managed by the manager, it starts in the given scope
-	// and lives until that scope is closed, so several duplicates can share one scope.
-	DupOverrideDetour(ctx context.Context, scope *Scope, router Router, tag string, logger log.ContextLogger, detour N.Dialer) (Outbound, error)
+	CreateDetour(ctx context.Context, router Router, logger log.ContextLogger, tag string, detour N.Dialer, scope *Scope) (Outbound, error)
 }
 
 type IdleConnectionKeeper interface {

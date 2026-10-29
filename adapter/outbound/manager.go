@@ -3,12 +3,13 @@ package outbound
 import (
 	"context"
 	"os"
+	"reflect"
 	"strings"
 	"sync"
 
 	"github.com/sagernet/sing-box/adapter"
-	"github.com/sagernet/sing-box/common/dialer"
 	"github.com/sagernet/sing-box/log"
+	"github.com/sagernet/sing-box/option"
 	"github.com/sagernet/sing/common"
 	E "github.com/sagernet/sing/common/exceptions"
 	N "github.com/sagernet/sing/common/network"
@@ -341,28 +342,33 @@ func (m *Manager) isInternal(tag string) bool {
 	return internal
 }
 
-// DupOverrideDetour duplicates the outbound with the specified tag and sets the override and detour for the duplicated outbound.
-// The original outbound is not affected.
-// The duplicated outbound starts in the given scope and lives until that scope is closed.
-func (m *Manager) DupOverrideDetour(ctx context.Context, scope *adapter.Scope, router adapter.Router, tag string, logger log.ContextLogger, detour N.Dialer) (adapter.Outbound, error) {
+// CreateDetour creates a copy of the outbound with the specified tag, dialing through detour
+// instead of its configured detour. The copy is not managed by the manager: it lives in the scope
+// provided by the caller, which is responsible for closing it. When its start fails it is
+// detached from that scope right away instead, it is not a running component the caller could
+// use.
+//
+// The original outbound is not affected: the options are copied, so neither the configuration nor
+// the running instance is shared. The detour is handed over as a dialer rather than as a tag,
+// because the copy is not registered and has no tag to be looked up by.
+func (m *Manager) CreateDetour(ctx context.Context, router adapter.Router, logger log.ContextLogger, tag string, detour N.Dialer, scope *adapter.Scope) (adapter.Outbound, error) {
 	m.access.RLock()
 	conf, found := m.confByTag[tag]
 	m.access.RUnlock()
 	if !found {
-		return nil, os.ErrInvalid
+		return nil, E.New("[", tag, "] is not an outbound that can be chained")
 	}
-	// It's hacky here, works only if all outbound creations invoke dialer.New()
-	ctx, used := dialer.ContextWithDetourOverride(ctx, detour)
-	outbound, err := m.registry.CreateOutbound(ctx, router, logger, tag, conf.typ, conf.options)
+	if detour == nil {
+		return nil, E.New("missing detour for [", tag, "]")
+	}
+	options, err := conf.detourOptions(detour)
 	if err != nil {
 		return nil, err
 	}
-	if !used() {
-		return nil, E.New("[" + tag + "] detour not overridable")
+	outbound, err := m.registry.CreateOutbound(ctx, router, logger, tag, conf.typ, options)
+	if err != nil {
+		return nil, err
 	}
-	// The duplicated outbound is not managed by the manager: it lives in the scope provided
-	// by the caller, which is responsible for closing it. When its start fails it is detached
-	// from that scope right away instead, it is not a running component the caller could use.
 	if lifecycle, isLifecycle := outbound.(adapter.Lifecycle); isLifecycle {
 		name := "outbound/" + outbound.Type() + "[" + tag + "]"
 		for _, stage := range adapter.ListStartStages {
@@ -373,4 +379,25 @@ func (m *Manager) DupOverrideDetour(ctx context.Context, scope *adapter.Scope, r
 		}
 	}
 	return outbound, nil
+}
+
+// detourOptions copies the options of the outbound and points their detour at detour.
+func (c *confItem) detourOptions(detour N.Dialer) (any, error) {
+	value := reflect.ValueOf(c.options)
+	if value.Kind() != reflect.Ptr || value.IsNil() {
+		return nil, E.New("outbound type ", c.typ, " has no options to set a detour on")
+	}
+	// Only the top level is copied: the detour is the single field replaced, so the nested
+	// values can keep being shared with the configuration the copy came from.
+	cloned := reflect.New(value.Type().Elem())
+	cloned.Elem().Set(value.Elem())
+	dialerOptionsWrapper, isDialerOptionsWrapper := cloned.Interface().(option.DialerOptionsWrapper)
+	if !isDialerOptionsWrapper {
+		return nil, E.New("outbound type ", c.typ, " has no dialer options to set a detour on")
+	}
+	dialerOptions := dialerOptionsWrapper.TakeDialerOptions()
+	dialerOptions.Detour = ""
+	dialerOptions.DetourDialer = detour
+	dialerOptionsWrapper.ReplaceDialerOptions(dialerOptions)
+	return cloned.Interface(), nil
 }
