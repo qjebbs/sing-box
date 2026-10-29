@@ -12,7 +12,9 @@ import (
 	"github.com/sagernet/sing-box/log"
 	"github.com/sagernet/sing-box/option"
 	"github.com/sagernet/sing-box/protocol/group/balancer"
+	"github.com/sagernet/sing/common"
 	E "github.com/sagernet/sing/common/exceptions"
+	N "github.com/sagernet/sing/common/network"
 )
 
 func RegisterURLTestProvider(registry *outbound.Registry) {
@@ -80,4 +82,12 @@ func NewURLTestProvider(ctx context.Context, router adapter.Router, logger log.C
 			},
 		}),
 	}, nil
+}
+
+// All implements adapter.OutboundGroup
+func (g *URLTestProvider) All() []string {
+	all := g.Nodes(N.NetworkTCP)
+	return common.Map(all, func(node *balancer.Node) string {
+		return node.Tag()
+	})
 }
