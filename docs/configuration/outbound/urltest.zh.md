@@ -27,7 +27,9 @@
 ### 选择
 
 本组是[负载均衡](/zh/configuration/outbound/loadbalance/)组的一种特例配置：
-`min_nodes` 与 `max_nodes` 均为 `1`。它始终只使用分数最好的一个节点。
+
+`objective` 默认为 `leastping`，可选 `leastload`；
+`min_nodes` 与 `max_nodes` 均为 `1`，始终只使用分数最好的一个节点。
 
 ### 字段
 

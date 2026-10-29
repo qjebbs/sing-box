@@ -27,8 +27,10 @@
 ### Selection
 
 The group is a special case of the
-[load balance](/configuration/outbound/loadbalance/) group: `min_nodes` and
-`max_nodes` are both `1`. It always uses only the node with the best score.
+[load balance](/configuration/outbound/loadbalance/) group:
+
+`objective` defaults to `leastping`, `leastload` is also available;
+`min_nodes` and `max_nodes` are both `1`, it always uses only the node with the best score.
 
 ### Fields
 
