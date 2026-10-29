@@ -561,6 +561,19 @@ func (s *Box) startComponents(stage adapter.StartStage, components ...boxCompone
 	return nil
 }
 
+// startDebugServer starts the debug endpoints, they are not started before the start
+// stage, so a client created to dial does not open the port.
+func (s *Box) startDebugServer() error {
+	debugHTTPServer, err := startDebugHTTPServer(s.debugOptions)
+	if err != nil {
+		return err
+	}
+	if debugHTTPServer != nil {
+		s.scope.Add(debugHTTPServer.Close)
+	}
+	return nil
+}
+
 func (s *Box) startInternalServices(stage adapter.StartStage) error {
 	for _, lifecycleService := range s.internalService {
 		err := s.scope.Start(lifecycleService.Name(), lifecycleService, stage)
@@ -581,13 +594,6 @@ func (s *Box) preStart() error {
 	}
 	s.scope.Add(s.logFactory.Close)
 	applyDebugOptions(s.debugOptions)
-	debugHTTPServer, err := startDebugHTTPServer(s.debugOptions)
-	if err != nil {
-		return err
-	}
-	if debugHTTPServer != nil {
-		s.scope.Add(debugHTTPServer.Close)
-	}
 	err = s.startInternalServices(adapter.StartStateInitialize) // cache-file clash-api v2ray-api
 	if err != nil {
 		return err
@@ -629,6 +635,10 @@ func (s *Box) preStart() error {
 
 func (s *Box) start() error {
 	err := s.preStart()
+	if err != nil {
+		return err
+	}
+	err = s.startDebugServer()
 	if err != nil {
 		return err
 	}
