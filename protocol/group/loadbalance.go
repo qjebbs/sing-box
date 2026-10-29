@@ -126,9 +126,6 @@ func (s *LoadBalance) AttachConnection(closer io.Closer, outboundTag string) (de
 
 // All implements adapter.OutboundGroup
 func (s *LoadBalance) All() []string {
-	// s.LogNodes()
-	// return s.GroupAdapter.All()
-
 	_, filtered := s.GetNodes()
 	return common.Map(filtered, func(node *balancer.Node) string {
 		return node.Tag()
