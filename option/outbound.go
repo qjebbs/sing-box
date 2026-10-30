@@ -20,6 +20,10 @@ type OutboundOptionsRegistry interface {
 	CreateOptions(outboundType string) (any, bool)
 }
 
+// legacyRelayType is the type name of the relay outbound before it was renamed and its order was
+// reversed. It is only recognized to report the migration, see UnmarshalJSONContext.
+const legacyRelayType = "chain"
+
 type _Outbound struct {
 	Type    string `json:"type"`
 	Tag     string `json:"tag,omitempty"`
@@ -44,6 +48,8 @@ func (h *Outbound) UnmarshalJSONContext(ctx context.Context, content []byte) err
 	switch h.Type {
 	case C.TypeDNS:
 		return E.New("dns outbound is deprecated in sing-box 1.11.0 and removed in sing-box 1.13.0, use rule actions instead")
+	case legacyRelayType:
+		return E.New("the chain outbound is renamed to relay: reverse its outbounds, which are listed in the order the connection passes through, and use \"type\": \"relay\"")
 	}
 	options, loaded := registry.CreateOptions(h.Type)
 	if !loaded {
