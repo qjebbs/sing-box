@@ -393,7 +393,7 @@ func (c *confItem) detourOptions(detour N.Dialer) (any, error) {
 	cloned.Elem().Set(value.Elem())
 	dialerOptionsWrapper, isDialerOptionsWrapper := cloned.Interface().(option.DialerOptionsWrapper)
 	if !isDialerOptionsWrapper {
-		return nil, E.New("outbound type ", c.typ, " has no dialer options to set a detour on")
+		return nil, &adapter.NoDialFieldsError{OutboundType: c.typ}
 	}
 	dialerOptions := dialerOptionsWrapper.TakeDialerOptions()
 	dialerOptions.Detour = ""
