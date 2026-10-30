@@ -11,10 +11,10 @@ https://sing-box.sagernet.org
 For extended features
 
 > [!WARNING]
-> Outbound groups, including `urltest` / `loadbalance` are significantly changed. Check the doc above to update your configuration.
-
-> [!WARNING]
-> The `chain` outbound is renamed to `relay` and lists its nodes in the order the connection passes through them, so the last one is the final exit. The `detour_of` of the health check is renamed to `relay_path` and lists its nodes in the same order. An existing chain has to be renamed, and both lists reversed.
+> Outbound groups and health checks are significantly changed in an incompatible way, Check the doc and update all related configurations. 
+> - The `urltest` / `loadbalance` options are changed. 
+> - The `chain` outbound is renamed to `relay` and lists its nodes in the order the connection passes through them, so the last one is the final exit. 
+> - The health check fields are changed as well, with `detour_of` renamed to `relay_path`, listing its nodes in the same order, and `destination` renamed to `url`. 
 
 - Providers: [中文](./docs/configuration/provider/index.zh.md), [English](./docs/configuration/provider/index.md)
 - URL Test: [中文](./docs/configuration/outbound/urltest.zh.md), [English](./docs/configuration/outbound/urltest.md)
