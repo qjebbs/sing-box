@@ -14,7 +14,7 @@ type _HealthCheckOptions struct {
 	Tag         string             `json:"tag,omitempty"`
 	Interval    badoption.Duration `json:"interval"`
 	Sampling    uint               `json:"sampling"`
-	Destination string             `json:"destination"`
+	URL         string             `json:"url"`
 	IdleTimeout badoption.Duration `json:"idle_timeout,omitempty"`
 	RelayPath   []string           `json:"relay_path,omitempty"`
 }

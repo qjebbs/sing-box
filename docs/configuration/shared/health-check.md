@@ -10,7 +10,7 @@ When object:
 {
   "interval": "5m",
   "sampling": 10,
-  "destination": "https://www.gstatic.com/generate_204",
+  "url": "https://www.gstatic.com/generate_204",
   "idle_timeout": "30m",
   "relay_path": [
     "proxy-a",
@@ -35,7 +35,7 @@ Each entry of the top-level `health_checks` uses the same object structure, with
       "tag": "default",
       "interval": "5m",
       "sampling": 10,
-      "destination": "https://www.gstatic.com/generate_204"
+      "url": "https://www.gstatic.com/generate_204"
     }
   ]
 }
@@ -55,9 +55,9 @@ The interval of health check for each node. Must be greater than `10s`, default 
 
 The number of recent health check results to sample. Must be greater than `0`, default is `10`.
 
-#### destination
+#### url
 
-The destination URL for health check. Default is `https://www.gstatic.com/generate_204`.
+The URL for health check. Default is `https://www.gstatic.com/generate_204`.
 
 !!! note ""
 

@@ -10,7 +10,7 @@
 {
   "interval": "5m",
   "sampling": 10,
-  "destination": "https://www.gstatic.com/generate_204",
+  "url": "https://www.gstatic.com/generate_204",
   "idle_timeout": "30m",
   "relay_path": [
     "proxy-a",
@@ -33,7 +33,7 @@
       "tag": "default",
       "interval": "5m",
       "sampling": 10,
-      "destination": "https://www.gstatic.com/generate_204"
+      "url": "https://www.gstatic.com/generate_204"
     }
   ]
 }
@@ -53,7 +53,7 @@
 
 对最近的多少次检查结果进行采样。大于 `0`，默认为 `10`。
 
-#### destination
+#### url
 
 用于健康检查的链接。默认使用 `https://www.gstatic.com/generate_204`。
 

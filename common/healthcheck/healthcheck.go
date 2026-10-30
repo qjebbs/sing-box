@@ -76,8 +76,8 @@ func NewHealthCheck(
 	if options == nil {
 		options = &option.HealthCheckOptions{}
 	}
-	if options.Destination == "" {
-		options.Destination = "https://www.gstatic.com/generate_204"
+	if options.URL == "" {
+		options.URL = "https://www.gstatic.com/generate_204"
 	}
 	if options.Interval <= 0 {
 		options.Interval = badoption.Duration(5 * time.Minute)
@@ -529,7 +529,7 @@ func (h *HealthCheck) checkOutbound(ctx context.Context, outbound adapter.Outbou
 	}
 	testChan := make(chan checkResult, 1)
 	go func() {
-		delay, err := urltest.URLTest(testCtx, h.options.Destination, outbound)
+		delay, err := urltest.URLTest(testCtx, h.options.URL, outbound)
 		testChan <- checkResult{delay, err}
 	}()
 	var result checkResult
