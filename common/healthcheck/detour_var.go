@@ -28,7 +28,7 @@ func detourVarFromContext(ctx context.Context) N.Dialer {
 	return value.(N.Dialer)
 }
 
-// sharedDetourVar is the innermost detour of every detour_of chain. It carries no state: the
+// sharedDetourVar is the innermost detour of every relay_path chain. It carries no state: the
 // outbound it stands for is taken from the context of each check, so every checker can share one.
 var sharedDetourVar N.Dialer = &detourVar{}
 

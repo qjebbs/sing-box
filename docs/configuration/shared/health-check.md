@@ -12,7 +12,7 @@ When object:
   "sampling": 10,
   "destination": "https://www.gstatic.com/generate_204",
   "idle_timeout": "30m",
-  "detour_of": [
+  "relay_path": [
     "proxy-a",
     "proxy-b"
   ]
@@ -78,38 +78,33 @@ older than `(sampling+1) * interval` are discarded.
 
 Values smaller than `interval` are raised to `interval`.
 
-#### detour_of
+#### relay_path
 
-The chain lists its nodes in the order the connection passes through them, and only the first one
-can be a group. Let's say you have an outbound chain through such a group:
+Run the health check as a relay, with the checked node as the entry.
+
+Restrictions: The nodes other than the entry cannot be outbound groups, so `selector`, `loadbalance`,
+etc. are not supported here.
+
+Let's say the Entry is an outbound group, and you configure a relay as follows:
 
 ```json
 {
-  "tag": "chain",
-  "type": "chain",
-  "outbounds": ["A", "B"]
+  "tag": "relay",
+  "type": "relay",
+  "outbounds": ["Entry Group", "Hop", "Exit"]
 }
 ```
-The actual chain is:
 
-```
-LoadBalance (A) ---> Shadowsocks (B)
-```
+The actual chain is: `a node of Entry Group` -> `Hop` -> `Exit`
 
-And you want the health check of each node of `A` to be exactly the same as above, just list the
-nodes the check passes after the group:
+And you want the health check chain to be the same as above, just configure the nodes other than
+the entry:
 
 ```json
-"detour_of": ["B"]
+"relay_path": ["Hop", "Exit"]
 ```
 
-The check chain will be:
-
-```
-Trojan [A.Node] ---> Shadowsocks (B)
-```
+The check chain will be: `the checked node of Entry Group` -> `Hop` -> `Exit`
 
 If not, it would be almost impossible to detect such nodes, which are fine to use directly, but not when they're used as an upstream, due to audit rules and other reasons.
 Configuring this item can also avoid the server from hijacking the test request, and improve the accuracy of the health check.
-
-Restrictions: This configuration does not support adding outbound groups, such as `selector`, `loadbalance`, `chain`.

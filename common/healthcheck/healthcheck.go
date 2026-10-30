@@ -37,7 +37,10 @@ type HealthCheck struct {
 	Storage         *Storages
 	mergedProviders *mergedProvider
 	cancel          context.CancelFunc
-	detourOf        []adapter.Outbound
+	// relayExit is the outbound the check is dialed by, the last one of relay_path. The nodes
+	// before it are reachable through its dialer chain, which reaches the one it dials through
+	// down to the checked node, so there is no need to keep them here.
+	relayExit adapter.Outbound
 	// detourScope holds the lifetime of the outbounds returned by CreateDetour.
 	detourScope   *adapter.Scope
 	globalHistory *urltest.HistoryStorage
@@ -130,23 +133,23 @@ func (h *HealthCheck) Start() error {
 	if h.cancel != nil {
 		return nil
 	}
-	if len(h.options.DetourOf) > 0 {
+	if len(h.options.RelayPath) > 0 {
 		if h.om == nil {
 			return E.New("missing outbound manager")
 		}
-		h.detourOf = make([]adapter.Outbound, len(h.options.DetourOf))
-		// All detour duplicates share a single scope and are torn down together in Close.
+		// All detour duplicates share a single scope, which closes them in Close.
 		h.detourScope = adapter.NewScope(h.ctx, h.logger)
-		// The innermost detour is the checked outbound itself, which the check supplies through
-		// the context, so one set of duplicates serves every node, see checkOutbound.
+		// The checked outbound is the entry, which the check supplies through the context, and
+		// each duplicate dials through the one before it: the list is the order the check passes
+		// through it, the same as the outbounds of a relay. Only the last one, the exit, has to be
+		// kept, see checkOutbound.
 		var detour N.Dialer = sharedDetourVar
-		for i := len(h.options.DetourOf) - 1; i >= 0; i-- {
-			tag := h.options.DetourOf[i]
+		for _, tag := range h.options.RelayPath {
 			detoured, err := h.om.CreateDetour(h.detourScope.Context(), h.router, h.logger, tag, detour, h.detourScope)
 			if err != nil {
-				return E.Cause(err, "detour_of")
+				return E.Cause(err, "relay_path")
 			}
-			h.detourOf[i] = detoured
+			h.relayExit = detoured
 			detour = detoured
 		}
 	}
@@ -513,9 +516,9 @@ func (h *HealthCheck) checkOutbound(ctx context.Context, outbound adapter.Outbou
 	testCtx, cancel := context.WithTimeout(ctx, C.TCPTimeout)
 	defer cancel()
 	testCtx = log.ContextWithOverrideLevel(testCtx, log.LevelDebug)
-	if len(h.detourOf) > 0 {
+	if h.relayExit != nil {
 		testCtx = contextWithDetourVar(testCtx, outbound)
-		outbound = h.detourOf[0]
+		outbound = h.relayExit
 	}
 	// Run the test in a goroutine and race it against the context timeout,
 	// so a single check can never hang longer than C.TCPTimeout even if the

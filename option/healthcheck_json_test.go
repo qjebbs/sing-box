@@ -20,7 +20,7 @@ func TestHealthCheckOptionsJSON(t *testing.T) {
 	}
 	// 内联配置
 	var o2 HealthCheckOptions
-	if err := json.Unmarshal([]byte(`{"interval": "5m", "destination": "https://example.com", "detour_of": ["a"]}`), &o2); err != nil {
+	if err := json.Unmarshal([]byte(`{"interval": "5m", "destination": "https://example.com", "relay_path": ["a"]}`), &o2); err != nil {
 		t.Fatal(err)
 	}
 	if o2.Tag != "" {
