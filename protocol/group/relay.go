@@ -2,6 +2,7 @@ package group
 
 import (
 	"context"
+	"errors"
 	"net"
 
 	"github.com/sagernet/sing-box/adapter"
@@ -76,7 +77,15 @@ func (s *Relay) Start(stage adapter.StartStage, scope *adapter.Scope) error {
 		tag := s.outboundTags[i]
 		outbound, err := s.outbound.CreateDetour(scope.Context(), s.router, s.logger, tag, detour, scope)
 		if err != nil {
-			return E.New("failed to create [", tag, "] for chain [", s.Tag(), "]: ", err)
+			var noDialFields *adapter.NoDialFieldsError
+			if errors.As(err, &noDialFields) {
+				role := "a hop"
+				if i == len(s.outboundTags)-1 {
+					role = "the exit"
+				}
+				return E.New("[", tag, "] cannot be ", role, " of relay [", s.Tag(), "]: ", noDialFields, ", only the entry can be an outbound group")
+			}
+			return E.New("failed to create [", tag, "] for relay [", s.Tag(), "]: ", err)
 		}
 		s.outbounds[i] = outbound
 		detour = outbound

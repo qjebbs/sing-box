@@ -57,6 +57,17 @@ type OutboundManager interface {
 	CreateDetour(ctx context.Context, router Router, logger log.ContextLogger, tag string, detour N.Dialer, scope *Scope) (Outbound, error)
 }
 
+// NoDialFieldsError reports an outbound that cannot be dialed through another one, because its
+// type has no dial fields to be replaced with a detour. It is what CreateDetour returns for the
+// nodes of a relay that are not its entry.
+type NoDialFieldsError struct {
+	OutboundType string
+}
+
+func (e *NoDialFieldsError) Error() string {
+	return "outbound type " + e.OutboundType + " has no dial fields"
+}
+
 type IdleConnectionKeeper interface {
 	SetKeepIdleConnections(keep bool)
 	CloseIdleConnections()
