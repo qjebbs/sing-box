@@ -11856,7 +11856,7 @@
           "type": "object",
           "properties": {
             "type": {
-              "const": "chain"
+              "const": "relay"
             },
             "tag": {
               "type": "string"

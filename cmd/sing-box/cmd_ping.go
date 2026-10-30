@@ -115,8 +115,8 @@ func runPing() (*ping.Statistics, error) {
 		detour = strings.Join(tags, " => ")
 		chain := option.Outbound{
 			Tag:  detour,
-			Type: C.TypeChain,
-			Options: &option.ChainOptions{
+			Type: C.TypeRelay,
+			Options: &option.RelayOptions{
 				Outbounds: tags,
 			},
 		}

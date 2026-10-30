@@ -13,10 +13,13 @@ For extended features
 > [!WARNING]
 > Outbound groups, including `urltest` / `loadbalance` are significantly changed. Check the doc above to update your configuration.
 
+> [!WARNING]
+> The `chain` outbound is renamed to `relay` and lists its nodes in the order the connection passes through them, so the last one is the final exit. An existing chain has to be renamed and reversed.
+
 - Providers: [中文](./docs/configuration/provider/index.zh.md), [English](./docs/configuration/provider/index.md)
 - URL Test: [中文](./docs/configuration/outbound/urltest.zh.md), [English](./docs/configuration/outbound/urltest.md)
 - Load Balance: [中文](./docs/configuration/outbound/loadbalance.zh.md), [English](./docs/configuration/outbound/loadbalance.md)
-- Proxy Chain: [中文](./docs/configuration/outbound/chain.zh.md), [English](./docs/configuration/outbound/chain.md)
+- Relay: [中文](./docs/configuration/outbound/relay.zh.md), [English](./docs/configuration/outbound/relay.md)
 - Fallback: [中文](./docs/configuration/outbound/fallback.zh.md), [English](./docs/configuration/outbound/fallback.md)
 - Health Check: [中文](./docs/configuration/shared/health-check.zh.md), [English](./docs/configuration/shared/health-check.md)
 - Muiltifile Configuration Extended: [中文](./docs/configuration/index.zh.md), [English](./docs/configuration/index.md)
