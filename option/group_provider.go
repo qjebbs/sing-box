@@ -21,8 +21,9 @@ type ProviderURLTestOptions struct {
 	InterruptExistConnections bool    `json:"interrupt_exist_connections,omitempty"`
 }
 
-// ChainOptions is the chain of outbounds
-type ChainOptions struct {
+// RelayOptions is the chain of outbounds, which the connection passes through in the order
+// they are listed.
+type RelayOptions struct {
 	Outbounds []string `json:"outbounds" reference:"outbound"`
 }
 

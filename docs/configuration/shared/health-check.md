@@ -80,7 +80,8 @@ Values smaller than `interval` are raised to `interval`.
 
 #### detour_of
 
-Let's say you have an outbound chain:
+The chain lists its nodes in the order the connection passes through them, and only the first one
+can be a group. Let's say you have an outbound chain through such a group:
 
 ```json
 {
@@ -92,19 +93,20 @@ Let's say you have an outbound chain:
 The actual chain is:
 
 ```
-Shadowsocks (A) ---> LoadBalance (B)
+LoadBalance (A) ---> Shadowsocks (B)
 ```
 
-And you want the health check of each node of `B` to be exactly the same as above, just configurate
+And you want the health check of each node of `A` to be exactly the same as above, just list the
+nodes the check passes after the group:
 
 ```json
-"detour_of": ["A"]
+"detour_of": ["B"]
 ```
 
 The check chain will be:
 
 ```
-Shadowsocks (A) ---> Trojan [B.Node]
+Trojan [A.Node] ---> Shadowsocks (B)
 ```
 
 If not, it would be almost impossible to detect such nodes, which are fine to use directly, but not when they're used as an upstream, due to audit rules and other reasons.

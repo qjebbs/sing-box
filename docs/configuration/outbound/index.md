@@ -40,7 +40,7 @@
 | `urltest`      | [URLTest](./urltest/)           |
 | `naive`        | [NaiveProxy](./naive/)          |
 | `loadbalance`  | [LoadBalance](./loadbalance/)   |
-| `chain`  | [Chain](./chain/)   |
+| `relay`        | [Relay](./relay/)               |
 | `fallback`     | [Fallback](./fallback/)         |
 
 #### tag
