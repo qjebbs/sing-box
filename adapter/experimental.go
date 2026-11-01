@@ -180,7 +180,7 @@ type OutboundConnectionReporter interface {
 
 func RealOutbound(outbound Outbound) (Outbound, error) {
 	if outbound == nil {
-		return nil, nil
+		return nil, E.New("missing outbound")
 	}
 	redirected := outbound
 	nLoop := 0
@@ -194,5 +194,8 @@ func RealOutbound(outbound Outbound) (Outbound, error) {
 			return nil, E.New("too deep or loop nesting of outbound groups")
 		}
 		redirected = group.Selected(N.NetworkTCP)
+		if redirected == nil {
+			return nil, E.New("outbound group ", group.Tag(), " has no outbound available for ", N.NetworkTCP)
+		}
 	}
 }

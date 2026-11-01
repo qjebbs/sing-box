@@ -484,7 +484,10 @@ func (h *HealthCheck) checkProviderBatch(ctx context.Context, meta *MetaData, ba
 func (h *HealthCheck) checkOutboundBatch(ctx context.Context, meta *MetaData, batch *batch.Batch[uint16], outbound adapter.Outbound) error {
 	real, err := adapter.RealOutbound(outbound)
 	if err != nil {
-		return err
+		// A group may have no node available yet, e.g. its providers are still loading.
+		// It is not checkable for now, but it must not fail the whole round.
+		h.logger.Debug("skip checking outbound ", outbound.Tag(), ": ", err)
+		return nil
 	}
 	tag := real.Tag()
 	if meta.Checked(tag) {

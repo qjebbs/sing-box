@@ -90,9 +90,8 @@ func checkProvider(server *Server) func(w http.ResponseWriter, r *http.Request) 
 		for _, proxy := range provider.Outbounds() {
 			real, err := adapter.RealOutbound(proxy)
 			if err != nil {
-				render.Status(r, http.StatusServiceUnavailable)
-				render.JSON(w, r, newError(err.Error()))
-				return
+				server.logger.Debug("skip checking proxy ", proxy.Tag(), ": ", err)
+				continue
 			}
 			if _, ok := checked[real.Tag()]; ok {
 				continue
