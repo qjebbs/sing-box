@@ -1,4 +1,4 @@
-package base
+package selection
 
 import (
 	"math/rand"

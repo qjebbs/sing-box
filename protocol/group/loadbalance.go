@@ -10,6 +10,7 @@ import (
 	"github.com/sagernet/sing-box/log"
 	"github.com/sagernet/sing-box/option"
 	"github.com/sagernet/sing-box/protocol/group/base"
+	"github.com/sagernet/sing-box/protocol/group/selection"
 	"github.com/sagernet/sing/common"
 )
 
@@ -46,7 +47,7 @@ func NewLoadBalance(ctx context.Context, router adapter.Router, logger log.Conte
 
 // Start implements adapter.Lifecycle
 func (s *LoadBalance) Start(stage adapter.StartStage, scope *adapter.Scope) error {
-	objective, err := base.NewObjective(s.options.Pick.Objective, base.ObjectiveOptions{
+	objective, err := selection.NewObjective(s.options.Pick.Objective, selection.ObjectiveOptions{
 		JitterWeight: s.options.Pick.JitterWeight,
 		Tolerance:    s.options.Pick.Tolerance,
 		MinNodes:     s.options.Pick.MinNodes,
@@ -55,13 +56,13 @@ func (s *LoadBalance) Start(stage adapter.StartStage, scope *adapter.Scope) erro
 	if err != nil {
 		return err
 	}
-	strategy, err := base.NewStrategy(s.options.Pick.Strategy, s.options.Pick.Objective)
+	strategy, err := selection.NewStrategy(s.options.Pick.Strategy, s.options.Pick.Objective)
 	if err != nil {
 		return err
 	}
 	return s.Group.Start(stage, scope, s.options.HealthCheck,
-		base.NewBalancing(objective, strategy),
-		base.NodeOptions{
+		selection.NewBalancing(objective, strategy),
+		selection.NodeOptions{
 			MaxRTT:  healthcheck.RTT(s.options.Pick.MaxRTT.Build().Milliseconds()),
 			MaxFail: s.options.Pick.MaxFail,
 			Biases:  s.options.Pick.Biases,
@@ -72,7 +73,7 @@ func (s *LoadBalance) Start(stage adapter.StartStage, scope *adapter.Scope) erro
 // All implements adapter.OutboundGroup
 func (s *LoadBalance) All() []string {
 	_, filtered := s.GetNodes()
-	return common.Map(filtered, func(node *base.Node) string {
+	return common.Map(filtered, func(node *selection.Node) string {
 		return node.Tag()
 	})
 }

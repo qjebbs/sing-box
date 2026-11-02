@@ -1,13 +1,16 @@
-package base
+package selection
 
 import (
+	"errors"
 	"fmt"
 	"math"
 	"math/rand"
+	"regexp"
 	"strings"
 
 	"github.com/sagernet/sing-box/adapter"
 	"github.com/sagernet/sing-box/common/healthcheck"
+	"github.com/sagernet/sing-box/option"
 )
 
 // Status is the status of a node
@@ -156,7 +159,65 @@ func applyFactorToRTT(rtt healthcheck.RTT, scale float32) healthcheck.RTT {
 	return healthcheck.RTT(float32(rtt) * scale)
 }
 
-func calcFactor(tag string, biases []pickBias) float32 {
+// NodeOptions describe how the health of a node becomes its status.
+type NodeOptions struct {
+	// MaxRTT is the highest median delay a node may have and stay qualified, 0 for no
+	// limit.
+	MaxRTT healthcheck.RTT
+	// MaxFail is how many checks of the sampling window may fail before a node is only
+	// alive, 0 for any failure.
+	MaxFail uint
+	// Biases scale the score of the nodes they match.
+	Biases []option.LoadBalancePickBias
+}
+
+// NodeBuilder builds the nodes of a group with the status their health gives them.
+type NodeBuilder struct {
+	maxRTT      healthcheck.RTT
+	maxFailRate float32
+	biases      []bias
+}
+
+type bias struct {
+	option.LoadBalancePickBias
+	Regexp *regexp.Regexp
+}
+
+// NewNodeBuilder returns the builder of the nodes of a group. sampling is the number of
+// checks a node keeps, which the share of failures is relative to.
+func NewNodeBuilder(sampling int, options NodeOptions) (*NodeBuilder, error) {
+	if sampling <= 0 {
+		return nil, errors.New("sampling must be greater than 0")
+	}
+	builder := &NodeBuilder{
+		maxRTT:      options.MaxRTT,
+		maxFailRate: float32(options.MaxFail) / float32(sampling),
+	}
+	for _, optionBias := range options.Biases {
+		var re *regexp.Regexp
+		if optionBias.Regexp != "" {
+			var err error
+			re, err = regexp.Compile(optionBias.Regexp)
+			if err != nil {
+				return nil, err
+			}
+		}
+		builder.biases = append(builder.biases, bias{
+			LoadBalancePickBias: optionBias,
+			Regexp:              re,
+		})
+	}
+	return builder, nil
+}
+
+// NewNode returns the node of the outbound with the health it reports.
+func (b *NodeBuilder) NewNode(outbound adapter.Outbound, index int, stats healthcheck.Stats) *Node {
+	scale := calcFactor(outbound.Tag(), b.biases)
+	status := calcStatus(&stats, b.maxRTT, b.maxFailRate)
+	return NewNode(outbound, index, scale, stats, status)
+}
+
+func calcFactor(tag string, biases []bias) float32 {
 	factor := float32(1)
 	for _, bias := range biases {
 		if bias.RTTScale <= 0 || bias.RTTScale == 1 || !matchTag(tag, bias) {
@@ -167,7 +228,7 @@ func calcFactor(tag string, biases []pickBias) float32 {
 	return factor
 }
 
-func matchTag(tag string, condition pickBias) bool {
+func matchTag(tag string, condition bias) bool {
 	if condition.Contains != "" {
 		return strings.Contains(tag, condition.Contains)
 	}

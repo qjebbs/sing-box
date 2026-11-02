@@ -1,4 +1,4 @@
-package base
+package selection
 
 import (
 	"github.com/sagernet/sing-box/adapter"

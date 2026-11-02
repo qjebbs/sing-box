@@ -18,6 +18,7 @@ import (
 	"github.com/sagernet/sing-box/common/urltest"
 	"github.com/sagernet/sing-box/log"
 	"github.com/sagernet/sing-box/option"
+	"github.com/sagernet/sing-box/protocol/group/selection"
 	"github.com/sagernet/sing/common"
 	E "github.com/sagernet/sing/common/exceptions"
 	M "github.com/sagernet/sing/common/metadata"
@@ -48,8 +49,8 @@ type Group struct {
 
 	interruptExternalConnections bool
 
-	pick Selection
-	cfg  config
+	pick  selection.Selection
+	nodes *selection.NodeBuilder
 
 	networks []string
 
@@ -92,8 +93,8 @@ func (g *Group) Start(
 	stage adapter.StartStage,
 	scope *adapter.Scope,
 	healthCheckOptions *option.HealthCheckOptions,
-	pick Selection,
-	nodeOptions NodeOptions,
+	pick selection.Selection,
+	nodeOptions selection.NodeOptions,
 ) error {
 	if stage != adapter.StartStateStart {
 		return nil
@@ -108,12 +109,12 @@ func (g *Group) Start(
 	if err != nil {
 		return err
 	}
-	cfg, err := configFromOptions(healthCheck.Storage.Cap(), nodeOptions)
+	nodes, err := selection.NewNodeBuilder(healthCheck.Storage.Cap(), nodeOptions)
 	if err != nil {
 		return err
 	}
 	g.HealthCheck = healthCheck
-	g.cfg = cfg
+	g.nodes = nodes
 	// The pick is set last, so a check that arrives while the group is starting finds
 	// it missing and stops, see healthChecksUpdated.
 	g.pick = pick
@@ -180,12 +181,12 @@ func (g *Group) touchHealthCheck() {
 func (g *Group) DialContext(ctx context.Context, network string, destination M.Socksaddr) (net.Conn, error) {
 	g.touchHealthCheck()
 	return tryEach(ctx, g.logger,
-		func() (*Node, bool) {
+		func() (*selection.Node, bool) {
 			node := g.PickNode(ctx, network, destination)
 			return node, node != nil
 		},
 		g.reportConnectionFailure,
-		func(node *Node) (net.Conn, error) {
+		func(node *selection.Node) (net.Conn, error) {
 			conn, err := node.DialContext(ctx, network, destination)
 			if err != nil {
 				return nil, err
@@ -199,12 +200,12 @@ func (g *Group) DialContext(ctx context.Context, network string, destination M.S
 func (g *Group) ListenPacket(ctx context.Context, destination M.Socksaddr) (net.PacketConn, error) {
 	g.touchHealthCheck()
 	return tryEach(ctx, g.logger,
-		func() (*Node, bool) {
+		func() (*selection.Node, bool) {
 			node := g.PickNode(ctx, N.NetworkUDP, destination)
 			return node, node != nil
 		},
 		g.reportConnectionFailure,
-		func(node *Node) (net.PacketConn, error) {
+		func(node *selection.Node) (net.PacketConn, error) {
 			conn, err := node.ListenPacket(ctx, destination)
 			if err != nil {
 				return nil, err
@@ -214,7 +215,7 @@ func (g *Group) ListenPacket(ctx context.Context, destination M.Socksaddr) (net.
 	)
 }
 
-func (g *Group) reportConnectionFailure(node *Node) {
+func (g *Group) reportConnectionFailure(node *selection.Node) {
 	g.HealthCheck.ReportConnectionFailure(node.Outbound)
 }
 

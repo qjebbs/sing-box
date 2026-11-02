@@ -1,9 +1,9 @@
-package base_test
+package selection_test
 
 import (
 	"testing"
 
-	"github.com/sagernet/sing-box/protocol/group/base"
+	"github.com/sagernet/sing-box/protocol/group/selection"
 )
 
 func BenchmarkAlive32(b *testing.B) {
@@ -22,11 +22,11 @@ func BenchmarkLeastLoad128(b *testing.B) {
 	benchmarkObjective(b, benchmarkLeastLoadObjective, 128)
 }
 
-func benchmarkObjective(b *testing.B, f base.Objective, count int) {
+func benchmarkObjective(b *testing.B, f selection.Objective, count int) {
 	outbounds, store := genStorage(count)
 	alive := allNodes(outbounds, store)
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		base.Filter(f, alive)
+		selection.Filter(f, alive)
 	}
 }

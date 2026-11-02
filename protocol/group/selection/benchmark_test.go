@@ -1,4 +1,4 @@
-package base_test
+package selection_test
 
 import (
 	"context"
@@ -13,17 +13,17 @@ import (
 	"github.com/sagernet/sing-box/common/healthcheck"
 	"github.com/sagernet/sing-box/option"
 	"github.com/sagernet/sing-box/protocol/block"
-	"github.com/sagernet/sing-box/protocol/group/base"
+	"github.com/sagernet/sing-box/protocol/group/selection"
 	M "github.com/sagernet/sing/common/metadata"
 )
 
 var (
 	benchmarkPickOptions            = option.LoadBalancePickOptions{}
-	benchmarkAliveObjective         = base.NewAliveObjective()
-	benchmarkLeastLoadObjective     = base.NewLeastLoadObjective(benchmarkPickOptions)
-	benchmarkRandomStrategy         = base.NewRandomStrategy()
-	benchmarkRoundRobinStrategy     = base.NewRoundRobinStrategy()
-	benchmarkConsistentHashStrategy = base.NewConsistentHashStrategy()
+	benchmarkAliveObjective         = selection.NewAliveObjective()
+	benchmarkLeastLoadObjective     = selection.NewLeastLoadObjective(benchmarkPickOptions)
+	benchmarkRandomStrategy         = selection.NewRandomStrategy()
+	benchmarkRoundRobinStrategy     = selection.NewRoundRobinStrategy()
+	benchmarkConsistentHashStrategy = selection.NewConsistentHashStrategy()
 )
 
 func BenchmarkAliveRandom32(b *testing.B) {
@@ -74,7 +74,7 @@ func BenchmarkLeastloadConsistentHash128(b *testing.B) {
 	benchmarkBalancer(b, benchmarkLeastLoadObjective, benchmarkConsistentHashStrategy, 128)
 }
 
-func benchmarkBalancer(b *testing.B, f base.Objective, s base.Strategy, count int) {
+func benchmarkBalancer(b *testing.B, f selection.Objective, s selection.Strategy, count int) {
 	ctx := &adapter.InboundContext{
 		Domain: "example.com",
 	}
@@ -85,7 +85,7 @@ func benchmarkBalancer(b *testing.B, f base.Objective, s base.Strategy, count in
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		all := allNodes(outbounds, store)
-		filtered := base.Filter(f, all)
+		filtered := selection.Filter(f, all)
 		s.Pick(all, filtered, ctx)
 	}
 }
@@ -106,10 +106,10 @@ func benchmarkGetAllNodes(b *testing.B, count int) {
 	}
 }
 
-func allNodes(outbounds []adapter.Outbound, s *healthcheck.Storages) []*base.Node {
-	all := make([]*base.Node, 0, len(outbounds))
+func allNodes(outbounds []adapter.Outbound, s *healthcheck.Storages) []*selection.Node {
+	all := make([]*selection.Node, 0, len(outbounds))
 	for i, o := range outbounds {
-		node := base.NewNode(o, i, 1, s.Stats(o.Tag()), base.StatusUnknown)
+		node := selection.NewNode(o, i, 1, s.Stats(o.Tag()), selection.StatusUnknown)
 		all = append(all, node)
 	}
 	return all
@@ -139,7 +139,7 @@ type stubKeeper struct {
 	keep map[string]bool
 }
 
-func (k stubKeeper) Keep(node *base.Node, best *base.Node) bool {
+func (k stubKeeper) Keep(node *selection.Node, best *selection.Node) bool {
 	return k.keep[node.Tag()]
 }
 
@@ -156,15 +156,15 @@ func (tagOutbound) ListenPacket(context.Context, M.Socksaddr) (net.PacketConn, e
 	return nil, nil
 }
 
-func taggedNodes(tags ...string) []*base.Node {
-	nodes := make([]*base.Node, 0, len(tags))
+func taggedNodes(tags ...string) []*selection.Node {
+	nodes := make([]*selection.Node, 0, len(tags))
 	for i, tag := range tags {
-		nodes = append(nodes, base.NewNode(tagOutbound(tag), i, 1, healthcheck.Stats{}, base.StatusQualified))
+		nodes = append(nodes, selection.NewNode(tagOutbound(tag), i, 1, healthcheck.Stats{}, selection.StatusQualified))
 	}
 	return nodes
 }
 
-func tagList(nodes []*base.Node) []string {
+func tagList(nodes []*selection.Node) []string {
 	tags := make([]string, 0, len(nodes))
 	for _, node := range nodes {
 		tags = append(tags, node.Tag())
@@ -180,7 +180,7 @@ func TestRetainNodes(t *testing.T) {
 	testCases := []struct {
 		name   string
 		inUse  []string
-		keeper base.Keeper
+		keeper selection.Keeper
 		want   []string
 	}{
 		{name: "nothing in use", inUse: nil, keeper: keeper, want: []string{"a", "b"}},
@@ -193,7 +193,7 @@ func TestRetainNodes(t *testing.T) {
 		testCase := testCase
 		t.Run(testCase.name, func(t *testing.T) {
 			t.Parallel()
-			got := base.RetainNodes(all, selected, testCase.inUse, testCase.keeper)
+			got := selection.RetainNodes(all, selected, testCase.inUse, testCase.keeper)
 			if !slices.Equal(got, testCase.want) {
 				t.Fatalf("want %v, got %v", testCase.want, got)
 			}
@@ -204,7 +204,7 @@ func TestRetainNodes(t *testing.T) {
 func TestRetainNodesNoSelection(t *testing.T) {
 	t.Parallel()
 	all := taggedNodes("a", "b")
-	if got := base.RetainNodes(all, nil, []string{"a"}, stubKeeper{}); len(got) != 0 {
+	if got := selection.RetainNodes(all, nil, []string{"a"}, stubKeeper{}); len(got) != 0 {
 		t.Fatalf("want nothing, got %v", got)
 	}
 }
@@ -214,28 +214,28 @@ func TestRetainNodesUsesObjective(t *testing.T) {
 	// The real objective decides, not a stub: 5 minutes of statistics put the node
 	// right outside the band, but its deviation is large enough that the excess is
 	// noise, so its connections are kept.
-	objective := base.NewLeastPingObjective(option.LoadBalancePickOptions{})
-	all := []*base.Node{
+	objective := selection.NewLeastPingObjective(option.LoadBalancePickOptions{})
+	all := []*selection.Node{
 		{
-			Index: 0, Status: base.StatusQualified,
+			Index: 0, Status: selection.StatusQualified,
 			Stats: healthcheck.Stats{All: 10, Median: 161, Deviation: 57},
 		},
 		{
-			Index: 1, Status: base.StatusQualified,
+			Index: 1, Status: selection.StatusQualified,
 			Stats: healthcheck.Stats{All: 10, Median: 178, Deviation: 126},
 		},
 	}
 	all[0].Outbound, all[1].Outbound = tagOutbound("fast"), tagOutbound("jittery")
-	selected := base.Filter(objective, all)
+	selected := selection.Filter(objective, all)
 	if len(selected) != 1 || selected[0].Tag() != "fast" {
 		t.Fatalf("want only the fast node selected, got %v", tagList(selected))
 	}
-	got := base.RetainNodes(all, selected, []string{"jittery"}, objective)
+	got := selection.RetainNodes(all, selected, []string{"jittery"}, objective)
 	if !slices.Equal(got, []string{"fast", "jittery"}) {
 		t.Fatalf("want the jittery node kept, got %v", got)
 	}
 	// it is not selected, new connections must not use it
-	if filtered := base.Filter(objective, all); len(filtered) != 1 {
+	if filtered := selection.Filter(objective, all); len(filtered) != 1 {
 		t.Fatalf("the selection must stay strict, got %v", tagList(filtered))
 	}
 }

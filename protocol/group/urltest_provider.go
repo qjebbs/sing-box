@@ -12,6 +12,7 @@ import (
 	"github.com/sagernet/sing-box/log"
 	"github.com/sagernet/sing-box/option"
 	"github.com/sagernet/sing-box/protocol/group/base"
+	"github.com/sagernet/sing-box/protocol/group/selection"
 	"github.com/sagernet/sing/common"
 	E "github.com/sagernet/sing/common/exceptions"
 	N "github.com/sagernet/sing/common/network"
@@ -33,12 +34,12 @@ var (
 // urlTestObjectives are the objectives this group accepts. It uses one node at a time,
 // which only the least* objectives rank: alive and qualified hand every node of their
 // class to the selection, which would then have to break the tie itself.
-var urlTestObjectives = []string{base.ObjectiveLeastPing, base.ObjectiveLeastLoad}
+var urlTestObjectives = []string{selection.ObjectiveLeastPing, selection.ObjectiveLeastLoad}
 
 // urlTestObjective validates the configured objective, defaulting to leastping.
 func urlTestObjective(objective string) (string, error) {
 	if objective == "" {
-		return base.ObjectiveLeastPing, nil
+		return selection.ObjectiveLeastPing, nil
 	}
 	if !slices.Contains(urlTestObjectives, objective) {
 		return "", E.New(
@@ -78,15 +79,15 @@ func NewURLTestProvider(ctx context.Context, router adapter.Router, logger log.C
 
 // Start implements adapter.Lifecycle
 func (s *URLTestProvider) Start(stage adapter.StartStage, scope *adapter.Scope) error {
-	objective, err := base.NewObjective(s.objective, base.ObjectiveOptions{
+	objective, err := selection.NewObjective(s.objective, selection.ObjectiveOptions{
 		Tolerance: s.options.Tolerance,
 	})
 	if err != nil {
 		return err
 	}
 	return s.Group.Start(stage, scope, s.options.HealthCheck,
-		base.NewSingle(objective, s.options.Tolerance),
-		base.NodeOptions{
+		selection.NewSingle(objective, s.options.Tolerance),
+		selection.NodeOptions{
 			// The failures are already priced into the score of a node, in its own
 			// scale, see healthcheck.Stats.Cost. Qualifying on them would rank a node
 			// that failed once below one that never failed and is several times
@@ -100,7 +101,7 @@ func (s *URLTestProvider) Start(stage adapter.StartStage, scope *adapter.Scope) 
 
 // All implements adapter.OutboundGroup
 func (s *URLTestProvider) All() []string {
-	return common.Map(s.Nodes(N.NetworkTCP), func(node *base.Node) string {
+	return common.Map(s.Nodes(N.NetworkTCP), func(node *selection.Node) string {
 		return node.Tag()
 	})
 }

@@ -1,7 +1,11 @@
-package base
+// Package selection ranks the nodes of a group and chooses the ones that serve its
+// connections. It knows nothing about providers, health checks or connections: it reads
+// the statistics of a node and returns the nodes a connection may use.
+package selection
 
 import (
 	"github.com/sagernet/sing-box/adapter"
+	"github.com/sagernet/sing/common"
 )
 
 // Selection is how a group turns the health of its nodes into the node that serves a
@@ -105,4 +109,40 @@ func (s *Single) Pick(_, selected []*Node, _ *adapter.InboundContext) *Node {
 
 func (s *Single) String() string {
 	return s.objective.Name() + "/single"
+}
+
+// RetainNodes returns the tags of selected, plus the tags of inUse that the keeper
+// still accepts, in the order of inUse.
+func RetainNodes(all, selected []*Node, inUse []string, keeper Keeper) []string {
+	retained := Tags(selected)
+	if len(selected) == 0 || len(inUse) == 0 {
+		return retained
+	}
+	selectedTags := make(map[string]bool, len(retained))
+	for _, tag := range retained {
+		selectedTags[tag] = true
+	}
+	nodesByTag := make(map[string]*Node, len(all))
+	for _, node := range all {
+		nodesByTag[node.Tag()] = node
+	}
+	best := selected[0]
+	for _, tag := range inUse {
+		if selectedTags[tag] {
+			continue
+		}
+		node, loaded := nodesByTag[tag]
+		if !loaded || !keeper.Keep(node, best) {
+			continue
+		}
+		retained = append(retained, tag)
+	}
+	return retained
+}
+
+// Tags returns the tags of the nodes, without duplicates.
+func Tags(nodes []*Node) []string {
+	return common.Uniq(common.Map(nodes, func(node *Node) string {
+		return node.Tag()
+	}))
 }

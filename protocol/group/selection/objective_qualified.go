@@ -1,4 +1,4 @@
-package base
+package selection
 
 var _ Objective = (*QualifiedObjective)(nil)
 

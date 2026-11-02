@@ -1,10 +1,10 @@
-package base_test
+package selection_test
 
 import (
 	"testing"
 
 	"github.com/sagernet/sing-box/adapter"
-	"github.com/sagernet/sing-box/protocol/group/base"
+	"github.com/sagernet/sing-box/protocol/group/selection"
 )
 
 func BenchmarkRandom32(b *testing.B) {
@@ -31,7 +31,7 @@ func BenchmarkConsistentHash128(b *testing.B) {
 	benchmarkStrategy(b, benchmarkConsistentHashStrategy, 128)
 }
 
-func benchmarkStrategy(b *testing.B, s base.Strategy, count int) {
+func benchmarkStrategy(b *testing.B, s selection.Strategy, count int) {
 	ctx := &adapter.InboundContext{
 		Domain: "example.com",
 	}
