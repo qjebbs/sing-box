@@ -9,10 +9,21 @@ import (
 )
 
 type balancerConfig struct {
-	option.LoadBalancePickOptions
 	maxRTT      healthcheck.RTT
 	maxFailRate float32
 	pickBiases  []pickBias
+}
+
+// NodeOptions describe how the health of a node becomes its status.
+type NodeOptions struct {
+	// MaxRTT is the highest median delay a node may have and stay qualified, 0 for no
+	// limit.
+	MaxRTT healthcheck.RTT
+	// MaxFail is how many checks of the sampling window may fail before a node is only
+	// alive, 0 for any failure.
+	MaxFail uint
+	// Biases scale the score of the nodes they match.
+	Biases []option.LoadBalancePickBias
 }
 
 type pickBias struct {
@@ -20,30 +31,15 @@ type pickBias struct {
 	Regexp *regexp.Regexp
 }
 
-// Profile is how a group picks its node, next to the options that rank them.
-type Profile struct {
-	// Single is a group that uses one node at a time. It keeps the node it chose while
-	// another one is not better by more than the tolerance, because a change takes every
-	// new connection with it. A load balance group spreads the connections across the
-	// nodes instead, and replaces each of them on its own, so it has no choice to keep.
-	Single bool
-}
-
-func configFromOptions(sampling int, options option.LoadBalancePickOptions) (balancerConfig, error) {
+func configFromOptions(sampling int, options NodeOptions) (balancerConfig, error) {
 	if sampling <= 0 {
 		return balancerConfig{}, errors.New("sampling must be greater than 0")
 	}
-	if options.Strategy == "" {
-		options.Strategy = StrategyRandom
-	}
-	if options.Objective == "" {
-		options.Objective = ObjectiveAlive
-	}
 
-	var cfg balancerConfig
-	cfg.LoadBalancePickOptions = options
-	cfg.maxFailRate = float32(options.MaxFail) / float32(sampling)
-	cfg.maxRTT = healthcheck.RTT(options.MaxRTT.Build().Milliseconds())
+	cfg := balancerConfig{
+		maxRTT:      options.MaxRTT,
+		maxFailRate: float32(options.MaxFail) / float32(sampling),
+	}
 
 	for _, bias := range options.Biases {
 		var re *regexp.Regexp

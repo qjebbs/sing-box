@@ -19,6 +19,11 @@ func NewConsistentHashStrategy() *ConsistentHashStrategy {
 }
 
 // Pick implements Strategy
+// Name implements Strategy.
+func (s *ConsistentHashStrategy) Name() string {
+	return StrategyConsistentHash
+}
+
 func (s *ConsistentHashStrategy) Pick(all, filtered []*Node, metadata *adapter.InboundContext) *Node {
 	// Consistent Hashing: Algorithmic Tradeoffs
 	// https://dgryski.medium.com/consistent-hashing-algorithmic-tradeoffs-ef6b8e2fcae8

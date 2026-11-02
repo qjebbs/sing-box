@@ -12,6 +12,11 @@ func NewAliveObjective() *AliveObjective {
 	return &AliveObjective{}
 }
 
+// Name implements Objective.
+func (o *AliveObjective) Name() string {
+	return ObjectiveAlive
+}
+
 // Rank implements Objective, the nodes of a better status come first.
 func (o *AliveObjective) Rank(all []*Node) []*Node {
 	ranked := make([]*Node, len(all))

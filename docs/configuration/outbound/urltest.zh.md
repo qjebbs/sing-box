@@ -24,16 +24,6 @@
 }
 ```
 
-### 选择
-
-本组是[负载均衡](/zh/configuration/outbound/loadbalance/)组的一种特例配置：
-
-`objective` 默认为 `leastping`，可选 `leastload`；
-`min_nodes` 与 `max_nodes` 均为 `1`，同一时间只使用一个节点。
-
-正在使用的节点与最好节点的分数差距不超过 [tolerance](#tolerance) 区间时保持原位：
-切换会带走所有新连接，区间内的差距不值得这样做。
-
 ### 字段
 
 #### outbounds
@@ -70,6 +60,8 @@
 | ----------- | ------------------------ |
 | `leastping` | 延时最低的节点 |
 | `leastload` | 最稳定的节点 |
+
+不同目标的评价方法同[负载均衡 objective 字段](/zh/configuration/outbound/loadbalance/#objective)，但没有合格节点的概念。
 
 #### tolerance
 

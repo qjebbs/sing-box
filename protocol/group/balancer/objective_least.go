@@ -32,6 +32,7 @@ const (
 // added to it.
 type LeastObjective struct {
 	*QualifiedObjective
+	name      string
 	tolerance float32
 	minNodes  int
 	maxNodes  int
@@ -42,6 +43,11 @@ type LeastObjective struct {
 	// jitter itself, since adding it again would only scale every score.
 	jitterFunc   func(node *Node) healthcheck.RTT
 	jitterWeight float32
+}
+
+// Name implements Objective.
+func (o *LeastObjective) Name() string {
+	return o.name
 }
 
 func deviationRTT(node *Node) healthcheck.RTT {
@@ -55,6 +61,7 @@ func medianRTT(node *Node) healthcheck.RTT {
 // NewLeastLoadObjective returns a new LeastObjective.
 func NewLeastLoadObjective(options option.LoadBalancePickOptions) *LeastObjective {
 	objective := newLeastObjective(options)
+	objective.name = ObjectiveLeastLoad
 	// the standard deviation is the jitter itself, so jitter_weight is not used,
 	// adding the deviation again would only scale every score by the same factor
 	// objective.jitterWeight = 0
@@ -65,6 +72,7 @@ func NewLeastLoadObjective(options option.LoadBalancePickOptions) *LeastObjectiv
 // NewLeastPingObjective returns a new LeastObjective.
 func NewLeastPingObjective(options option.LoadBalancePickOptions) *LeastObjective {
 	objective := newLeastObjective(options)
+	objective.name = ObjectiveLeastPing
 	objective.baseFunc = medianRTT
 	objective.jitterFunc = deviationRTT
 	objective.jitterWeight = float32Option(options.JitterWeight, DefaultJitterWeight)

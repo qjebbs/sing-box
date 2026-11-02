@@ -24,18 +24,6 @@
 }
 ```
 
-### Selection
-
-The group is a special case of the
-[load balance](/configuration/outbound/loadbalance/) group:
-
-`objective` defaults to `leastping`, `leastload` is also available;
-`min_nodes` and `max_nodes` are both `1`, it uses one node at a time.
-
-The node in use keeps its place while its score stays within the
-[tolerance](#tolerance) band of the best one: a change moves every new connection with
-it, so a difference within the band is not worth it.
-
 ### Fields
 
 #### outbounds
@@ -72,6 +60,10 @@ The objective of the choice. Default is `leastping`.
 | ----------- | ------------------------------ |
 | `leastping` | the node with the lowest delay |
 | `leastload` | the most stable node           |
+
+The objectives rank the nodes the same way as the
+[load balance `objective`](/configuration/outbound/loadbalance/#objective) field, without
+the notion of a qualified node.
 
 #### tolerance
 

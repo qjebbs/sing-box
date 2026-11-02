@@ -14,6 +14,11 @@ func NewQualifiedObjective() *QualifiedObjective {
 	}
 }
 
+// Name implements Objective.
+func (o *QualifiedObjective) Name() string {
+	return ObjectiveQualified
+}
+
 // Rank implements Objective, the nodes of a better status come first.
 func (o *QualifiedObjective) Rank(all []*Node) []*Node {
 	return o.AliveObjective.Rank(all)

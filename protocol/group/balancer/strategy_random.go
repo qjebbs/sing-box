@@ -17,6 +17,11 @@ func NewRandomStrategy() *RandomStrategy {
 }
 
 // Pick implements Strategy
+// Name implements Strategy.
+func (s *RandomStrategy) Name() string {
+	return StrategyRandom
+}
+
 func (s *RandomStrategy) Pick(_, filtered []*Node, _ *adapter.InboundContext) *Node {
 	count := len(filtered)
 	if count == 0 {

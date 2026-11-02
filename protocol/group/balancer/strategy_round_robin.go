@@ -23,6 +23,11 @@ func NewRoundRobinStrategy() *RoundRobinStrategy {
 // Pick implements Strategy. The filtered nodes may be shared with the cached ranking of
 // the balancer, so it must not be reordered in place: the node after the last one is
 // found in a single pass instead of sorting.
+// Name implements Strategy.
+func (s *RoundRobinStrategy) Name() string {
+	return StrategyRoundrobin
+}
+
 func (s *RoundRobinStrategy) Pick(_, filtered []*Node, _ *adapter.InboundContext) *Node {
 	if len(filtered) == 0 {
 		return nil
