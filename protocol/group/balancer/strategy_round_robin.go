@@ -1,7 +1,6 @@
 package balancer
 
 import (
-	"sort"
 	"sync"
 
 	"github.com/sagernet/sing-box/adapter"
@@ -21,21 +20,27 @@ func NewRoundRobinStrategy() *RoundRobinStrategy {
 }
 
 // Pick implements Strategy
+// Pick implements Strategy. The filtered nodes may be shared with the cached ranking of
+// the balancer, so it must not be reordered in place: the node after the last one is
+// found in a single pass instead of sorting.
 func (s *RoundRobinStrategy) Pick(_, filtered []*Node, _ *adapter.InboundContext) *Node {
 	if len(filtered) == 0 {
 		return nil
 	}
 	s.Lock()
 	defer s.Unlock()
-	sort.Slice(filtered, func(i, j int) bool {
-		return filtered[i].Index < filtered[j].Index
-	})
+	var next, first *Node
 	for _, node := range filtered {
-		if node.Index > s.index {
-			s.index = node.Index
-			return node
+		if first == nil || node.Index < first.Index {
+			first = node
+		}
+		if node.Index > s.index && (next == nil || node.Index < next.Index) {
+			next = node
 		}
 	}
-	s.index = filtered[0].Index
-	return filtered[0]
+	if next == nil {
+		next = first
+	}
+	s.index = next.Index
+	return next
 }

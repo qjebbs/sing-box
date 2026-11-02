@@ -13,6 +13,7 @@ var _ adapter.Provider = (*Memory)(nil)
 type Memory struct {
 	outbounds      []adapter.Outbound
 	outboundsByTag map[string]adapter.Outbound
+	updatedAt      time.Time
 }
 
 // NewMemory creates a new memory provider.
@@ -24,6 +25,7 @@ func NewMemory(outbounds []adapter.Outbound) *Memory {
 	return &Memory{
 		outbounds:      outbounds,
 		outboundsByTag: tags,
+		updatedAt:      time.Now(),
 	}
 }
 
@@ -53,9 +55,11 @@ func (s *Memory) Update() error {
 	return nil
 }
 
-// UpdatedAt implements adapter.Provider
+// UpdatedAt implements adapter.Provider. The outbounds are fixed when the provider is
+// created, so its update time is the time it was created: a caller that compares it to
+// decide whether the outbounds changed must not see it move.
 func (s *Memory) UpdatedAt() time.Time {
-	return time.Now()
+	return s.updatedAt
 }
 
 // Wait implements adapter.Provider

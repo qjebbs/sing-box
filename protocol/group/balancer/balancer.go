@@ -2,6 +2,9 @@ package balancer
 
 import (
 	"context"
+	"sync"
+	"sync/atomic"
+	"time"
 
 	"github.com/sagernet/sing-box/adapter"
 	"github.com/sagernet/sing-box/common/healthcheck"
@@ -26,6 +29,23 @@ type Balancer struct {
 	Strategy  Strategy
 
 	networks []string
+
+	// snapshotAccess guards the cached ranking of the nodes, so a pick does not
+	// rebuild and re-sort every node of the group for every connection it carries.
+	snapshotAccess sync.RWMutex
+	snapshot       map[string]*nodeSnapshot
+	// generation is bumped whenever the results that the ranking reads are updated,
+	// see Invalidate, so a cached ranking is only reused while it describes them.
+	generation atomic.Uint64
+}
+
+// nodeSnapshot is the ranking of the nodes of one network, kept between picks until the
+// results that made it change.
+type nodeSnapshot struct {
+	generation  uint64
+	providersAt []time.Time
+	all         []*Node
+	selected    []*Node
 }
 
 type providersAdapter interface {
@@ -68,9 +88,78 @@ func (b *Balancer) PickNode(ctx context.Context, network string, destination M.S
 		metadata = &adapter.InboundContext{}
 	}
 	metadata.Destination = destination
-	all := b.Nodes(network)
-	selected := Filter(b.Objective, all)
+	all, selected := b.selection(network)
 	return b.Strategy.Pick(all, selected, metadata)
+}
+
+// Invalidate drops the cached ranking, so the next pick sees the results of the checks
+// that just finished. It is called after a round of checks and after the check of a
+// single node, see LoadBalance.healthChecksUpdated.
+func (b *Balancer) Invalidate() {
+	b.generation.Add(1)
+}
+
+// selection returns the nodes of the network, ranked and selected for the objective. The
+// ranking is reused while the results it describes are unchanged, so a connection pays
+// for a lookup instead of rebuilding and sorting every node of the group.
+func (b *Balancer) selection(network string) (all []*Node, selected []*Node) {
+	generation := b.generation.Load()
+	b.snapshotAccess.RLock()
+	snapshot := b.snapshot[network]
+	usable := snapshot != nil && snapshot.generation == generation && !b.providersChanged(snapshot)
+	b.snapshotAccess.RUnlock()
+	if usable {
+		return snapshot.all, snapshot.selected
+	}
+
+	// One ranking at a time: the connections that arrive while it is being built wait
+	// for it instead of building their own.
+	b.snapshotAccess.Lock()
+	defer b.snapshotAccess.Unlock()
+	generation = b.generation.Load()
+	if snapshot = b.snapshot[network]; snapshot != nil && snapshot.generation == generation && !b.providersChanged(snapshot) {
+		return snapshot.all, snapshot.selected
+	}
+	// The update times are read before the nodes they describe, so a provider that
+	// changes while the ranking is being built leaves a snapshot that the next pick
+	// sees as outdated.
+	providersAt := b.providersUpdatedAt()
+	all = b.Nodes(network)
+	selected = Filter(b.Objective, all)
+	if b.snapshot == nil {
+		b.snapshot = make(map[string]*nodeSnapshot)
+	}
+	b.snapshot[network] = &nodeSnapshot{
+		generation:  generation,
+		providersAt: providersAt,
+		all:         all,
+		selected:    selected,
+	}
+	return all, selected
+}
+
+// providersChanged reports whether the content of a provider may have changed since the
+// snapshot was built.
+func (b *Balancer) providersChanged(snapshot *nodeSnapshot) bool {
+	providers := b.Adapter.Providers()
+	if len(providers) != len(snapshot.providersAt) {
+		return true
+	}
+	for i, provider := range providers {
+		if provider.UpdatedAt() != snapshot.providersAt[i] {
+			return true
+		}
+	}
+	return false
+}
+
+func (b *Balancer) providersUpdatedAt() []time.Time {
+	providers := b.Adapter.Providers()
+	updatedAt := make([]time.Time, len(providers))
+	for i, provider := range providers {
+		updatedAt[i] = provider.UpdatedAt()
+	}
+	return updatedAt
 }
 
 // AvailableNodes returns the tags of the nodes new connections may use
@@ -224,9 +313,7 @@ func (b *Balancer) availableNetworks() []string {
 
 // GetNodes returns all nodes and the selected ones, in preference order
 func (b *Balancer) GetNodes() (all, selected []*Node) {
-	all = b.Nodes(N.NetworkTCP)
-	selected = Filter(b.Objective, all)
-	return all, selected
+	return b.selection(N.NetworkTCP)
 }
 
 // RetainNodes returns the tags of selected, plus the tags of inUse that the keeper

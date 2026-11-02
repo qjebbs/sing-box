@@ -99,7 +99,10 @@ func (s *Filtered) Wait() {
 }
 
 func (s *Filtered) update() {
-	if s.updatedAt.After(s.upstream.UpdatedAt()) {
+	// Rebuild only when the upstream reports a newer update time. Comparing with
+	// After alone would rebuild on every call while the two are equal, which is what
+	// an unchanged provider reports.
+	if !s.updatedAt.Before(s.upstream.UpdatedAt()) {
 		return
 	}
 	s.outbounds = nil

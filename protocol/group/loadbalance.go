@@ -227,6 +227,7 @@ func (s *LoadBalance) healthChecksUpdated() {
 		// the listener is registered before the balancer is built
 		return
 	}
+	s.Balancer.Invalidate()
 	if s.HealthCheck.IsActive(s.Tag()) {
 		// An idle group is not in use, and its statistics only describe the past.
 		s.Balancer.LogNodes()
