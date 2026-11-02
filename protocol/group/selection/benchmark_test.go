@@ -193,7 +193,7 @@ func TestRetainNodes(t *testing.T) {
 		testCase := testCase
 		t.Run(testCase.name, func(t *testing.T) {
 			t.Parallel()
-			got := selection.RetainNodes(all, selected, testCase.inUse, testCase.keeper)
+			got := selection.RetainNodes(all, selected, selected[0], testCase.inUse, testCase.keeper)
 			if !slices.Equal(got, testCase.want) {
 				t.Fatalf("want %v, got %v", testCase.want, got)
 			}
@@ -204,7 +204,7 @@ func TestRetainNodes(t *testing.T) {
 func TestRetainNodesNoSelection(t *testing.T) {
 	t.Parallel()
 	all := taggedNodes("a", "b")
-	if got := selection.RetainNodes(all, nil, []string{"a"}, stubKeeper{}); len(got) != 0 {
+	if got := selection.RetainNodes(all, nil, nil, []string{"a"}, stubKeeper{}); len(got) != 0 {
 		t.Fatalf("want nothing, got %v", got)
 	}
 }
@@ -230,7 +230,7 @@ func TestRetainNodesUsesObjective(t *testing.T) {
 	if len(selected) != 1 || selected[0].Tag() != "fast" {
 		t.Fatalf("want only the fast node selected, got %v", tagList(selected))
 	}
-	got := selection.RetainNodes(all, selected, []string{"jittery"}, objective)
+	got := selection.RetainNodes(all, selected, selected[0], []string{"jittery"}, objective)
 	if !slices.Equal(got, []string{"fast", "jittery"}) {
 		t.Fatalf("want the jittery node kept, got %v", got)
 	}

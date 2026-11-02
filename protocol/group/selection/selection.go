@@ -113,9 +113,17 @@ func (s *Single) String() string {
 
 // RetainNodes returns the tags of selected, plus the tags of inUse that the keeper
 // still accepts, in the order of inUse.
-func RetainNodes(all, selected []*Node, inUse []string, keeper Keeper) []string {
+//
+// best is the node the others are compared to, the best one of the ranking and not the
+// one the selection returned: a single node selection may have kept a node that is
+// itself within the tolerance, and measuring against it would allow a kept node up to
+// twice the tolerance away from the best.
+func RetainNodes(all, selected []*Node, best *Node, inUse []string, keeper Keeper) []string {
 	retained := Tags(selected)
 	if len(selected) == 0 || len(inUse) == 0 {
+		return retained
+	}
+	if best == nil {
 		return retained
 	}
 	selectedTags := make(map[string]bool, len(retained))
@@ -126,7 +134,6 @@ func RetainNodes(all, selected []*Node, inUse []string, keeper Keeper) []string 
 	for _, node := range all {
 		nodesByTag[node.Tag()] = node
 	}
-	best := selected[0]
 	for _, tag := range inUse {
 		if selectedTags[tag] {
 			continue

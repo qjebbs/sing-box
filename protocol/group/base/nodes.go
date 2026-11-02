@@ -18,7 +18,9 @@ type nodeSnapshot struct {
 	generation  uint64
 	providersAt []time.Time
 	all         []*selection.Node
-	selected    []*selection.Node
+	// best is the head of the ranking, the node every other one is compared to.
+	best     *selection.Node
+	selected []*selection.Node
 	// chosen is the node the group picked, kept by a single node selection while
 	// another one is not better by more than the tolerance.
 	chosen string
@@ -31,7 +33,7 @@ func (g *Group) PickNode(ctx context.Context, network string, destination M.Sock
 		metadata = &adapter.InboundContext{}
 	}
 	metadata.Destination = destination
-	all, selected := g.selection(network)
+	all, selected, _ := g.selection(network)
 	return g.pick.Pick(all, selected, metadata)
 }
 
@@ -45,14 +47,14 @@ func (g *Group) Invalidate() {
 // selection returns the nodes of the network, ranked and selected by the pick. The
 // ranking is reused while the results it describes are unchanged, so a connection pays
 // for a lookup instead of rebuilding and sorting every node of the group.
-func (g *Group) selection(network string) (all []*selection.Node, selected []*selection.Node) {
+func (g *Group) selection(network string) (all []*selection.Node, selected []*selection.Node, best *selection.Node) {
 	generation := g.generation.Load()
 	g.snapshotAccess.RLock()
 	snapshot := g.snapshot[network]
 	usable := snapshot != nil && snapshot.generation == generation && !g.providersChanged(snapshot)
 	g.snapshotAccess.RUnlock()
 	if usable {
-		return snapshot.all, snapshot.selected
+		return snapshot.all, snapshot.selected, snapshot.best
 	}
 
 	// One ranking at a time: the connections that arrive while it is being built wait
@@ -61,7 +63,7 @@ func (g *Group) selection(network string) (all []*selection.Node, selected []*se
 	defer g.snapshotAccess.Unlock()
 	generation = g.generation.Load()
 	if snapshot = g.snapshot[network]; snapshot != nil && snapshot.generation == generation && !g.providersChanged(snapshot) {
-		return snapshot.all, snapshot.selected
+		return snapshot.all, snapshot.selected, snapshot.best
 	}
 	previous := ""
 	if old := g.snapshot[network]; old != nil {
@@ -73,6 +75,9 @@ func (g *Group) selection(network string) (all []*selection.Node, selected []*se
 	providersAt := g.providersUpdatedAt()
 	all = g.Nodes(network)
 	ranked := g.pick.Objective().Rank(all)
+	if len(ranked) > 0 {
+		best = ranked[0]
+	}
 	selected, chosen := g.pick.Select(ranked, previous)
 	if g.snapshot == nil {
 		g.snapshot = make(map[string]*nodeSnapshot)
@@ -81,10 +86,11 @@ func (g *Group) selection(network string) (all []*selection.Node, selected []*se
 		generation:  generation,
 		providersAt: providersAt,
 		all:         all,
+		best:        best,
 		selected:    selected,
 		chosen:      chosen,
 	}
-	return all, selected
+	return all, selected, best
 }
 
 // providersChanged reports whether the content of a provider may have changed since the
@@ -160,7 +166,7 @@ func (g *Group) LogNodes() {
 // ones only serve the connections they already have, new connections keep to the
 // selection.
 func (g *Group) RetainedNodes(inUse []string) []string {
-	all, selected := g.GetNodes()
+	all, selected, best := g.selection(N.NetworkTCP)
 	if len(selected) == 0 {
 		return []string{}
 	}
@@ -168,7 +174,7 @@ func (g *Group) RetainedNodes(inUse []string) []string {
 	if !isKeeper || len(inUse) == 0 {
 		return selection.Tags(selected)
 	}
-	retained := selection.RetainNodes(all, selected, inUse, keeper)
+	retained := selection.RetainNodes(all, selected, best, inUse, keeper)
 	if len(retained) > len(selected) {
 		g.logger.Debug(
 			"load balancing keeps ", len(retained)-len(selected),
@@ -260,5 +266,6 @@ func (g *Group) availableNetworks() []string {
 
 // GetNodes returns all nodes and the selected ones, in preference order
 func (g *Group) GetNodes() (all, selected []*selection.Node) {
-	return g.selection(N.NetworkTCP)
+	all, selected, _ = g.selection(N.NetworkTCP)
+	return
 }
