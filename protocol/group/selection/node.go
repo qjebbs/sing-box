@@ -91,6 +91,22 @@ func (n *Node) String() string {
 	)
 }
 
+// nodeLine returns the log line of a node: its statistics and, when the objective scores
+// the nodes, its score.
+func nodeLine(objective Objective, node *Node) string {
+	line := node.String()
+	scorer, isScorer := objective.(Scorer)
+	if !isScorer {
+		return line
+	}
+	if score := scorer.Score(node); score != healthcheck.Failed {
+		return line + " SCORE=" + score.String()
+	}
+	// healthcheck.Failed means there is no score to show, printing 0ms would read as the
+	// best possible result.
+	return line + " SCORE=None"
+}
+
 // deviationString returns the deviation to show. A node that never worked has no
 // stability to speak of: the zero of a missing value reads as the best possible
 // result.

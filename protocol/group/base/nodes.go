@@ -5,7 +5,6 @@ import (
 	"time"
 
 	"github.com/sagernet/sing-box/adapter"
-	"github.com/sagernet/sing-box/common/healthcheck"
 	"github.com/sagernet/sing-box/protocol/group/selection"
 	"github.com/sagernet/sing/common"
 	M "github.com/sagernet/sing/common/metadata"
@@ -130,35 +129,14 @@ func (g *Group) AvailableNodes() []string {
 	))
 }
 
-// LogNodes logs the statistics of every node, the selected ones first.
+// LogNodes logs the statistics of every node of the group, the way the selection lays
+// them out.
 func (g *Group) LogNodes() {
-	all, selected := g.GetNodes()
+	all, selected, _ := g.selection(N.NetworkTCP)
 	if len(all) == 0 {
 		return
 	}
-	available := len(selected)
-	g.logger.Info(
-		g.pick.String(), ", ", available, " of ", len(all), " nodes available",
-	)
-	g.logger.Info("=== nodes available ===")
-	objective := g.pick.Objective()
-	scorer, isScorer := objective.(selection.Scorer)
-	for i, n := range objective.Rank(all) {
-		if i == available {
-			g.logger.Info("=== nodes unavailable ===")
-		}
-		if isScorer {
-			if score := scorer.Score(n); score != healthcheck.Failed {
-				g.logger.Info(n.String(), " SCORE=", score)
-			} else {
-				// healthcheck.Failed means there is no score to show, printing
-				// 0ms would read as the best possible result.
-				g.logger.Info(n.String(), " SCORE=None")
-			}
-			continue
-		}
-		g.logger.Info(n.String())
-	}
+	g.pick.LogNodes(g.logger, all, selected)
 }
 
 // RetainedNodes returns the tags to keep alive: the selected nodes, plus the nodes
