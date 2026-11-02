@@ -30,7 +30,11 @@ The group is a special case of the
 [load balance](/configuration/outbound/loadbalance/) group:
 
 `objective` defaults to `leastping`, `leastload` is also available;
-`min_nodes` and `max_nodes` are both `1`, it always uses only the node with the best score.
+`min_nodes` and `max_nodes` are both `1`, it uses one node at a time.
+
+The node in use keeps its place while its score stays within the
+[tolerance](#tolerance) band of the best one: a change moves every new connection with
+it, so a difference within the band is not worth it.
 
 ### Fields
 
@@ -73,11 +77,12 @@ The objective of the choice. Default is `leastping`.
 
 The relative score band around the best node, default is `0.2`, i.e. 20% of its score.
 
-This group always uses the node with the best score, so the value doesn't delay a
-switch. It is the band within which the node that was just replaced keeps the connections
-it already carries: a difference that cannot be told apart from noise by the statistics
-is no reason to break them. The allowance is at most the band itself, so a node survives
-at most twice the tolerance.
+The node in use keeps its place while its score is within this band of the best one, so
+a difference that is not worth the switch keeps the connections where they are. The same
+band decides whether a node that was just replaced keeps the connections it already
+carries: a difference that cannot be told apart from noise by the statistics is no reason
+to break them. The allowance is at most the band itself, so a node survives at most twice
+the tolerance.
 
 #### interrupt_exist_connections
 

@@ -197,12 +197,7 @@ func SelectCluster(
 	if len(nodes) == 0 {
 		return nil
 	}
-	best := rttFunc(nodes[0])
-	toleranceRange := float32(best) * tolerance
-	if toleranceRange < float32(toleranceFloor) {
-		toleranceRange = float32(toleranceFloor)
-	}
-	limit := rttFromFloat(float64(best) + float64(toleranceRange))
+	limit := clusterLimit(rttFunc(nodes[0]), tolerance)
 	count := 1
 	for count < len(nodes) {
 		// Nodes are sorted by status first, never mix a fallback status in.
@@ -254,4 +249,14 @@ func SortByLeast(nodes []*Node, rttFunc func(*Node) healthcheck.RTT) {
 		// the same nodes when all nodes are equal
 		return left.rand > right.rand
 	})
+}
+
+// clusterLimit returns the highest value that is still within tolerance of best, the
+// band around the best node that a difference within it is not worth acting on.
+func clusterLimit(best healthcheck.RTT, tolerance float32) healthcheck.RTT {
+	toleranceRange := float32(best) * tolerance
+	if toleranceRange < float32(toleranceFloor) {
+		toleranceRange = float32(toleranceFloor)
+	}
+	return rttFromFloat(float64(best) + float64(toleranceRange))
 }

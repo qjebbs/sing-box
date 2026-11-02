@@ -14,9 +14,10 @@ type ProviderURLTestOptions struct {
 	// objective ranks the nodes, it is leastping or leastload. Default is leastping,
 	// the median delay plus the deviation and the failures.
 	Objective string `json:"objective,omitempty"`
-	// tolerance is the relative score band around the best node within which the node
-	// that was just replaced keeps its existing connections, e.g. 0.2 means 20% of the
-	// score of the best node. The pick itself always takes the best node.
+	// tolerance is the relative score band of the best node within which the node in use
+	// keeps its place, e.g. 0.2 keeps it while it is at most 20% worse than the best
+	// one. The same band decides whether a node that was just replaced keeps the
+	// connections it already carries.
 	Tolerance                 float32 `json:"tolerance,omitempty"`
 	InterruptExistConnections bool    `json:"interrupt_exist_connections,omitempty"`
 }

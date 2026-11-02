@@ -20,6 +20,15 @@ type pickBias struct {
 	Regexp *regexp.Regexp
 }
 
+// Profile is how a group picks its node, next to the options that rank them.
+type Profile struct {
+	// Single is a group that uses one node at a time. It keeps the node it chose while
+	// another one is not better by more than the tolerance, because a change takes every
+	// new connection with it. A load balance group spreads the connections across the
+	// nodes instead, and replaces each of them on its own, so it has no choice to keep.
+	Single bool
+}
+
 func configFromOptions(sampling int, options option.LoadBalancePickOptions) (balancerConfig, error) {
 	if sampling <= 0 {
 		return balancerConfig{}, errors.New("sampling must be greater than 0")

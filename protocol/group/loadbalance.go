@@ -214,7 +214,11 @@ func (s *LoadBalance) Start(stage adapter.StartStage, scope *adapter.Scope) erro
 	if err != nil {
 		return err
 	}
-	b, err := balancer.New(s.logger, &s.GroupAdapter, healthCheck, s.options.Pick)
+	b, err := balancer.New(s.logger, &s.GroupAdapter, healthCheck, s.options.Pick, balancer.Profile{
+		// The url test group uses one node at a time, so it only replaces it when
+		// another one is worth the switch.
+		Single: s.Type() == C.TypeURLTest,
+	})
 	if err != nil {
 		return err
 	}

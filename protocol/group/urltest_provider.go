@@ -50,9 +50,9 @@ func urlTestObjective(objective string) (string, error) {
 }
 
 // URLTestProvider is the URL test group: the load balance group under a fixed pick
-// profile. It takes the node with the best score, one at a time, and replaces it as
-// soon as another node scores better. The tolerance is not part of the pick: it only
-// decides whether a node that just left it keeps the connections it already carries.
+// profile. It uses one node at a time, and replaces it only when another one is better
+// by more than the tolerance: a change takes every new connection with it, so a
+// difference that is not worth it keeps the node where it is.
 type URLTestProvider struct {
 	*LoadBalance
 }

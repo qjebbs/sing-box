@@ -22,8 +22,9 @@ type Balancer struct {
 	*healthcheck.HealthCheck
 	Adapter providersAdapter
 
-	logger log.ContextLogger
-	cfg    balancerConfig
+	logger  log.ContextLogger
+	cfg     balancerConfig
+	profile Profile
 
 	Objective Objective
 	Strategy  Strategy
@@ -46,6 +47,9 @@ type nodeSnapshot struct {
 	providersAt []time.Time
 	all         []*Node
 	selected    []*Node
+	// chosen is the node the group picked, kept by a single node group while another
+	// one is not better by more than the tolerance.
+	chosen string
 }
 
 type providersAdapter interface {
@@ -58,6 +62,7 @@ func New(
 	adapter providersAdapter,
 	hc *healthcheck.HealthCheck,
 	options option.LoadBalancePickOptions,
+	profile Profile,
 ) (*Balancer, error) {
 	cfg, err := configFromOptions(hc.Storage.Cap(), options)
 	if err != nil {
@@ -76,6 +81,7 @@ func New(
 		Adapter:     adapter,
 		logger:      logger,
 		cfg:         cfg,
+		profile:     profile,
 		Objective:   objective,
 		Strategy:    strategy,
 	}, nil
@@ -120,12 +126,19 @@ func (b *Balancer) selection(network string) (all []*Node, selected []*Node) {
 	if snapshot = b.snapshot[network]; snapshot != nil && snapshot.generation == generation && !b.providersChanged(snapshot) {
 		return snapshot.all, snapshot.selected
 	}
+	var chosen string
+	if previous := b.snapshot[network]; previous != nil {
+		chosen = previous.chosen
+	}
 	// The update times are read before the nodes they describe, so a provider that
 	// changes while the ranking is being built leaves a snapshot that the next pick
 	// sees as outdated.
 	providersAt := b.providersUpdatedAt()
 	all = b.Nodes(network)
 	selected = Filter(b.Objective, all)
+	if b.profile.Single {
+		selected, chosen = b.keepCurrent(chosen, all, selected)
+	}
 	if b.snapshot == nil {
 		b.snapshot = make(map[string]*nodeSnapshot)
 	}
@@ -134,8 +147,44 @@ func (b *Balancer) selection(network string) (all []*Node, selected []*Node) {
 		providersAt: providersAt,
 		all:         all,
 		selected:    selected,
+		chosen:      chosen,
 	}
 	return all, selected
+}
+
+// keepCurrent replaces the selection of a single node group with the node it chose
+// while that node is still as good as the best one within the tolerance. A change takes
+// every new connection with it, so a difference that is not worth it keeps the node
+// where it is.
+//
+// It runs while the ranking is built, so the choice is made once per check round rather
+// than once per connection.
+func (b *Balancer) keepCurrent(chosen string, all []*Node, selected []*Node) ([]*Node, string) {
+	if len(selected) == 0 {
+		return selected, ""
+	}
+	best := selected[0]
+	scorer, isScorer := b.Objective.(Scorer)
+	if !isScorer {
+		return selected, best.Tag()
+	}
+	if chosen != "" && chosen != best.Tag() {
+		for _, node := range all {
+			if node.Tag() != chosen {
+				continue
+			}
+			if node.Status == best.Status && scorer.Score(node) <= clusterLimit(scorer.Score(best), b.tolerance()) {
+				return []*Node{node}, chosen
+			}
+			break
+		}
+	}
+	return selected, best.Tag()
+}
+
+// tolerance is the band within which a difference is not worth a different node.
+func (b *Balancer) tolerance() float32 {
+	return float32Option(b.cfg.Tolerance, DefaultTolerance)
 }
 
 // providersChanged reports whether the content of a provider may have changed since the
