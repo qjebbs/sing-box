@@ -128,7 +128,6 @@ func (m *ConnectionManager) NewConnection(ctx context.Context, this N.Dialer, co
 		m.logger.ErrorContext(ctx, err)
 		return
 	}
-	m.reportOutboundConnection(metadata.OutboundChain, true)
 	err = N.ReportConnHandshakeSuccess(conn, remoteConn)
 	if err != nil {
 		err = E.Cause(err, "report handshake success")
@@ -154,8 +153,15 @@ func (m *ConnectionManager) NewConnection(ctx context.Context, this N.Dialer, co
 	serverFirst := sniff.Skip(&metadata)
 	var done atomic.Bool
 	if m.kickWriteHandshake(ctx, conn, remoteConn, serverFirst, false, &done, onClose) {
+		// The outbound handshake failed, so the node did not carry this connection even
+		// though the dial succeeded.
+		m.reportOutboundConnection(metadata.OutboundChain, false)
 		return
 	}
+	// A handshake deferred to the first write is kicked above, so its outcome is known
+	// before the connection is reported. The reply written by ReportConnHandshakeSuccess
+	// is the inbound side, and its failure says nothing about the node.
+	m.reportOutboundConnection(metadata.OutboundChain, true)
 	if m.kickWriteHandshake(ctx, remoteConn, conn, serverFirst, true, &done, onClose) {
 		return
 	}

@@ -149,5 +149,10 @@ func urlTest(ctx context.Context, link string, detour N.Dialer) (t uint16, err e
 	}
 	resp.Body.Close()
 	t = uint16(time.Since(start) / time.Millisecond)
+	if t == 0 {
+		// A zero delay means a failed test to the consumers, see healthcheck.Failed, so
+		// report a test that completed in under a millisecond as 1 ms.
+		t = 1
+	}
 	return
 }
