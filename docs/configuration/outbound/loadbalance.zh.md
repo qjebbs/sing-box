@@ -25,7 +25,7 @@
     "tolerance": 0.2,
     "min_nodes": 1,
     "max_nodes": 0,
-    "jitter_weight": 1,
+    "jitter_weight": 0,
     "biases": [
       {
         "contains": "keyword",
@@ -166,9 +166,10 @@ score   = (ALL - FAIL) / ALL × cost + FAIL / ALL × failure
 
 > 仅适用于 `least*` 目标
 
-叠加到[分数](#objective)上的标准差权重，默认为 `1`，即往返时间波动 300ms 的节点，分数相当于比其中位数慢 300ms。
+叠加到[分数](#objective)上的标准差权重，默认为 `0`，即 `leastping` 只按延时打分。
 
-如果你更愿意接受“低延时但不稳定”的节点，而不是“稍慢但稳定”的节点，可以把它调低。该值对 `leastload` 无效，因为它的分数本身就是标准差。
+把它设为大于 `0` 时，同样中位延时的节点会因不稳定而被排得更靠后：设为 `1` 时，往返时间波动 300ms 的节点，分数相当于比其中位数慢 300ms。
+标准差是在健康检查保留的样本上计算的，因此单次慢速检查会一直影响该节点，直到它离开窗口；要单独按稳定性排序，请使用 `leastload`。该值对 `leastload` 无效，因为它的分数本身就是标准差。
 
 #### biases
 

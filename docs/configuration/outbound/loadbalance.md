@@ -25,7 +25,7 @@
     "tolerance": 0.2,
     "min_nodes": 1,
     "max_nodes": 0,
-    "jitter_weight": 1,
+    "jitter_weight": 0,
     "biases": [
       {
         "contains": "keyword",
@@ -169,9 +169,9 @@ This affects the case when the nodes are equally good, e.g. when all nodes are w
 
 > Available only for `least*` objectives
 
-Scales the standard deviation added to the [score](#objective). Default is `1`, so a node whose RTT deviates by 300ms is scored as 300ms slower than its median.
+Scales the standard deviation added to the [score](#objective). Default is `0`, so `leastping` scores the delay alone.
 
-Set it lower if you prefer a low but unstable node over a slightly slower steady one. It has no effect on `leastload`, whose score is the standard deviation itself.
+Set it above `0` to rank an unstable node worse than a steady one with the same median delay: with `1`, a node whose RTT deviates by 300ms is scored as 300ms slower than its median. The deviation is measured over the samples the health check keeps, so a single slow check weighs on the node until it leaves the window; use `leastload` to rank by the stability alone. It has no effect on `leastload`, whose score is the standard deviation itself.
 
 #### biases
 

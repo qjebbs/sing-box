@@ -184,7 +184,7 @@ func TestLeastPingUsesMedian(t *testing.T) {
 
 func TestLeastPingScore(t *testing.T) {
 	t.Parallel()
-	objective := selection.NewLeastPingObjective(option.LoadBalancePickOptions{})
+	objective := selection.NewLeastPingObjective(option.LoadBalancePickOptions{JitterWeight: 1})
 	testCases := []struct {
 		name  string
 		stats healthcheck.Stats
@@ -199,6 +199,34 @@ func TestLeastPingScore(t *testing.T) {
 		// no attempt ever succeeded, the timeout is all the node costs
 		{name: "never succeeded", stats: healthcheck.Stats{All: 10, Fail: 10}, want: 15000},
 		{name: "never checked", stats: healthcheck.Stats{}, want: 0},
+	}
+	for _, testCase := range testCases {
+		testCase := testCase
+		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+			node := &selection.Node{Status: selection.StatusQualified, Stats: testCase.stats}
+			got := objective.Score(node)
+			if got != testCase.want {
+				t.Fatalf("want %v, got %v", testCase.want, got)
+			}
+		})
+	}
+}
+
+func TestLeastPingScoreWithoutJitter(t *testing.T) {
+	t.Parallel()
+	// adding the deviation is an opt-in, so an unset weight scores the delay alone
+	objective := selection.NewLeastPingObjective(option.LoadBalancePickOptions{})
+	testCases := []struct {
+		name  string
+		stats healthcheck.Stats
+		want  healthcheck.RTT
+	}{
+		{name: "clear", stats: healthcheck.Stats{Median: 160, Deviation: 10, All: 10}, want: 160},
+		// an unstable node is not ranked worse, the caller asked for the delay
+		{name: "jitter", stats: healthcheck.Stats{Median: 160, Deviation: 600, All: 10}, want: 160},
+		// the failures are still mixed in, in the scale of the node
+		{name: "failures", stats: healthcheck.Stats{Median: 160, Deviation: 10, All: 10, Fail: 2}, want: 224},
 	}
 	for _, testCase := range testCases {
 		testCase := testCase
@@ -236,8 +264,10 @@ func TestLeastScoreOptionWeights(t *testing.T) {
 		options option.LoadBalancePickOptions
 		want    healthcheck.RTT
 	}{
-		// 100 + 20
-		{name: "defaults", options: option.LoadBalancePickOptions{}, want: 120},
+		// the delay alone, the jitter is an opt-in
+		{name: "defaults", options: option.LoadBalancePickOptions{}, want: 100},
+		// 100 + 1 * 20
+		{name: "opt-in", options: option.LoadBalancePickOptions{JitterWeight: 1}, want: 120},
 		// 100 + 0.5 * 20
 		{name: "custom", options: option.LoadBalancePickOptions{JitterWeight: 0.5}, want: 110},
 	}

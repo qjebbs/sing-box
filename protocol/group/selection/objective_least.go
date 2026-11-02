@@ -16,8 +16,6 @@ var (
 const (
 	// DefaultTolerance is the default relative tolerance around the best node.
 	DefaultTolerance float32 = 0.2
-	// DefaultJitterWeight is the default weight of the standard deviation in the score.
-	DefaultJitterWeight float32 = 1
 	// toleranceFloor is the absolute floor of the tolerance, so tiny values, such as
 	// the deviation of an always stable node, are not split by noise.
 	toleranceFloor = 10 * healthcheck.Millisecond
@@ -75,7 +73,10 @@ func NewLeastPingObjective(options option.LoadBalancePickOptions) *LeastObjectiv
 	objective.name = ObjectiveLeastPing
 	objective.baseFunc = medianRTT
 	objective.jitterFunc = deviationRTT
-	objective.jitterWeight = float32Option(options.JitterWeight, DefaultJitterWeight)
+	// The weight is taken as it is: 0 is a score on the delay alone, and adding the
+	// deviation is an opt-in. The deviation of a window of checks is moved by a single
+	// slow check, so it is not a good default for a score everything else ranks by.
+	objective.jitterWeight = options.JitterWeight
 	return objective
 }
 

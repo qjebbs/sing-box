@@ -34,8 +34,9 @@ func Filter(objective Objective, all []*Node) []*Node {
 
 // ObjectiveOptions configure the ranking and the cluster around the best node.
 type ObjectiveOptions struct {
-	// JitterWeight scales the standard deviation added to the score of the leastping
-	// objective. It is not used by leastload, whose score is the deviation itself.
+	// JitterWeight is the weight of the standard deviation added to the score of the
+	// leastping objective, 0 for a score on the delay alone. It is not used by
+	// leastload, whose score is the deviation itself.
 	JitterWeight float32
 	// Tolerance is the band around the best node within which the nodes are equally
 	// good, relative to its score, e.g. 0.2 means 20%.
