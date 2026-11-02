@@ -212,17 +212,17 @@ func TestRetainNodesNoSelection(t *testing.T) {
 func TestRetainNodesUsesObjective(t *testing.T) {
 	t.Parallel()
 	// The real objective decides, not a stub: 5 minutes of statistics put the node
-	// right outside the band, but its deviation is large enough that the excess is
+	// right outside the band, but its jitter is large enough that the excess is
 	// noise, so its connections are kept.
 	objective := selection.NewLeastPingObjective(option.LoadBalancePickOptions{JitterWeight: 1})
 	all := []*selection.Node{
 		{
 			Index: 0, Status: selection.StatusQualified,
-			Stats: healthcheck.Stats{All: 10, Median: 161, Deviation: 57},
+			Stats: healthcheck.Stats{All: 10, Median: 161, Jitter: 57},
 		},
 		{
 			Index: 1, Status: selection.StatusQualified,
-			Stats: healthcheck.Stats{All: 10, Median: 178, Deviation: 126},
+			Stats: healthcheck.Stats{All: 10, Median: 178, Jitter: 126},
 		},
 	}
 	all[0].Outbound, all[1].Outbound = tagOutbound("fast"), tagOutbound("jittery")

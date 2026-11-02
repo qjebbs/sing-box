@@ -90,31 +90,31 @@ func TestNodeString(t *testing.T) {
 		{
 			name:  "all failed",
 			stats: healthcheck.Stats{All: 1, Fail: 1},
-			want:  "#0 x [nil] STD=None MED=None Latest=None FAIL=1/1",
+			want:  "#0 x [nil] MED=None Latest=None JIT=None FAIL=1/1",
 		},
-		// one successful check among failures still has a deviation
+		// one successful check among failures still has a jitter
 		{
 			name:  "some failed",
-			stats: healthcheck.Stats{All: 2, Fail: 1, Deviation: 40, Median: 100, Latest: 120},
-			want:  "#0 x [nil] STD=40ms MED=100ms Latest=120ms FAIL=1/2",
+			stats: healthcheck.Stats{All: 2, Fail: 1, Jitter: 40, Median: 100, Latest: 120},
+			want:  "#0 x [nil] MED=100ms Latest=120ms JIT=40ms FAIL=1/2",
 		},
 		{
 			name:  "clear",
-			stats: healthcheck.Stats{All: 10, Deviation: 57, Median: 164, Latest: 155},
-			want:  "#0 x [nil] STD=57ms MED=164ms Latest=155ms FAIL=0/10",
+			stats: healthcheck.Stats{All: 10, Jitter: 57, Median: 164, Latest: 155},
+			want:  "#0 x [nil] MED=164ms Latest=155ms JIT=57ms FAIL=0/10",
 		},
 		// the average is not printed, it mixes the delays and the timeouts
 		{
 			name:  "no average",
-			stats: healthcheck.Stats{All: 10, Fail: 1, Deviation: 4330, Median: 526, Average: 2050, Latest: 402},
-			want:  "#0 x [nil] STD=4.33s MED=526ms Latest=402ms FAIL=1/10",
+			stats: healthcheck.Stats{All: 10, Fail: 1, Jitter: 4330, Median: 526, Average: 2050, Latest: 402},
+			want:  "#0 x [nil] MED=526ms Latest=402ms JIT=4.33s FAIL=1/10",
 		},
 		// a node that was never checked has nothing to show
 		{
 			name:   "never checked",
 			status: StatusUnknown,
 			stats:  healthcheck.Stats{},
-			want:   "#0 ? [nil] STD=None MED=None Latest=None FAIL=0/0",
+			want:   "#0 ? [nil] MED=None Latest=None JIT=None FAIL=0/0",
 		},
 	}
 	for _, testCase := range testCases {
@@ -133,9 +133,9 @@ func TestNodeStringScaled(t *testing.T) {
 	t.Parallel()
 	node := &Node{
 		RTTSacale: 2,
-		Stats:     healthcheck.Stats{All: 10, Deviation: 57, Median: 164, Latest: 155},
+		Stats:     healthcheck.Stats{All: 10, Jitter: 57, Median: 164, Latest: 155},
 	}
-	want := "STD=57ms(114ms) MED=164ms(328ms) Latest=155ms(310ms)"
+	want := "MED=164ms(328ms) Latest=155ms(310ms) JIT=57ms(114ms)"
 	if got := node.String(); !strings.Contains(got, want) {
 		t.Fatalf("want %q, got %q", want, got)
 	}
@@ -144,7 +144,7 @@ func TestNodeStringScaled(t *testing.T) {
 		RTTSacale: 2,
 		Stats:     healthcheck.Stats{All: 1, Fail: 1, Median: 15000},
 	}
-	want = "STD=None MED=None Latest=None"
+	want = "MED=None Latest=None JIT=None"
 	if got := node.String(); !strings.Contains(got, want) {
 		t.Fatalf("want %q, got %q", want, got)
 	}

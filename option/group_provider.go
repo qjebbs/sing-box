@@ -12,7 +12,7 @@ type ProviderURLTestOptions struct {
 	ProviderGroupCommonOption
 	HealthCheck *HealthCheckOptions `json:"health_check,omitempty"`
 	// objective ranks the nodes, it is leastping or leastload. Default is leastping,
-	// the median delay plus the deviation and the failures.
+	// the median delay plus the failures.
 	Objective string `json:"objective,omitempty"`
 	// tolerance is the relative score band of the best node within which the node in use
 	// keeps its place, e.g. 0.2 keeps it while it is at most 20% worse than the best

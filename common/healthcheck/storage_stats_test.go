@@ -15,15 +15,17 @@ func TestStorageStats(t *testing.T) {
 	for _, rtt := range rtts {
 		s.Put(rtt)
 	}
+	// the median absolute deviation of the delays that are kept, {60, 140}, is 40, and
+	// it is scaled to an estimate of the standard deviation: 1.4826 × 40 ≈ 59
 	want := healthcheck.Stats{
-		All:       4,
-		Fail:      0,
-		Deviation: 40,
-		Average:   100,
-		Median:    100,
-		Max:       140,
-		Min:       60,
-		Latest:    140,
+		All:     4,
+		Fail:    0,
+		Jitter:  59,
+		Average: 100,
+		Median:  100,
+		Max:     140,
+		Min:     60,
+		Latest:  140,
 	}
 	assertStats(t, "Stats() - All Success", want, s.Stats())
 
@@ -32,14 +34,14 @@ func TestStorageStats(t *testing.T) {
 	s.Put(healthcheck.Failed)
 	s.Put(healthcheck.Failed)
 	want = healthcheck.Stats{
-		All:       4,
-		Fail:      2,
-		Deviation: 40,
-		Average:   100,
-		Median:    100,
-		Max:       140,
-		Min:       60,
-		Latest:    healthcheck.Failed,
+		All:     4,
+		Fail:    2,
+		Jitter:  59,
+		Average: 100,
+		Median:  100,
+		Max:     140,
+		Min:     60,
+		Latest:  healthcheck.Failed,
 	}
 	assertStats(t, "Stats() - Half Fail", want, s.Stats())
 
@@ -79,14 +81,14 @@ func TestStorageStatsMostlyFail(t *testing.T) {
 	s.Put(100)
 	s.Put(100)
 	want := healthcheck.Stats{
-		All:       10,
-		Fail:      8,
-		Deviation: 0,
-		Average:   100,
-		Median:    100,
-		Max:       100,
-		Min:       100,
-		Latest:    100,
+		All:     10,
+		Fail:    8,
+		Jitter:  0,
+		Average: 100,
+		Median:  100,
+		Max:     100,
+		Min:     100,
+		Latest:  100,
 	}
 	assertStats(t, "Stats() - Mostly Fail", want, s.Stats())
 	if got := s.Stats().Succeeded(); got != 2 {
@@ -106,14 +108,14 @@ func TestStorageStatsIgnoreOutdated(t *testing.T) {
 		s.Put(rtt)
 	}
 	want := healthcheck.Stats{
-		All:       2,
-		Fail:      0,
-		Deviation: 40,
-		Average:   100,
-		Median:    100,
-		Max:       140,
-		Min:       60,
-		Latest:    140,
+		All:     2,
+		Fail:    0,
+		Jitter:  59,
+		Average: 100,
+		Median:  100,
+		Max:     140,
+		Min:     60,
+		Latest:  140,
 	}
 
 	assertStats(t, "Stats() - Half Outdated", want, s.Stats())
@@ -121,14 +123,14 @@ func TestStorageStatsIgnoreOutdated(t *testing.T) {
 	// wait for all outdated
 	time.Sleep(time.Duration(100) * time.Millisecond)
 	want = healthcheck.Stats{
-		All:       0,
-		Fail:      0,
-		Deviation: 0,
-		Average:   0,
-		Median:    0,
-		Max:       0,
-		Min:       0,
-		Latest:    0,
+		All:     0,
+		Fail:    0,
+		Jitter:  0,
+		Average: 0,
+		Median:  0,
+		Max:     0,
+		Min:     0,
+		Latest:  0,
 	}
 	assertStats(t, "Stats() - All Outdated", want, s.Stats())
 
@@ -137,12 +139,12 @@ func TestStorageStatsIgnoreOutdated(t *testing.T) {
 		All:  1,
 		Fail: 0,
 		// 1 sample, std=0.5rtt
-		Deviation: 30,
-		Average:   60,
-		Median:    60,
-		Max:       60,
-		Min:       60,
-		Latest:    60,
+		Jitter:  30,
+		Average: 60,
+		Median:  60,
+		Max:     60,
+		Min:     60,
+		Latest:  60,
 	}
 	assertStats(t, "Stats() - Put After Outdated", want, s.Stats())
 }
@@ -242,9 +244,9 @@ func assertStats(t *testing.T, name string, want, got healthcheck.Stats) {
 
 func TestStatsCostZeroIsNotFailed(t *testing.T) {
 	t.Parallel()
-	// leastload costs a node by its deviation, and a steady node has none. Zero is
+	// leastload costs a node by its jitter, and a steady node has none. Zero is
 	// reserved for a missing value, so the cost must stay measurable.
-	stats := healthcheck.Stats{All: 10, Median: 100, Deviation: 0, Latest: 100}
+	stats := healthcheck.Stats{All: 10, Median: 100, Jitter: 0, Latest: 100}
 	if cost := stats.Cost(0, 0, 0); cost != healthcheck.Millisecond {
 		t.Fatalf("want the smallest delay, got %v", cost)
 	}

@@ -17,7 +17,7 @@ const (
 	// DefaultTolerance is the default relative tolerance around the best node.
 	DefaultTolerance float32 = 0.2
 	// toleranceFloor is the absolute floor of the tolerance, so tiny values, such as
-	// the deviation of an always stable node, are not split by noise.
+	// the jitter of an always stable node, are not split by noise.
 	toleranceFloor = 10 * healthcheck.Millisecond
 	// hysteresisSigma is how many standard errors a node may exceed the selection
 	// band by and still keep its existing connections. Two standard errors is the
@@ -48,8 +48,8 @@ func (o *LeastObjective) Name() string {
 	return o.name
 }
 
-func deviationRTT(node *Node) healthcheck.RTT {
-	return node.ScaleRTT(node.Deviation)
+func jitterRTT(node *Node) healthcheck.RTT {
+	return node.ScaleRTT(node.Jitter)
 }
 
 func medianRTT(node *Node) healthcheck.RTT {
@@ -60,10 +60,10 @@ func medianRTT(node *Node) healthcheck.RTT {
 func NewLeastLoadObjective(options option.LoadBalancePickOptions) *LeastObjective {
 	objective := newLeastObjective(options)
 	objective.name = ObjectiveLeastLoad
-	// the standard deviation is the jitter itself, so jitter_weight is not used,
-	// adding the deviation again would only scale every score by the same factor
+	// the jitter is the score itself, so jitter_weight is not used, adding it again
+	// would only scale every score by the same factor
 	// objective.jitterWeight = 0
-	objective.baseFunc = deviationRTT
+	objective.baseFunc = jitterRTT
 	return objective
 }
 
@@ -72,10 +72,10 @@ func NewLeastPingObjective(options option.LoadBalancePickOptions) *LeastObjectiv
 	objective := newLeastObjective(options)
 	objective.name = ObjectiveLeastPing
 	objective.baseFunc = medianRTT
-	objective.jitterFunc = deviationRTT
+	objective.jitterFunc = jitterRTT
 	// The weight is taken as it is: 0 is a score on the delay alone, and adding the
-	// deviation is an opt-in. The deviation of a window of checks is moved by a single
-	// slow check, so it is not a good default for a score everything else ranks by.
+	// jitter is an opt-in. A group that compares delays rather than loads does not want
+	// the jitter folded into the delay it compares, and one that does want it says so.
 	objective.jitterWeight = options.JitterWeight
 	return objective
 }
@@ -103,7 +103,7 @@ func float32Option(value float32, defaultValue float32) float32 {
 //	score = Cost(base, STD, jitterWeight)
 //
 // The jitter term is absent when the objective has no jitterFunc, which is the case
-// for leastload: its base is the deviation itself. See healthcheck.Stats.Cost for what
+// for leastload: its base is the jitter itself. See healthcheck.Stats.Cost for what
 // an attempt costs on average, including the failures.
 func (o *LeastObjective) Score(node *Node) healthcheck.RTT {
 	base := o.baseFunc(node)
@@ -121,21 +121,21 @@ func (o *LeastObjective) scoreOf(node *Node) float64 {
 
 // scoreStandardError returns the standard error of the score of the node, i.e. how
 // much the score would move if the health checks were run again. It only depends on
-// the number of samples and their deviation: the median of n samples has a standard
-// error of 1.25σ/√n, and the deviation itself of σ/√(2(n-1)).
+// the number of samples and their jitter: the median of n samples has a standard error
+// of 1.25σ/√n, and the jitter itself of about σ/√(2(n-1)).
 func (o *LeastObjective) scoreStandardError(node *Node) float64 {
-	deviation := float64(node.ScaleRTT(node.Deviation))
+	jitter := float64(node.ScaleRTT(node.Jitter))
 	n := float64(node.Stats.Succeeded())
 	if n < 2 {
 		// a single sample says nothing about the accuracy of its own estimate
-		return deviation
+		return jitter
 	}
 	if o.jitterFunc == nil {
-		// the score is the deviation
-		return deviation / math.Sqrt(2*(n-1))
+		// the score is the jitter
+		return jitter / math.Sqrt(2*(n-1))
 	}
-	medianError := 1.25 * deviation / math.Sqrt(n)
-	jitterError := float64(o.jitterWeight) * deviation / math.Sqrt(2*(n-1))
+	medianError := 1.25 * jitter / math.Sqrt(n)
+	jitterError := float64(o.jitterWeight) * jitter / math.Sqrt(2*(n-1))
 	return math.Sqrt(medianError*medianError + jitterError*jitterError)
 }
 

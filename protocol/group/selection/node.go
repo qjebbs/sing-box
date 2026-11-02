@@ -84,9 +84,9 @@ func (n *Node) String() string {
 	// The average is not printed: the median is the typical delay, and the average is
 	// moved by a single spike, so it says less about what the node usually costs.
 	return fmt.Sprintf(
-		"#%d %s [%s] STD=%s MED=%s Latest=%s FAIL=%d/%d",
+		"#%d %s [%s] MED=%s Latest=%s JIT=%s FAIL=%d/%d",
 		n.Index, n.Status, tag,
-		n.deviationString(), n.medianString(), n.latestString(),
+		n.medianString(), n.latestString(), n.jitterString(),
 		n.Fail, n.All,
 	)
 }
@@ -107,14 +107,13 @@ func nodeLine(objective Objective, node *Node) string {
 	return line + " SCORE=None"
 }
 
-// deviationString returns the deviation to show. A node that never worked has no
-// stability to speak of: the zero of a missing value reads as the best possible
-// result.
-func (n *Node) deviationString() string {
+// jitterString returns the jitter to show. A node that never worked has no stability
+// to speak of: the zero of a missing value reads as the best possible result.
+func (n *Node) jitterString() string {
 	if n.Stats.Succeeded() == 0 {
 		return "None"
 	}
-	return n.formatRTT(n.Deviation)
+	return n.formatRTT(n.Jitter)
 }
 
 // medianString returns the median to show, there is none without a successful check.

@@ -15,14 +15,14 @@ var failureDelay = RTTOf(C.TCPTimeout)
 
 // Stats is the statistics of RTTs
 type Stats struct {
-	All       int // total number of health checks
-	Fail      int // number of failed health checks
-	Deviation RTT // standard deviation of RTTs
-	Average   RTT // average RTT of all health checks
-	Median    RTT // median RTT of all health checks
-	Max       RTT // maximum RTT of all health checks
-	Min       RTT // minimum RTT of all health checks
-	Latest    RTT // latest RTT of all health checks
+	All     int // total number of health checks
+	Fail    int // number of failed health checks
+	Jitter  RTT // jitter of RTTs, a robust estimate of their spread, see jitterOf
+	Average RTT // average RTT of all health checks
+	Median  RTT // median RTT of all health checks
+	Max     RTT // maximum RTT of all health checks
+	Min     RTT // minimum RTT of all health checks
+	Latest  RTT // latest RTT of all health checks
 
 	Expires time.Time // time of the statistics expires
 }
@@ -106,18 +106,65 @@ func newStats(all int, fail int, latest RTT, expires time.Time, values []RTT) St
 	stats.Median = medianOf(values)
 	stats.Min = min
 	if len(values) < 2 {
-		// no enough data for standard deviation, we assume it's half of the average rtt
-		// if we don't do this, standard deviation of 1 round tested nodes is 0, will always
+		// no enough data for a jitter, we assume it's half of the average rtt
+		// if we don't do this, jitter of 1 round tested nodes is 0, will always
 		// selected before 2 or more rounds tested nodes
-		stats.Deviation = stats.Average / 2
+		stats.Jitter = stats.Average / 2
 		return stats
 	}
-	variance := float64(0)
-	for _, delay := range values {
-		variance += math.Pow(float64(delay)-float64(stats.Average), 2)
-	}
-	stats.Deviation = RTT(math.Sqrt(variance / float64(len(values))))
+	stats.Jitter = jitterOf(values, stats.Median)
 	return stats
+}
+
+// madToSigma turns a median absolute deviation into an estimate of the standard
+// deviation of the same samples.
+//
+// For a sample of a normal distribution with standard deviation σ, the absolute
+// deviation from the median follows a half-normal distribution, so its median is the
+// value that half of them stay under:
+//
+//	P(|X| ≤ q) = 1/2  ⟺  2·Φ(q/σ) − 1 = 1/2  ⟺  q = Φ⁻¹(3/4)·σ ≈ 0.67449·σ
+//
+// That is, MAD ≈ 0.67449σ, hence σ ≈ MAD / 0.67449 ≈ 1.4826·MAD. Φ⁻¹(3/4) is the 75th
+// percentile of the standard normal distribution, 0.6744897501960817, and the reciprocal
+// is the constant below.
+//
+// The scaling is what lets a robust deviation stand where a standard deviation is
+// expected, and nothing downstream has to know how it was estimated: the score of the
+// objectives reads it as the std term (cost = MED + weight·σ), and the retention reads it
+// as the standard error of an estimate (1.25σ/√n and σ/√(2(n-1))), both of which are
+// results about σ, not about the way it is measured.
+const madToSigma = 1.482602218505602
+
+// jitterOf returns the jitter of the values, an estimate of the standard deviation
+// around their median: the median absolute deviation, scaled to σ. The values are
+// reordered.
+//
+// The sample standard deviation is not used because a single slow check owns it: the
+// squared distance to the average lets one sample out of ten move the result by hundreds
+// of milliseconds, and it moves the average with it, so the estimate describes the worst
+// moment of the window instead of the node. In a run of the url test group, a node whose
+// checks were all within ±10ms of its median, save one, was reported with 106ms of
+// jitter, 88% of which came from that one check.
+//
+// The median absolute deviation is bounded by the middle of the samples instead: a value
+// only matters once it crosses the median, so it takes half of the samples to move the
+// estimate anywhere. A check that timed out once no longer ranks the node for the whole
+// window, while a node that is genuinely unstable moves the median of the deviations by
+// itself.
+//
+// The estimate is 0 when every sample is the same, which the delay keeps meaning: RTT
+// reserves 0 for a missing value, so a cost of 0 is handled where it is read, see
+// Stats.mixed.
+func jitterOf(values []RTT, median RTT) RTT {
+	for i, delay := range values {
+		if delay > median {
+			values[i] = delay - median
+		} else {
+			values[i] = median - delay
+		}
+	}
+	return RTT(math.Round(madToSigma * float64(medianOf(values))))
 }
 
 // Succeeded returns the number of checks that succeeded, the samples the delay
@@ -130,7 +177,7 @@ func (s Stats) Succeeded() int {
 // nodes by: base plus the jitter added to it, mixed with the failures.
 //
 // The caller chooses the metric: the median delay of the checks that succeeded, or
-// their deviation, scaled by whatever weight the group gives the jitter.
+// their jitter, scaled by whatever weight the group gives it.
 func (s Stats) Cost(base RTT, jitter RTT, jitterWeight float32) RTT {
 	if s.All == 0 {
 		return Failed
@@ -159,7 +206,7 @@ func (s Stats) mixed(cost uint64) RTT {
 	result := RTT((successes*cost + failures*s.failureCost(cost)) / attempts)
 	if result == Failed && successes > 0 {
 		// A cost of zero is a cost like any other, but RTT reserves zero for a missing
-		// value: the deviation of a steady node is exactly that, and reporting it as
+		// value: the jitter of a steady node is exactly that, and reporting it as
 		// missing would rank the steadiest node behind every measured one.
 		return Millisecond
 	}

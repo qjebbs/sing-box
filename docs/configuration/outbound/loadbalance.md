@@ -102,16 +102,18 @@ Generally speaking, use `leastload`, `leastping` for better network quality; use
 Both `leastload` and `leastping` rank the nodes by a score, lower is better:
 
 ```
-cost    = STD                          # leastload
-cost    = MED + jitter_weight * STD    # leastping
+cost    = JIT                          # leastload
+cost    = MED + jitter_weight * JIT    # leastping
 failure = min(TIMEOUT, 3 * cost)
 
 score   = (ALL - FAIL) / ALL * cost + FAIL / ALL * failure
 ```
 
-`MED` and `STD` are the median and the standard deviation of the **successful**
-checks, `FAIL / ALL` the share of the checks that failed, and `TIMEOUT` the timeout a
-failed check waits for, 15s.
+`MED` and `JIT` are the median and the jitter of the **successful** checks, `FAIL / ALL`
+the share of the checks that failed, and `TIMEOUT` the timeout a failed check waits for,
+15s. The jitter is estimated robustly, as the median distance of the checks to their
+median: a single slow check cannot move it, so it describes the node rather than the worst
+moment of its window.
 
 The delay statistics describe the successful checks only, so the failures are mixed in
 by their own share, scored in the scale of the node.
@@ -145,7 +147,7 @@ The maximum relative difference to the best node, default is `0.2`, i.e. nodes t
 The value compared is the [score](#objective): the jitter is part of it for `leastping`, and the failures of both objectives are part of it by their share of the samples.
 
 The tolerance is applied to the best node in the selection, so a clearly worse node is never selected just to fill a count.
-A minimum absolute difference of `10ms` is always used, so tiny values, such as the deviation of an always stable node, aren't split by noise.
+A minimum absolute difference of `10ms` is always used, so tiny values, such as the jitter of an always stable node, aren't split by noise.
 
 For example, with `tolerance: 0.2` and nodes of `174ms`, `504ms`, `505ms`, only the `174ms` node is selected, as the others are nearly three times slower.
 
@@ -169,16 +171,16 @@ This affects the case when the nodes are equally good, e.g. when all nodes are w
 
 > Available only for `least*` objectives
 
-Scales the standard deviation added to the [score](#objective). Default is `0`, so `leastping` scores the delay alone.
+Scales the [jitter](#objective) added to the score. Default is `0`, so `leastping` scores the delay alone.
 
-Set it above `0` to rank an unstable node worse than a steady one with the same median delay: with `1`, a node whose RTT deviates by 300ms is scored as 300ms slower than its median. The deviation is measured over the samples the health check keeps, so a single slow check weighs on the node until it leaves the window; use `leastload` to rank by the stability alone. It has no effect on `leastload`, whose score is the standard deviation itself.
+Set it above `0` to rank an unstable node worse than a steady one with the same median delay: with `1`, a node whose jitter is 300ms is scored as 300ms slower than its median. The jitter is a robust estimate, so one check that timed out does not weigh on the node by itself; use `leastload` to rank by the stability alone. It has no effect on `leastload`, whose score is the jitter itself.
 
 #### biases
 
 The picking bias of load balancing. Default is empty.
 
 When the node tag matches the condition in `biases`,
-its round-trip time (or standard deviation) will be multiplied by `rtt_scale` for comparison when picking.
+its round-trip time (or jitter) will be multiplied by `rtt_scale` for comparison when picking.
 The default value of `rtt_scale` is `1`, and the larger it is, the less preferred the node is. 
 For example, `rtt_scale: 10` means that when the node's round-trip time is `100ms`, it will be treated as `1000ms` for comparison.
 
