@@ -1,4 +1,4 @@
-package balancer
+package base
 
 import (
 	"github.com/sagernet/sing-box/common/healthcheck"

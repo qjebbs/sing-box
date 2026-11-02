@@ -1,4 +1,4 @@
-package balancer
+package base
 
 import (
 	"errors"
@@ -8,7 +8,7 @@ import (
 	"github.com/sagernet/sing-box/option"
 )
 
-type balancerConfig struct {
+type config struct {
 	maxRTT      healthcheck.RTT
 	maxFailRate float32
 	pickBiases  []pickBias
@@ -31,12 +31,12 @@ type pickBias struct {
 	Regexp *regexp.Regexp
 }
 
-func configFromOptions(sampling int, options NodeOptions) (balancerConfig, error) {
+func configFromOptions(sampling int, options NodeOptions) (config, error) {
 	if sampling <= 0 {
-		return balancerConfig{}, errors.New("sampling must be greater than 0")
+		return config{}, errors.New("sampling must be greater than 0")
 	}
 
-	cfg := balancerConfig{
+	cfg := config{
 		maxRTT:      options.MaxRTT,
 		maxFailRate: float32(options.MaxFail) / float32(sampling),
 	}

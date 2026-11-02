@@ -1,41 +1,15 @@
-package balancer
+package base
 
 import (
 	"context"
-	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/sagernet/sing-box/adapter"
 	"github.com/sagernet/sing-box/common/healthcheck"
-	"github.com/sagernet/sing-box/log"
 	"github.com/sagernet/sing/common"
-	E "github.com/sagernet/sing/common/exceptions"
 	M "github.com/sagernet/sing/common/metadata"
 	N "github.com/sagernet/sing/common/network"
 )
-
-var _ adapter.InterfaceUpdateListener = (*Balancer)(nil)
-
-// Balancer is the load balancer
-type Balancer struct {
-	*healthcheck.HealthCheck
-	Adapter providersAdapter
-
-	logger log.ContextLogger
-	cfg    balancerConfig
-	pick   Selection
-
-	networks []string
-
-	// snapshotAccess guards the cached ranking of the nodes, so a pick does not
-	// rebuild and re-sort every node of the group for every connection it carries.
-	snapshotAccess sync.RWMutex
-	snapshot       map[string]*nodeSnapshot
-	// generation is bumped whenever the results that the ranking reads are updated,
-	// see Invalidate, so a cached ranking is only reused while it describes them.
-	generation atomic.Uint64
-}
 
 // nodeSnapshot is the ranking of the nodes of one network, kept between picks until the
 // results that made it change.
@@ -44,95 +18,65 @@ type nodeSnapshot struct {
 	providersAt []time.Time
 	all         []*Node
 	selected    []*Node
-	// chosen is the node the group picked, kept by a single node group while another
-	// one is not better by more than the tolerance.
+	// chosen is the node the group picked, kept by a single node selection while
+	// another one is not better by more than the tolerance.
 	chosen string
 }
 
-type providersAdapter interface {
-	Providers() []adapter.Provider
-}
-
-// New creates a new balancer for the nodes of the group. The selection is how the group
-// turns the ranked nodes into the node that serves a connection, so the balancer is the
-// same for every group and only the selection differs.
-func New(
-	logger log.ContextLogger,
-	adapter providersAdapter,
-	hc *healthcheck.HealthCheck,
-	options NodeOptions,
-	selection Selection,
-) (*Balancer, error) {
-	if selection == nil {
-		return nil, E.New("missing selection")
-	}
-	cfg, err := configFromOptions(hc.Storage.Cap(), options)
-	if err != nil {
-		return nil, err
-	}
-	return &Balancer{
-		HealthCheck: hc,
-		Adapter:     adapter,
-		logger:      logger,
-		cfg:         cfg,
-		pick:        selection,
-	}, nil
-}
-
 // PickNode picks the node for a connection, nil when no node is available.
-func (b *Balancer) PickNode(ctx context.Context, network string, destination M.Socksaddr) *Node {
+func (g *Group) PickNode(ctx context.Context, network string, destination M.Socksaddr) *Node {
 	metadata := adapter.ContextFrom(ctx)
 	if metadata == nil {
 		metadata = &adapter.InboundContext{}
 	}
 	metadata.Destination = destination
-	all, selected := b.selection(network)
-	return b.pick.Pick(all, selected, metadata)
+	all, selected := g.selection(network)
+	return g.pick.Pick(all, selected, metadata)
 }
 
 // Invalidate drops the cached ranking, so the next pick sees the results of the checks
 // that just finished. It is called after a round of checks and after the check of a
-// single node, see LoadBalance.healthChecksUpdated.
-func (b *Balancer) Invalidate() {
-	b.generation.Add(1)
+// single node, see healthChecksUpdated.
+func (g *Group) Invalidate() {
+	g.generation.Add(1)
 }
 
-// selection returns the nodes of the network, ranked and selected for the objective. The
+// selection returns the nodes of the network, ranked and selected by the pick. The
 // ranking is reused while the results it describes are unchanged, so a connection pays
 // for a lookup instead of rebuilding and sorting every node of the group.
-func (b *Balancer) selection(network string) (all []*Node, selected []*Node) {
-	generation := b.generation.Load()
-	b.snapshotAccess.RLock()
-	snapshot := b.snapshot[network]
-	usable := snapshot != nil && snapshot.generation == generation && !b.providersChanged(snapshot)
-	b.snapshotAccess.RUnlock()
+func (g *Group) selection(network string) (all []*Node, selected []*Node) {
+	generation := g.generation.Load()
+	g.snapshotAccess.RLock()
+	snapshot := g.snapshot[network]
+	usable := snapshot != nil && snapshot.generation == generation && !g.providersChanged(snapshot)
+	g.snapshotAccess.RUnlock()
 	if usable {
 		return snapshot.all, snapshot.selected
 	}
 
 	// One ranking at a time: the connections that arrive while it is being built wait
 	// for it instead of building their own.
-	b.snapshotAccess.Lock()
-	defer b.snapshotAccess.Unlock()
-	generation = b.generation.Load()
-	if snapshot = b.snapshot[network]; snapshot != nil && snapshot.generation == generation && !b.providersChanged(snapshot) {
+	g.snapshotAccess.Lock()
+	defer g.snapshotAccess.Unlock()
+	generation = g.generation.Load()
+	if snapshot = g.snapshot[network]; snapshot != nil && snapshot.generation == generation && !g.providersChanged(snapshot) {
 		return snapshot.all, snapshot.selected
 	}
 	previous := ""
-	if old := b.snapshot[network]; old != nil {
+	if old := g.snapshot[network]; old != nil {
 		previous = old.chosen
 	}
 	// The update times are read before the nodes they describe, so a provider that
 	// changes while the ranking is being built leaves a snapshot that the next pick
 	// sees as outdated.
-	providersAt := b.providersUpdatedAt()
-	all = b.Nodes(network)
-	ranked := b.pick.Objective().Rank(all)
-	selected, chosen := b.pick.Select(ranked, previous)
-	if b.snapshot == nil {
-		b.snapshot = make(map[string]*nodeSnapshot)
+	providersAt := g.providersUpdatedAt()
+	all = g.Nodes(network)
+	ranked := g.pick.Objective().Rank(all)
+	selected, chosen := g.pick.Select(ranked, previous)
+	if g.snapshot == nil {
+		g.snapshot = make(map[string]*nodeSnapshot)
 	}
-	b.snapshot[network] = &nodeSnapshot{
+	g.snapshot[network] = &nodeSnapshot{
 		generation:  generation,
 		providersAt: providersAt,
 		all:         all,
@@ -144,8 +88,8 @@ func (b *Balancer) selection(network string) (all []*Node, selected []*Node) {
 
 // providersChanged reports whether the content of a provider may have changed since the
 // snapshot was built.
-func (b *Balancer) providersChanged(snapshot *nodeSnapshot) bool {
-	providers := b.Adapter.Providers()
+func (g *Group) providersChanged(snapshot *nodeSnapshot) bool {
+	providers := g.Providers()
 	if len(providers) != len(snapshot.providersAt) {
 		return true
 	}
@@ -157,8 +101,8 @@ func (b *Balancer) providersChanged(snapshot *nodeSnapshot) bool {
 	return false
 }
 
-func (b *Balancer) providersUpdatedAt() []time.Time {
-	providers := b.Adapter.Providers()
+func (g *Group) providersUpdatedAt() []time.Time {
+	providers := g.Providers()
 	updatedAt := make([]time.Time, len(providers))
 	for i, provider := range providers {
 		updatedAt[i] = provider.UpdatedAt()
@@ -167,8 +111,8 @@ func (b *Balancer) providersUpdatedAt() []time.Time {
 }
 
 // AvailableNodes returns the tags of the nodes new connections may use
-func (b *Balancer) AvailableNodes() []string {
-	_, selected := b.GetNodes()
+func (g *Group) AvailableNodes() []string {
+	_, selected := g.GetNodes()
 	if len(selected) == 0 {
 		return []string{}
 	}
@@ -180,33 +124,33 @@ func (b *Balancer) AvailableNodes() []string {
 }
 
 // LogNodes logs the statistics of every node, the selected ones first.
-func (b *Balancer) LogNodes() {
-	all, selected := b.GetNodes()
+func (g *Group) LogNodes() {
+	all, selected := g.GetNodes()
 	if len(all) == 0 {
 		return
 	}
 	available := len(selected)
-	b.logger.Info(
-		b.pick.String(), ", ", available, " of ", len(all), " nodes available",
+	g.logger.Info(
+		g.pick.String(), ", ", available, " of ", len(all), " nodes available",
 	)
-	b.logger.Info("=== nodes available ===")
-	objective := b.pick.Objective()
+	g.logger.Info("=== nodes available ===")
+	objective := g.pick.Objective()
 	scorer, isScorer := objective.(Scorer)
 	for i, n := range objective.Rank(all) {
 		if i == available {
-			b.logger.Info("=== nodes unavailable ===")
+			g.logger.Info("=== nodes unavailable ===")
 		}
 		if isScorer {
 			if score := scorer.Score(n); score != healthcheck.Failed {
-				b.logger.Info(n.String(), " SCORE=", score)
+				g.logger.Info(n.String(), " SCORE=", score)
 			} else {
 				// healthcheck.Failed means there is no score to show, printing
 				// 0ms would read as the best possible result.
-				b.logger.Info(n.String(), " SCORE=None")
+				g.logger.Info(n.String(), " SCORE=None")
 			}
 			continue
 		}
-		b.logger.Info(n.String())
+		g.logger.Info(n.String())
 	}
 }
 
@@ -214,18 +158,18 @@ func (b *Balancer) LogNodes() {
 // in use that just left the selection because of the measurement noise. The extra
 // ones only serve the connections they already have, new connections keep to the
 // selection.
-func (b *Balancer) RetainedNodes(inUse []string) []string {
-	all, selected := b.GetNodes()
+func (g *Group) RetainedNodes(inUse []string) []string {
+	all, selected := g.GetNodes()
 	if len(selected) == 0 {
 		return []string{}
 	}
-	keeper, isKeeper := b.pick.Objective().(Keeper)
+	keeper, isKeeper := g.pick.Objective().(Keeper)
 	if !isKeeper || len(inUse) == 0 {
 		return nodeTags(selected)
 	}
 	retained := RetainNodes(all, selected, inUse, keeper)
 	if len(retained) > len(selected) {
-		b.logger.Debug(
+		g.logger.Debug(
 			"load balancing keeps ", len(retained)-len(selected),
 			" node(s) out of the selection for their existing connections",
 		)
@@ -236,10 +180,10 @@ func (b *Balancer) RetainedNodes(inUse []string) []string {
 // Nodes returns all nodes of the network with their health status. A node of an
 // outbound group is replaced by the outbound it resolves to, so nested groups are
 // measured and picked by the node they actually use.
-func (b *Balancer) Nodes(network string) []*Node {
+func (g *Group) Nodes(network string) []*Node {
 	all := make([]*Node, 0)
 	idx := 0
-	for _, provider := range b.Adapter.Providers() {
+	for _, provider := range g.Providers() {
 		for _, outbound := range provider.Outbounds() {
 			idx++
 			if network != "" && !common.Contains(outbound.Network(), network) {
@@ -252,9 +196,9 @@ func (b *Balancer) Nodes(network string) []*Node {
 				}
 				outbound = real
 			}
-			scale := calcFactor(outbound.Tag(), b.cfg.pickBiases)
-			stats := b.HealthCheck.Storage.Stats(outbound.Tag())
-			status := calcStatus(&stats, b.cfg.maxRTT, b.cfg.maxFailRate)
+			scale := calcFactor(outbound.Tag(), g.cfg.pickBiases)
+			stats := g.HealthCheck.Storage.Stats(outbound.Tag())
+			status := calcStatus(&stats, g.cfg.maxRTT, g.cfg.maxFailRate)
 			all = append(all, NewNode(outbound, idx, scale, stats, status))
 		}
 	}
@@ -262,18 +206,18 @@ func (b *Balancer) Nodes(network string) []*Node {
 }
 
 // Networks returns the networks supported by the nodes of the group.
-func (b *Balancer) Networks() []string {
-	if b.networks == nil {
-		b.networks = b.availableNetworks()
+func (g *Group) Networks() []string {
+	if g.networks == nil {
+		g.networks = g.availableNetworks()
 	}
-	return b.networks
+	return g.networks
 }
 
 // AliveTags returns the tags of the nodes that are not dead. Unlike the objective,
 // it ignores the selection, so the result only changes when a node's health
 // changes, not when it merely stops being the preferred one.
-func (b *Balancer) AliveTags() []string {
-	nodes := b.Nodes("")
+func (g *Group) AliveTags() []string {
+	nodes := g.Nodes("")
 	alive := make([]string, 0, len(nodes))
 	for _, node := range nodes {
 		if node.Status != StatusDead {
@@ -289,9 +233,9 @@ func (b *Balancer) AliveTags() []string {
 }
 
 // availableNetworks returns available networks of the nodes of the group.
-func (b *Balancer) availableNetworks() []string {
+func (g *Group) availableNetworks() []string {
 	var hasTCP, hasUDP bool
-	nodes := b.Nodes("")
+	nodes := g.Nodes("")
 	for _, n := range nodes {
 		if !hasTCP && common.Contains(n.Network(), N.NetworkTCP) {
 			hasTCP = true
@@ -316,8 +260,8 @@ func (b *Balancer) availableNetworks() []string {
 }
 
 // GetNodes returns all nodes and the selected ones, in preference order
-func (b *Balancer) GetNodes() (all, selected []*Node) {
-	return b.selection(N.NetworkTCP)
+func (g *Group) GetNodes() (all, selected []*Node) {
+	return g.selection(N.NetworkTCP)
 }
 
 // RetainNodes returns the tags of selected, plus the tags of inUse that the keeper

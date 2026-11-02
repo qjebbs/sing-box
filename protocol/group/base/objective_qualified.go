@@ -1,4 +1,4 @@
-package balancer
+package base
 
 var _ Objective = (*QualifiedObjective)(nil)
 
