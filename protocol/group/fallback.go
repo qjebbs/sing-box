@@ -109,7 +109,7 @@ func (f *Fallback) DialContext(ctx context.Context, network string, destination 
 	if len(nodes) == 0 {
 		return nil, E.New("no outbound available for ", network)
 	}
-	return dialFirst(ctx, f.logger, nodes, f.reportConnection, func(node adapter.Outbound) (net.Conn, error) {
+	return dialFirst(ctx, f.logger, nodes, f.reportConnectionFailure, func(node adapter.Outbound) (net.Conn, error) {
 		return node.DialContext(ctx, network, destination)
 	})
 }
@@ -120,7 +120,7 @@ func (f *Fallback) ListenPacket(ctx context.Context, destination M.Socksaddr) (n
 	if len(nodes) == 0 {
 		return nil, E.New("no outbound available for ", N.NetworkUDP)
 	}
-	return dialFirst(ctx, f.logger, nodes, f.reportConnection, func(node adapter.Outbound) (net.PacketConn, error) {
+	return dialFirst(ctx, f.logger, nodes, f.reportConnectionFailure, func(node adapter.Outbound) (net.PacketConn, error) {
 		return node.ListenPacket(ctx, destination)
 	})
 }
@@ -145,11 +145,11 @@ func (f *Fallback) alive(tag string) bool {
 	return stats.All > 0 && stats.Latest != healthcheck.Failed
 }
 
-func (f *Fallback) reportConnection(node adapter.Outbound, established bool) {
+func (f *Fallback) reportConnectionFailure(node adapter.Outbound) {
 	if f.healthCheck == nil {
 		return
 	}
-	f.healthCheck.ReportConnection(node, established)
+	f.healthCheck.ReportConnectionFailure(node)
 }
 
 // filterCandidates keeps the nodes that support the network, in order. A node that
@@ -194,7 +194,7 @@ func dialFirst[T any](
 	ctx context.Context,
 	logger log.ContextLogger,
 	nodes []adapter.Outbound,
-	observe func(node adapter.Outbound, established bool),
+	failed func(node adapter.Outbound),
 	connect func(node adapter.Outbound) (T, error),
 ) (T, error) {
 	var (
@@ -207,11 +207,11 @@ func dialFirst[T any](
 			break
 		}
 		attempt, err := connect(node)
-		if observe != nil {
-			observe(node, err == nil)
-		}
 		if err == nil {
 			return attempt, nil
+		}
+		if failed != nil {
+			failed(node)
 		}
 		logger.DebugContext(ctx, "fallback: ", node.Tag(), " failed: ", err)
 		connErrors = append(connErrors, E.Cause(err, node.Tag()))

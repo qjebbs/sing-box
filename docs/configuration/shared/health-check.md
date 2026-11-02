@@ -22,9 +22,11 @@ When object:
 Health checks are used to check and provide health status information of nodes for outbound groups.
 They can be shared by multiple outbound groups to avoid redundant health check overhead.
 
-The connections the groups carry are counted as well, so a node that passes its checks
-and then drops a share of the traffic is scored for it. As many of them are kept as
-`sampling` health check results, so the two describe the same length of the same window.
+The connections the groups carry are watched as well, so a node that passes its checks
+and then drops the traffic is not trusted until its next scheduled check: after a few
+failed connections within a short window the node is checked again. The check replaces
+its latest result instead of adding one, so the results of every node stay as evenly
+sampled as the interval made them.
 
 Each entry of the top-level `health_checks` uses the same object structure, with an additional `tag` field:
 

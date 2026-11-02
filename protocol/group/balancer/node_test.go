@@ -90,37 +90,31 @@ func TestNodeString(t *testing.T) {
 		{
 			name:  "all failed",
 			stats: healthcheck.Stats{All: 1, Fail: 1},
-			want:  "#0 x [nil] STD=None MED=None Latest=None FAIL=1/1 CONNFAIL=0/0",
+			want:  "#0 x [nil] STD=None MED=None Latest=None FAIL=1/1",
 		},
 		// one successful check among failures still has a deviation
 		{
 			name:  "some failed",
 			stats: healthcheck.Stats{All: 2, Fail: 1, Deviation: 40, Median: 100, Latest: 120},
-			want:  "#0 x [nil] STD=40ms MED=100ms Latest=120ms FAIL=1/2 CONNFAIL=0/0",
+			want:  "#0 x [nil] STD=40ms MED=100ms Latest=120ms FAIL=1/2",
 		},
 		{
 			name:  "clear",
 			stats: healthcheck.Stats{All: 10, Deviation: 57, Median: 164, Latest: 155},
-			want:  "#0 x [nil] STD=57ms MED=164ms Latest=155ms FAIL=0/10 CONNFAIL=0/0",
+			want:  "#0 x [nil] STD=57ms MED=164ms Latest=155ms FAIL=0/10",
 		},
 		// the average is not printed, it mixes the delays and the timeouts
 		{
 			name:  "no average",
 			stats: healthcheck.Stats{All: 10, Fail: 1, Deviation: 4330, Median: 526, Average: 2050, Latest: 402},
-			want:  "#0 x [nil] STD=4.33s MED=526ms Latest=402ms FAIL=1/10 CONNFAIL=0/0",
+			want:  "#0 x [nil] STD=4.33s MED=526ms Latest=402ms FAIL=1/10",
 		},
 		// a node that was never checked has nothing to show
 		{
 			name:   "never checked",
 			status: StatusUnknown,
 			stats:  healthcheck.Stats{},
-			want:   "#0 ? [nil] STD=None MED=None Latest=None FAIL=0/0 CONNFAIL=0/0",
-		},
-		// the connections the group carried are shown next to the checks
-		{
-			name:  "with connections",
-			stats: healthcheck.Stats{All: 10, Deviation: 57, Median: 164, Latest: 155, Connections: 40, ConnectionFailures: 3},
-			want:  "#0 x [nil] STD=57ms MED=164ms Latest=155ms FAIL=0/10 CONNFAIL=3/40",
+			want:   "#0 ? [nil] STD=None MED=None Latest=None FAIL=0/0",
 		},
 	}
 	for _, testCase := range testCases {

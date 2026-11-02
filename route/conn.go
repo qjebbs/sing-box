@@ -122,7 +122,7 @@ func (m *ConnectionManager) NewConnection(ctx context.Context, this N.Dialer, co
 			dialerString = " using outbound/" + outbound.Type() + "[" + outbound.Tag() + "]"
 		}
 		err = E.Cause(err, "open connection to ", remoteString, dialerString)
-		m.reportOutboundConnection(metadata.OutboundChain, false)
+		m.reportConnectionFailure(metadata.OutboundChain)
 		m.deleteURLTestHistory(metadata.OutboundChain)
 		N.CloseOnHandshakeFailure(conn, onClose, err)
 		m.logger.ErrorContext(ctx, err)
@@ -155,13 +155,9 @@ func (m *ConnectionManager) NewConnection(ctx context.Context, this N.Dialer, co
 	if m.kickWriteHandshake(ctx, conn, remoteConn, serverFirst, false, &done, onClose) {
 		// The outbound handshake failed, so the node did not carry this connection even
 		// though the dial succeeded.
-		m.reportOutboundConnection(metadata.OutboundChain, false)
+		m.reportConnectionFailure(metadata.OutboundChain)
 		return
 	}
-	// A handshake deferred to the first write is kicked above, so its outcome is known
-	// before the connection is reported. The reply written by ReportConnHandshakeSuccess
-	// is the inbound side, and its failure says nothing about the node.
-	m.reportOutboundConnection(metadata.OutboundChain, true)
 	if m.kickWriteHandshake(ctx, remoteConn, conn, serverFirst, true, &done, onClose) {
 		return
 	}
@@ -206,13 +202,12 @@ func (m *ConnectionManager) NewPacketConnection(ctx context.Context, this N.Dial
 				dialerString = " using outbound/" + outbound.Type() + "[" + outbound.Tag() + "]"
 			}
 			err = E.Cause(err, "open packet connection to ", remoteString, dialerString)
-			m.reportOutboundConnection(metadata.OutboundChain, false)
+			m.reportConnectionFailure(metadata.OutboundChain)
 			m.deleteURLTestHistory(metadata.OutboundChain)
 			N.CloseOnHandshakeFailure(conn, onClose, err)
 			m.logger.ErrorContext(ctx, err)
 			return
 		}
-		m.reportOutboundConnection(metadata.OutboundChain, true)
 		remotePacketConn = bufio.NewUnbindPacketConn(remoteConn)
 		connRemoteAddr := M.AddrFromNet(remoteConn.RemoteAddr())
 		if connRemoteAddr != metadata.Destination.Addr {
@@ -232,14 +227,13 @@ func (m *ConnectionManager) NewPacketConnection(ctx context.Context, this N.Dial
 				dialerString = " using outbound/" + outbound.Type() + "[" + outbound.Tag() + "]"
 			}
 			err = E.Cause(err, "listen packet connection using ", dialerString)
-			m.reportOutboundConnection(metadata.OutboundChain, false)
+			m.reportConnectionFailure(metadata.OutboundChain)
 			m.deleteURLTestHistory(metadata.OutboundChain)
 			N.CloseOnHandshakeFailure(conn, onClose, err)
 			m.logger.ErrorContext(ctx, err)
 			return
 		}
 	}
-	m.reportOutboundConnection(metadata.OutboundChain, true)
 	err = N.ReportPacketConnHandshakeSuccess(conn, remotePacketConn)
 	if err != nil {
 		err = E.Cause(err, "report handshake success")
@@ -293,20 +287,20 @@ func (m *ConnectionManager) NewPacketConnection(ctx context.Context, this N.Dial
 	go m.packetConnectionCopy(ctx, destination, conn, true, &done, onClose)
 }
 
-// reportOutboundConnection tells the groups of the chain the outcome of the connection
-// they carried, so a node that passes its health checks and then drops the connections it
-// is asked to carry is scored for it. Both outcomes are reported: a count of failures
-// alone would grow with the traffic of the node.
-func (m *ConnectionManager) reportOutboundConnection(chain []adapter.Outbound, established bool) {
+// reportConnectionFailure tells the groups of the chain that the node they carried the
+// connection with failed it, so a node that passes its health checks and then drops the
+// connections it is asked to carry is checked again instead of being trusted until the
+// next scheduled round.
+func (m *ConnectionManager) reportConnectionFailure(chain []adapter.Outbound) {
 	if len(chain) < 2 {
 		// without a group, the connection belongs to a single node
 		return
 	}
 	node := chain[len(chain)-1]
 	for _, it := range chain[:len(chain)-1] {
-		reporter, isReporter := it.(adapter.OutboundConnectionReporter)
+		reporter, isReporter := it.(adapter.OutboundFailureReporter)
 		if isReporter {
-			reporter.ReportConnection(node, established)
+			reporter.ReportConnectionFailure(node)
 		}
 	}
 }

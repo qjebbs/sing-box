@@ -4,6 +4,7 @@ import (
 	"context"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/sagernet/sing-box/adapter"
@@ -59,7 +60,41 @@ type HealthCheck struct {
 
 	listenersMu        sync.Mutex
 	postCheckListeners []func()
+
+	// failureMu guards the failed connections of each node, which decide when a node
+	// is checked again between the scheduled rounds.
+	failureMu sync.Mutex
+	failures  map[string]*connectionFailures
+	// recheckSem bounds the checks triggered by the connections, so a group whose
+	// nodes are all failing does not turn the traffic into a probe storm.
+	recheckSem chan struct{}
+	closed     atomic.Bool
 }
+
+// connectionFailures counts the failed connections of a node in a window. They are not
+// samples of the node: the ring records the scheduled checks, and the checks of every
+// node are spread evenly over the time they describe. A connection is only a reason to
+// check the node again, so the record stays comparable between nodes.
+type connectionFailures struct {
+	count     int
+	firstSeen time.Time
+	lastCheck time.Time
+}
+
+const (
+	// connectionFailureThreshold is how many failed connections a node may carry
+	// within the window before it is checked again.
+	connectionFailureThreshold = 3
+	// connectionFailureWindow is the time in which the failed connections are counted.
+	connectionFailureWindow = 30 * time.Second
+	// connectionFailureCooldown is the shortest time between two checks of a node
+	// triggered by its connections, so a node that keeps failing is not probed more
+	// often than the window allows, whatever the traffic it carries.
+	connectionFailureCooldown = 10 * time.Second
+	// connectionRecheckConcurrency bounds how many checks triggered by the connections
+	// run at once.
+	connectionRecheckConcurrency = 4
+)
 
 // NewHealthCheck creates a new HealthPing with settings.
 //
@@ -95,6 +130,7 @@ func NewHealthCheck(
 		lastActive:      make(map[string]time.Time),
 		lastCheck:       make(map[string]time.Time),
 		checking:        make(map[string]struct{}),
+		recheckSem:      make(chan struct{}, connectionRecheckConcurrency),
 		ctx:             ctx,
 		om:              outbound,
 		logger:          logger,
@@ -163,6 +199,7 @@ func (h *HealthCheck) Start() error {
 
 // Close stops the health check service, implements adapter.Service
 func (h *HealthCheck) Close() error {
+	h.closed.Store(true)
 	h.loopMu.Lock()
 	if h.cancel != nil {
 		h.cancel()
@@ -194,18 +231,78 @@ func (h *HealthCheck) InterfaceUpdated(ctx context.Context) {
 	go h.checkAll(ctx, true, namespaces)
 }
 
-// ReportConnection records the outcome of a connection the group carried with the node.
+// ReportConnectionFailure reports a connection the group carried with the node that
+// failed, so the node is checked again instead of being trusted until the next
+// scheduled round.
 //
-// It is recorded next to the checks rather than as one of them: the checks are probes on
-// a schedule, and the connections say something they cannot, such as a node that passes
-// every probe and then drops what it is asked to carry. Both outcomes are recorded, so
-// the share that failed is a rate, not a count that grows with the traffic of the node.
-func (h *HealthCheck) ReportConnection(outbound adapter.Outbound, established bool) {
-	if _, ok := outbound.(adapter.OutboundGroup); ok {
-		// cannot determine which node in the group is failed, so just ignore the report
+// The failed connections are counted, not measured: a single one can be the client, the
+// destination or the network, so the node is checked only after a few of them inside the
+// window. The check is an out of band refresh, it replaces the latest result of the node
+// rather than adding a sample, see storeResult, so the sampling of every node stays as
+// even as the interval made it.
+func (h *HealthCheck) ReportConnectionFailure(outbound adapter.Outbound) {
+	if h == nil || outbound == nil {
 		return
 	}
-	h.Storage.ReportConnection(outbound.Tag(), established)
+	if h.isClosed() {
+		return
+	}
+	node, err := adapter.RealOutbound(outbound)
+	if err != nil {
+		// A group has no node of its own to check, and a group without a node
+		// available is a transient state rather than a failure.
+		return
+	}
+	tag := node.Tag()
+	now := time.Now()
+	h.failureMu.Lock()
+	if h.failures == nil {
+		h.failures = make(map[string]*connectionFailures)
+	}
+	failure := h.failures[tag]
+	if failure == nil || now.Sub(failure.firstSeen) > connectionFailureWindow {
+		failure = &connectionFailures{firstSeen: now}
+		h.failures[tag] = failure
+	}
+	failure.count++
+	if failure.count < connectionFailureThreshold || now.Sub(failure.lastCheck) < connectionFailureCooldown {
+		h.failureMu.Unlock()
+		return
+	}
+	failure.count = 0
+	failure.firstSeen = now
+	failure.lastCheck = now
+	h.failureMu.Unlock()
+	h.logger.Debug("checking ", tag, " again after its failed connections")
+	select {
+	case h.recheckSem <- struct{}{}:
+		go func() {
+			defer func() { <-h.recheckSem }()
+			h.recheck(node)
+		}()
+	default:
+		// A group whose nodes are all failing is a network outage rather than a node
+		// problem: the checks already in flight and the scheduled round cover it.
+	}
+}
+
+// recheck checks a single node, and commits the result as a non-scheduled one.
+func (h *HealthCheck) recheck(outbound adapter.Outbound) {
+	if h.isClosed() {
+		return
+	}
+	delay, err := h.checkOutbound(h.ctx, outbound)
+	if err != nil {
+		delay = uint16(Failed)
+	}
+	h.storeResult(false, outbound.Tag(), RTT(delay))
+	h.notifyPostCheckListeners()
+}
+
+// isClosed reports whether the checker was closed, so a check requested by a connection
+// that failed before the shutdown doesn't outlive it.
+func (h *HealthCheck) isClosed() bool {
+	return h.closed.Load() || h.ctx.Err() != nil
 }
 
 // IsActive reports whether the namespace was in use within the idle timeout, so its

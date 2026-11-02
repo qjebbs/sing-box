@@ -4,7 +4,6 @@ import (
 	"context"
 	"net"
 	"slices"
-	"strconv"
 	"strings"
 	"testing"
 
@@ -153,7 +152,7 @@ func TestOrderCandidates(t *testing.T) {
 	}
 }
 
-func TestDialFirstObservesEveryAttempt(t *testing.T) {
+func TestDialFirstReportsTheFailure(t *testing.T) {
 	t.Parallel()
 	nodes := []adapter.Outbound{
 		&stubOutbound{tag: "first", err: E.New("dial failed")},
@@ -161,15 +160,15 @@ func TestDialFirstObservesEveryAttempt(t *testing.T) {
 	}
 	var observed []string
 	_, err := dialFirst(context.Background(), log.NewNOPFactory().Logger(), nodes,
-		func(node adapter.Outbound, established bool) {
-			observed = append(observed, node.Tag()+"="+strconv.FormatBool(established))
+		func(node adapter.Outbound) {
+			observed = append(observed, node.Tag())
 		},
 		dialStub(nil),
 	)
 	if err != nil {
 		t.Fatalf("want no error, got %v", err)
 	}
-	if !slices.Equal(observed, []string{"first=false", "second=true"}) {
-		t.Fatalf("want both outcomes observed, got %v", observed)
+	if !slices.Equal(observed, []string{"first"}) {
+		t.Fatalf("want the failed node reported, got %v", observed)
 	}
 }

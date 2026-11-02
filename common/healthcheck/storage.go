@@ -8,25 +8,7 @@ import (
 type Storage struct {
 	validity time.Duration
 	history  *ring[History]
-
-	// connections holds the outcomes of the connections the group carried, see
-	// Stats.Connections. They are kept apart from the checks: a check is one probe on a
-	// schedule, a connection is the traffic the group was asked to carry, and the two
-	// say different things about a node.
-	//
-	// Both outcomes are kept, not only the failures: a count of failures alone grows
-	// with the traffic of the node, so a busy node would be scored worse than an idle
-	// one whatever its quality.
-	//
-	// The ring holds as many connections as the checks do. The two describe the same
-	// window of the same node, and are mixed by their counts, so a longer run of one
-	// would outweigh the other instead of corroborating it.
-	//
-	// It is allocated by the first connection reported, so a node whose traffic never
-	// reaches its group doesn't pay for it.
-	connections *ring[connectionOutcome]
-
-	stats Stats
+	stats    Stats
 }
 
 // History is the rtt history
@@ -67,51 +49,6 @@ func (s *Storage) Update(d RTT) {
 	s.history.Replace(History{Time: now(), Delay: d})
 	// statistics is not valid any more
 	s.stats = Stats{}
-}
-
-// connectionOutcome is one connection the group carried, and whether it was
-// established.
-type connectionOutcome struct {
-	time        time.Time
-	established bool
-}
-
-// ReportConnection records the outcome of a connection the group carried with the node,
-// it is counted until it leaves the validity window.
-func (s *Storage) ReportConnection(at time.Time, established bool) {
-	if s == nil {
-		return
-	}
-	if s.connections == nil {
-		s.connections = newRing[connectionOutcome](s.history.Capacity())
-	}
-	s.connections.Push(connectionOutcome{time: at, established: established})
-	// statistics is not valid any more
-	s.stats = Stats{}
-}
-
-// ConnectionOutcomes returns how many connections were carried inside the validity
-// window, and how many of them failed.
-//
-// The oldest connections leave the window first, so the walk stops at the first expired
-// one. When more than the capacity were carried inside the window, the count describes
-// the most recent ones.
-func (s *Storage) ConnectionOutcomes(at time.Time) (attempts int, failures int) {
-	if s.connections == nil {
-		return 0, 0
-	}
-	cutoff := at.Add(-s.validity)
-	for i := 0; i < s.connections.Length(); i++ {
-		connection, _ := s.connections.At(i)
-		if !connection.time.After(cutoff) {
-			break
-		}
-		attempts++
-		if !connection.established {
-			failures++
-		}
-	}
-	return attempts, failures
 }
 
 // Get gets the history at the offset to the latest history, ignores the validity.

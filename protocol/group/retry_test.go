@@ -2,7 +2,6 @@ package group
 
 import (
 	"context"
-	"fmt"
 	"slices"
 	"testing"
 
@@ -28,9 +27,9 @@ func TestTryEach(t *testing.T) {
 			cursor++
 			return node, true
 		},
-		func(node *stubCandidate, established bool) {
-			// both outcomes are observed, so the group reads a rate and not a count
-			observed = append(observed, fmt.Sprintf("%s=%v", node.tag, established))
+		func(node *stubCandidate) {
+			// only the failures are reported, a success adds nothing to a probe
+			observed = append(observed, node.tag)
 		},
 		func(node *stubCandidate) (string, error) {
 			if node.tag == "failed" {
@@ -45,8 +44,8 @@ func TestTryEach(t *testing.T) {
 	if value != "working" {
 		t.Fatalf("want working, got %s", value)
 	}
-	if !slices.Equal(observed, []string{"failed=false", "working=true"}) {
-		t.Fatalf("want both outcomes observed, got %v", observed)
+	if !slices.Equal(observed, []string{"failed"}) {
+		t.Fatalf("want the failed node reported, got %v", observed)
 	}
 }
 
@@ -57,10 +56,7 @@ func TestTryEachGivesUp(t *testing.T) {
 		func() (*stubCandidate, bool) {
 			return &stubCandidate{tag: "failed"}, true
 		},
-		func(_ *stubCandidate, established bool) {
-			if established {
-				t.Fatalf("no attempt can be established here")
-			}
+		func(_ *stubCandidate) {
 			attempts++
 		},
 		func(*stubCandidate) (string, error) {
@@ -81,7 +77,7 @@ func TestTryEachWithoutNodes(t *testing.T) {
 		func() (*stubCandidate, bool) {
 			return nil, false
 		},
-		func(*stubCandidate, bool) {
+		func(*stubCandidate) {
 			t.Fatal("no node can be reported")
 		},
 		func(*stubCandidate) (string, error) {

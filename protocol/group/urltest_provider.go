@@ -22,12 +22,12 @@ func RegisterURLTestProvider(registry *outbound.Registry) {
 }
 
 var (
-	_ adapter.Outbound                   = (*URLTestProvider)(nil)
-	_ adapter.URLTestGroup               = (*URLTestProvider)(nil)
-	_ adapter.OutboundConnectionReporter = (*URLTestProvider)(nil)
-	_ adapter.Referrer                   = (*URLTestProvider)(nil)
-	_ adapter.InterfaceUpdateListener    = (*URLTestProvider)(nil)
-	_ adapter.Lifecycle                  = (*URLTestProvider)(nil)
+	_ adapter.Outbound                = (*URLTestProvider)(nil)
+	_ adapter.URLTestGroup            = (*URLTestProvider)(nil)
+	_ adapter.OutboundFailureReporter = (*URLTestProvider)(nil)
+	_ adapter.Referrer                = (*URLTestProvider)(nil)
+	_ adapter.InterfaceUpdateListener = (*URLTestProvider)(nil)
+	_ adapter.Lifecycle               = (*URLTestProvider)(nil)
 )
 
 // urlTestObjectives are the objectives this group accepts. The pick is limited to one
