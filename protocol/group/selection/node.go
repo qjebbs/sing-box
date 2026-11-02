@@ -83,10 +83,15 @@ func (n *Node) String() string {
 	}
 	// The average is not printed: the median is the typical delay, and the average is
 	// moved by a single spike, so it says less about what the node usually costs.
+	//
+	// The two spreads are the same distances measured two ways, and each objective ranks
+	// by one of them: JIT is what a node typically costs on top of its median, DEV is what
+	// it strayed from it in total. LAST and MED come first because they are what was
+	// measured, the spreads are worked out from them.
 	return fmt.Sprintf(
-		"#%d %s [%s] MED=%s Latest=%s JIT=%s FAIL=%d/%d",
+		"#%d %s [%s] LAST=%s MED=%s JIT=%s DEV=%s FAIL=%d/%d",
 		n.Index, n.Status, tag,
-		n.medianString(), n.latestString(), n.jitterString(),
+		n.latestString(), n.medianString(), n.jitterString(), n.meanDeviationString(),
 		n.Fail, n.All,
 	)
 }
@@ -114,6 +119,15 @@ func (n *Node) jitterString() string {
 		return "None"
 	}
 	return n.formatRTT(n.Jitter)
+}
+
+// meanDeviationString returns the mean deviation to show. Like the jitter, it describes
+// how much the node varied, so a node that never worked has nothing to say.
+func (n *Node) meanDeviationString() string {
+	if n.Stats.Succeeded() == 0 {
+		return "None"
+	}
+	return n.formatRTT(n.MeanDeviation)
 }
 
 // medianString returns the median to show, there is none without a successful check.

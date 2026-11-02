@@ -15,17 +15,19 @@ func TestStorageStats(t *testing.T) {
 	for _, rtt := range rtts {
 		s.Put(rtt)
 	}
-	// the median absolute deviation of the delays that are kept, {60, 140}, is 40, and
-	// it is scaled to an estimate of the standard deviation: 1.4826 × 40 ≈ 59
+	// Jitter: the median absolute deviation of the delays that are kept, {60, 140}, is
+	// 40, scaled to an estimate of the standard deviation: 1.4826 × 40 ≈ 59.
+	// MeanDeviation: every distance is 40, so their mean is 40 as well.
 	want := healthcheck.Stats{
-		All:     4,
-		Fail:    0,
-		Jitter:  59,
-		Average: 100,
-		Median:  100,
-		Max:     140,
-		Min:     60,
-		Latest:  140,
+		All:           4,
+		Fail:          0,
+		Jitter:        59,
+		MeanDeviation: 40,
+		Average:       100,
+		Median:        100,
+		Max:           140,
+		Min:           60,
+		Latest:        140,
 	}
 	assertStats(t, "Stats() - All Success", want, s.Stats())
 
@@ -34,14 +36,15 @@ func TestStorageStats(t *testing.T) {
 	s.Put(healthcheck.Failed)
 	s.Put(healthcheck.Failed)
 	want = healthcheck.Stats{
-		All:     4,
-		Fail:    2,
-		Jitter:  59,
-		Average: 100,
-		Median:  100,
-		Max:     140,
-		Min:     60,
-		Latest:  healthcheck.Failed,
+		All:           4,
+		Fail:          2,
+		Jitter:        59,
+		MeanDeviation: 40,
+		Average:       100,
+		Median:        100,
+		Max:           140,
+		Min:           60,
+		Latest:        healthcheck.Failed,
 	}
 	assertStats(t, "Stats() - Half Fail", want, s.Stats())
 
@@ -108,14 +111,15 @@ func TestStorageStatsIgnoreOutdated(t *testing.T) {
 		s.Put(rtt)
 	}
 	want := healthcheck.Stats{
-		All:     2,
-		Fail:    0,
-		Jitter:  59,
-		Average: 100,
-		Median:  100,
-		Max:     140,
-		Min:     60,
-		Latest:  140,
+		All:           2,
+		Fail:          0,
+		Jitter:        59,
+		MeanDeviation: 40,
+		Average:       100,
+		Median:        100,
+		Max:           140,
+		Min:           60,
+		Latest:        140,
 	}
 
 	assertStats(t, "Stats() - Half Outdated", want, s.Stats())
@@ -135,16 +139,18 @@ func TestStorageStatsIgnoreOutdated(t *testing.T) {
 	assertStats(t, "Stats() - All Outdated", want, s.Stats())
 
 	s.Put(60)
+	// one sample says nothing about how much the node varies, so both spreads are
+	// assumed to be half of its delay
 	want = healthcheck.Stats{
-		All:  1,
-		Fail: 0,
-		// 1 sample, std=0.5rtt
-		Jitter:  30,
-		Average: 60,
-		Median:  60,
-		Max:     60,
-		Min:     60,
-		Latest:  60,
+		All:           1,
+		Fail:          0,
+		Jitter:        30,
+		MeanDeviation: 30,
+		Average:       60,
+		Median:        60,
+		Max:           60,
+		Min:           60,
+		Latest:        60,
 	}
 	assertStats(t, "Stats() - Put After Outdated", want, s.Stats())
 }
@@ -154,7 +160,7 @@ func TestRTTStorageGetFromNil(t *testing.T) {
 	s := (*healthcheck.Storage)(nil)
 	want := healthcheck.Stats{}
 	assertStats(t, "nil.Stats()", want, s.Stats())
-	if got := s.Stats().Cost(100, 0, 0); got != healthcheck.Failed {
+	if got := s.Stats().Cost(100, 0); got != healthcheck.Failed {
 		t.Fatalf("want no mixed value without samples, got %v", got)
 	}
 }
@@ -168,16 +174,14 @@ func TestStatsCost(t *testing.T) {
 		all    int
 		fail   int
 		base   healthcheck.RTT
-		jitter healthcheck.RTT
-		weight float32
+		spread healthcheck.RTT
 		want   healthcheck.RTT
 	}{
 		{name: "no failure", all: 10, base: 100, want: 100},
-		// the jitter is added, a millisecond of it costs a millisecond by default
-		{name: "jitter", all: 10, base: 100, jitter: 20, weight: 1, want: 120},
-		{name: "half weight", all: 10, base: 100, jitter: 20, weight: 0.5, want: 110},
-		// the weight is rounded, not truncated
-		{name: "fractional weight", all: 10, base: 100, jitter: 7, weight: 0.5, want: 104},
+		// the spread is added as it is, a millisecond of it costs a millisecond
+		{name: "jitter", all: 10, base: 100, spread: 20, want: 120},
+		// the mean deviation is a spread like any other, it is just a different one
+		{name: "mean deviation", all: 10, base: 0, spread: 457, want: 457},
 		// (9*100 + 1*300) / 10: a failed attempt is worth three that worked
 		{name: "one failure", all: 10, fail: 1, base: 100, want: 120},
 		// (5*100 + 5*300) / 10
@@ -196,7 +200,7 @@ func TestStatsCost(t *testing.T) {
 		t.Run(testCase.name, func(t *testing.T) {
 			t.Parallel()
 			stats := healthcheck.Stats{All: testCase.all, Fail: testCase.fail}
-			got := stats.Cost(testCase.base, testCase.jitter, testCase.weight)
+			got := stats.Cost(testCase.base, testCase.spread)
 			if got != testCase.want {
 				t.Fatalf("want %v, got %v", testCase.want, got)
 			}
@@ -225,7 +229,7 @@ func TestStatsCostScalesWithTheNode(t *testing.T) {
 		t.Run(testCase.name, func(t *testing.T) {
 			t.Parallel()
 			stats := healthcheck.Stats{All: 10, Fail: 1}
-			got := stats.Cost(testCase.base, 0, 0)
+			got := stats.Cost(testCase.base, 0)
 			if got != testCase.want {
 				t.Fatalf("want %v, got %v", testCase.want, got)
 			}
@@ -247,11 +251,11 @@ func TestStatsCostZeroIsNotFailed(t *testing.T) {
 	// leastload costs a node by its jitter, and a steady node has none. Zero is
 	// reserved for a missing value, so the cost must stay measurable.
 	stats := healthcheck.Stats{All: 10, Median: 100, Jitter: 0, Latest: 100}
-	if cost := stats.Cost(0, 0, 0); cost != healthcheck.Millisecond {
+	if cost := stats.Cost(0, 0); cost != healthcheck.Millisecond {
 		t.Fatalf("want the smallest delay, got %v", cost)
 	}
 	// a node that never worked has no measurable cost, the zero is its absence
-	if cost := (healthcheck.Stats{}).Cost(0, 0, 0); cost != healthcheck.Failed {
+	if cost := (healthcheck.Stats{}).Cost(0, 0); cost != healthcheck.Failed {
 		t.Fatalf("want no cost, got %v", cost)
 	}
 }

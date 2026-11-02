@@ -87,10 +87,10 @@ func TestSelectClusterSortsFirst(t *testing.T) {
 	t.Parallel()
 	objective := selection.NewLeastLoadObjective(option.LoadBalancePickOptions{})
 	nodes := []*selection.Node{
-		{Index: 0, Status: selection.StatusQualified, Stats: healthcheck.Stats{Jitter: 120, All: 10}},
-		{Index: 1, Status: selection.StatusQualified, Stats: healthcheck.Stats{Jitter: 15, All: 10}},
-		{Index: 2, Status: selection.StatusQualified, Stats: healthcheck.Stats{Jitter: 18, All: 10}},
-		{Index: 3, Status: selection.StatusQualified, Stats: healthcheck.Stats{Jitter: 191, All: 10}},
+		{Index: 0, Status: selection.StatusQualified, Stats: healthcheck.Stats{MeanDeviation: 120, All: 10}},
+		{Index: 1, Status: selection.StatusQualified, Stats: healthcheck.Stats{MeanDeviation: 15, All: 10}},
+		{Index: 2, Status: selection.StatusQualified, Stats: healthcheck.Stats{MeanDeviation: 18, All: 10}},
+		{Index: 3, Status: selection.StatusQualified, Stats: healthcheck.Stats{MeanDeviation: 191, All: 10}},
 	}
 	selected := selection.Filter(objective, nodes)
 	if len(selected) != 2 {
@@ -184,7 +184,7 @@ func TestLeastPingUsesMedian(t *testing.T) {
 
 func TestLeastPingScore(t *testing.T) {
 	t.Parallel()
-	objective := selection.NewLeastPingObjective(option.LoadBalancePickOptions{JitterWeight: 1})
+	objective := selection.NewLeastPingObjective(option.LoadBalancePickOptions{})
 	testCases := []struct {
 		name  string
 		stats healthcheck.Stats
@@ -213,20 +213,24 @@ func TestLeastPingScore(t *testing.T) {
 	}
 }
 
-func TestLeastPingScoreWithoutJitter(t *testing.T) {
+func TestLeastLoadScore(t *testing.T) {
 	t.Parallel()
-	// adding the jitter is an opt-in, so an unset weight scores the delay alone
-	objective := selection.NewLeastPingObjective(option.LoadBalancePickOptions{})
+	// leastload scores by how much the node strays from its own median, whatever that
+	// median is: the distance of the node is not part of the question.
+	objective := selection.NewLeastLoadObjective(option.LoadBalancePickOptions{})
 	testCases := []struct {
 		name  string
 		stats healthcheck.Stats
 		want  healthcheck.RTT
 	}{
-		{name: "clear", stats: healthcheck.Stats{Median: 160, Jitter: 10, All: 10}, want: 160},
-		// an unstable node is not ranked worse, the caller asked for the delay
-		{name: "jitter", stats: healthcheck.Stats{Median: 160, Jitter: 600, All: 10}, want: 160},
-		// the failures are still mixed in, in the scale of the node
-		{name: "failures", stats: healthcheck.Stats{Median: 160, Jitter: 10, All: 10, Fail: 2}, want: 224},
+		// the mean distance to the median, the jitter is not used
+		{name: "clear", stats: healthcheck.Stats{Median: 160, Jitter: 90, MeanDeviation: 40, All: 10}, want: 40},
+		// 4s of median and 40ms of mean deviation is as steady as 160ms and 40ms
+		{name: "far but steady", stats: healthcheck.Stats{Median: 4000, Jitter: 90, MeanDeviation: 40, All: 10}, want: 40},
+		// (8*40 + 2*120) / 10, the failures are still mixed in
+		{name: "failures", stats: healthcheck.Stats{MeanDeviation: 40, All: 10, Fail: 2}, want: 56},
+		{name: "never succeeded", stats: healthcheck.Stats{All: 10, Fail: 10}, want: 15000},
+		{name: "never checked", stats: healthcheck.Stats{}, want: 0},
 	}
 	for _, testCase := range testCases {
 		testCase := testCase
@@ -241,45 +245,33 @@ func TestLeastPingScoreWithoutJitter(t *testing.T) {
 	}
 }
 
-func TestLeastLoadScoreIgnoresJitter(t *testing.T) {
+func TestLeastPingScoreDoesNotUseMeanDeviation(t *testing.T) {
 	t.Parallel()
-	// leastload scores by the standard deviation itself, adding it again would only
-	// scale every score, so the jitter weight is not applied.
-	objective := selection.NewLeastLoadObjective(option.LoadBalancePickOptions{JitterWeight: 1})
+	// A node that stalled once has a large mean deviation and a small jitter. leastping
+	// ranks what the node typically costs, so the stall does not turn it into a slow
+	// node; that is what leastload is for.
+	objective := selection.NewLeastPingObjective(option.LoadBalancePickOptions{})
 	node := &selection.Node{Status: selection.StatusQualified, Stats: healthcheck.Stats{
-		Median: 160, Jitter: 40, All: 10,
+		Median: 160, Jitter: 10, MeanDeviation: 457, All: 10,
 	}}
-	if got := objective.Score(node); got != 40 {
-		t.Fatalf("want 40, got %v", got)
+	if got := objective.Score(node); got != 170 {
+		t.Fatalf("want 170, got %v", got)
 	}
 }
 
-func TestLeastScoreOptionWeights(t *testing.T) {
+func TestLeastLoadScoreDoesNotUseJitter(t *testing.T) {
 	t.Parallel()
-	node := &selection.Node{Status: selection.StatusQualified, Stats: healthcheck.Stats{
-		Median: 100, Jitter: 20, All: 10,
+	// A node with one stall and a node without any rank the same by leastload when their
+	// mean deviations match: the jitter is the typical one, and it ignores the stall.
+	objective := selection.NewLeastLoadObjective(option.LoadBalancePickOptions{})
+	stalled := &selection.Node{Status: selection.StatusQualified, Stats: healthcheck.Stats{
+		Median: 160, Jitter: 13, MeanDeviation: 457, All: 10,
 	}}
-	testCases := []struct {
-		name    string
-		options option.LoadBalancePickOptions
-		want    healthcheck.RTT
-	}{
-		// the delay alone, the jitter is an opt-in
-		{name: "defaults", options: option.LoadBalancePickOptions{}, want: 100},
-		// 100 + 1 * 20
-		{name: "opt-in", options: option.LoadBalancePickOptions{JitterWeight: 1}, want: 120},
-		// 100 + 0.5 * 20
-		{name: "custom", options: option.LoadBalancePickOptions{JitterWeight: 0.5}, want: 110},
-	}
-	for _, testCase := range testCases {
-		testCase := testCase
-		t.Run(testCase.name, func(t *testing.T) {
-			t.Parallel()
-			got := selection.NewLeastPingObjective(testCase.options).Score(node)
-			if got != testCase.want {
-				t.Fatalf("want %v, got %v", testCase.want, got)
-			}
-		})
+	swinging := &selection.Node{Status: selection.StatusQualified, Stats: healthcheck.Stats{
+		Median: 160, Jitter: 300, MeanDeviation: 457, All: 10,
+	}}
+	if a, b := objective.Score(stalled), objective.Score(swinging); a != b {
+		t.Fatalf("want the same score, got %v and %v", a, b)
 	}
 }
 
@@ -426,39 +418,38 @@ func TestLeastKeepIsCappedByTheBand(t *testing.T) {
 
 func TestLeastLoadKeep(t *testing.T) {
 	t.Parallel()
-	// leastload scores by the jitter, which is measured more accurately than the
-	// median: 40ms with 10 samples, so the band of 8ms plus the noise of two such
-	// estimates keeps a node up to roughly 55ms.
+	// leastload scores by the mean distance to the median: 40ms with 10 samples, so the
+	// band of 8ms plus the noise of two such estimates keeps a node up to roughly 55ms.
 	best := &selection.Node{
 		Status: selection.StatusQualified,
-		Stats:  healthcheck.Stats{All: 10, Jitter: 40},
+		Stats:  healthcheck.Stats{All: 10, MeanDeviation: 40},
 	}
 	objective := selection.NewLeastLoadObjective(option.LoadBalancePickOptions{})
 	close := &selection.Node{
 		Status: selection.StatusQualified,
-		Stats:  healthcheck.Stats{All: 10, Jitter: 52},
+		Stats:  healthcheck.Stats{All: 10, MeanDeviation: 52},
 	}
 	if !objective.Keep(close, best) {
-		t.Fatalf("a node within the noise of the jitter was dropped, score %v", objective.Score(close))
+		t.Fatalf("a node within the noise of the spread was dropped, score %v", objective.Score(close))
 	}
 	far := &selection.Node{
 		Status: selection.StatusQualified,
-		Stats:  healthcheck.Stats{All: 10, Jitter: 300},
+		Stats:  healthcheck.Stats{All: 10, MeanDeviation: 300},
 	}
 	if objective.Keep(far, best) {
-		t.Fatalf("a node with 7 times the jitter was kept")
+		t.Fatalf("a node with 7 times the spread was kept")
 	}
 }
 
 func TestLeastLoadRanksSteadyFirst(t *testing.T) {
 	t.Parallel()
-	// A node whose jitter is exactly zero has a cost of zero, which must not read as
+	// A node whose spread is exactly zero has a cost of zero, which must not read as
 	// a missing score: leastload would rank the steadiest node behind every other one.
 	steady := &selection.Node{Status: selection.StatusQualified, Stats: healthcheck.Stats{
-		All: 10, Median: 100, Jitter: 0, Latest: 100,
+		All: 10, Median: 100, MeanDeviation: 0, Latest: 100,
 	}}
 	unstable := &selection.Node{Status: selection.StatusQualified, Stats: healthcheck.Stats{
-		All: 10, Median: 100, Jitter: 50, Latest: 100,
+		All: 10, Median: 100, MeanDeviation: 50, Latest: 100,
 	}}
 	objective := selection.NewLeastLoadObjective(option.LoadBalancePickOptions{MinNodes: 1, MaxNodes: 1})
 	ranked := objective.Rank([]*selection.Node{unstable, steady})

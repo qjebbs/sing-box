@@ -28,9 +28,6 @@ type LoadBalancePickOptions struct {
 	MinNodes uint `json:"min_nodes,omitempty"`
 	// max_nodes is the maximum number of nodes to select, 0 means unlimited.
 	MaxNodes uint `json:"max_nodes,omitempty"`
-	// jitter_weight scales the jitter added to the score. Default is 0, the score is the
-	// delay alone; it is not used by leastload, whose score is the jitter itself.
-	JitterWeight float32 `json:"jitter_weight,omitempty"`
 	// pick biases
 	Biases []LoadBalancePickBias `json:"biases,omitempty"`
 }

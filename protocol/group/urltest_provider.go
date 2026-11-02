@@ -80,10 +80,6 @@ func NewURLTestProvider(ctx context.Context, router adapter.Router, logger log.C
 // Start implements adapter.Lifecycle
 func (s *URLTestProvider) Start(stage adapter.StartStage, scope *adapter.Scope) error {
 	objective, err := selection.NewObjective(s.objective, selection.ObjectiveOptions{
-		// The jitter is left out of the score, so the ranking is on the delay alone.
-		// This group already keeps the node in use while another one is within the
-		// tolerance, and adding the jitter would be a second, harsher opinion on the same
-		// question. The failures are still priced in, see healthcheck.Stats.Cost.
 		Tolerance: s.options.Tolerance,
 	})
 	if err != nil {

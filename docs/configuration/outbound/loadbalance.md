@@ -25,7 +25,6 @@
     "tolerance": 0.2,
     "min_nodes": 1,
     "max_nodes": 0,
-    "jitter_weight": 0,
     "biases": [
       {
         "contains": "keyword",
@@ -78,12 +77,12 @@ See "Pick Fields"
 
 The objective of load balancing. Default is `alive`.
 
-| Objective   | Description                                    |
-| ----------- | ---------------------------------------------- |
-| `alive`     | prefer alive nodes                             |
-| `qualified` | prefer qualified nodes (`max_rtt`, `max_fail`) |
-| `leastload` | least load nodes from qualified                |
-| `leastping` | least latency nodes from qualified             |
+| Objective   | Description                                                |
+| ----------- | ---------------------------------------------------------- |
+| `alive`     | prefer alive nodes                                         |
+| `qualified` | prefer qualified nodes (`max_rtt`, `max_fail`)             |
+| `leastping` | the nodes that typically cost the least: delay plus jitter |
+| `leastload` | the steadiest nodes, whatever their distance               |
 
 Load balancing divides nodes into three classes:
 
@@ -102,21 +101,26 @@ Generally speaking, use `leastload`, `leastping` for better network quality; use
 Both `leastload` and `leastping` rank the nodes by a score, lower is better:
 
 ```
-cost    = JIT                          # leastload
-cost    = MED + jitter_weight * JIT    # leastping
+MED     = median(x₁ … xₙ)
+JIT     = 1.4826 * median(|xᵢ − MED|)
+DEV     = (1/n) * Σ|xᵢ − MED|
+cost    = DEV              # leastload
+cost    = MED + JIT        # leastping
 failure = min(TIMEOUT, 3 * cost)
 
 score   = (ALL - FAIL) / ALL * cost + FAIL / ALL * failure
 ```
 
-`MED` and `JIT` are the median and the jitter of the **successful** checks, `FAIL / ALL`
-the share of the checks that failed, and `TIMEOUT` the timeout a failed check waits for,
-15s. The jitter is estimated robustly, as the median distance of the checks to their
-median: a single slow check cannot move it, so it describes the node rather than the worst
-moment of its window.
+`MED`, `JIT` and `DEV` describe the **successful** checks only, so the successes and the
+failures are mixed in by their shares.
 
-The delay statistics describe the successful checks only, so the failures are mixed in
-by their own share, scored in the scale of the node.
+- `MED` is how far the node is: the median delay, what a check usually costs.
+- `JIT` is the **typical** deviation of the checks from that median, which one slow check
+  cannot move. `1.4826` turns the median of the absolute deviations into an estimate of the
+  standard deviation (`MAD ≈ 0.6745σ` for normal samples).
+- `DEV` is the **average** deviation: a spike is not ignored, and it describes the window as
+  a whole.
+- `TIMEOUT` is the timeout a failed check waits for, 15s.
 
 #### strategy
 
@@ -144,10 +148,10 @@ The maximum number of health check failures for qulified nodes, default is `0`, 
 
 The maximum relative difference to the best node, default is `0.2`, i.e. nodes that are at most 20% worse than the best one are selected with it.
 
-The value compared is the [score](#objective): the jitter is part of it for `leastping`, and the failures of both objectives are part of it by their share of the samples.
+The value compared is the [score](#objective): the spread a node is ranked by is part of it, and so are the failures of both objectives, by their share of the samples.
 
 The tolerance is applied to the best node in the selection, so a clearly worse node is never selected just to fill a count.
-A minimum absolute difference of `10ms` is always used, so tiny values, such as the jitter of an always stable node, aren't split by noise.
+A minimum absolute difference of `10ms` is always used, so tiny values, such as the spread of an always stable node, aren't split by noise.
 
 For example, with `tolerance: 0.2` and nodes of `174ms`, `504ms`, `505ms`, only the `174ms` node is selected, as the others are nearly three times slower.
 
@@ -167,20 +171,12 @@ The maximum number of nodes to select, default is `0`, which means unlimited.
 
 This affects the case when the nodes are equally good, e.g. when all nodes are within the tolerance, only `max_nodes` of them are selected to avoid spreading connections over every node.
 
-#### jitter_weight
-
-> Available only for `least*` objectives
-
-Scales the [jitter](#objective) added to the score. Default is `0`, so `leastping` scores the delay alone.
-
-Set it above `0` to rank an unstable node worse than a steady one with the same median delay: with `1`, a node whose jitter is 300ms is scored as 300ms slower than its median. The jitter is a robust estimate, so one check that timed out does not weigh on the node by itself; use `leastload` to rank by the stability alone. It has no effect on `leastload`, whose score is the jitter itself.
-
 #### biases
 
 The picking bias of load balancing. Default is empty.
 
 When the node tag matches the condition in `biases`,
-its round-trip time (or jitter) will be multiplied by `rtt_scale` for comparison when picking.
+its round-trip time (or the spread it is ranked by) will be multiplied by `rtt_scale` for comparison when picking.
 The default value of `rtt_scale` is `1`, and the larger it is, the less preferred the node is. 
 For example, `rtt_scale: 10` means that when the node's round-trip time is `100ms`, it will be treated as `1000ms` for comparison.
 

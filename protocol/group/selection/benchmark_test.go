@@ -214,7 +214,7 @@ func TestRetainNodesUsesObjective(t *testing.T) {
 	// The real objective decides, not a stub: 5 minutes of statistics put the node
 	// right outside the band, but its jitter is large enough that the excess is
 	// noise, so its connections are kept.
-	objective := selection.NewLeastPingObjective(option.LoadBalancePickOptions{JitterWeight: 1})
+	objective := selection.NewLeastPingObjective(option.LoadBalancePickOptions{})
 	all := []*selection.Node{
 		{
 			Index: 0, Status: selection.StatusQualified,

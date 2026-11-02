@@ -37,10 +37,9 @@ type LeastObjective struct {
 	// baseFunc is the primary statistic of the objective, it is the first term of
 	// the score. It is a delay of the checks that succeeded, see healthcheck.Stats.
 	baseFunc func(node *Node) healthcheck.RTT
-	// jitterFunc is added to the score as a penalty, it is nil when baseFunc is the
-	// jitter itself, since adding it again would only scale every score.
-	jitterFunc   func(node *Node) healthcheck.RTT
-	jitterWeight float32
+	// jitterFunc is added to the score as a penalty, it is nil when the base already is a
+	// spread, since adding another one would rank the same thing twice.
+	jitterFunc func(node *Node) healthcheck.RTT
 }
 
 // Name implements Objective.
@@ -52,31 +51,35 @@ func jitterRTT(node *Node) healthcheck.RTT {
 	return node.ScaleRTT(node.Jitter)
 }
 
+func meanDeviationRTT(node *Node) healthcheck.RTT {
+	return node.ScaleRTT(node.MeanDeviation)
+}
+
 func medianRTT(node *Node) healthcheck.RTT {
 	return node.ScaleRTT(node.Median)
 }
 
-// NewLeastLoadObjective returns a new LeastObjective.
+// NewLeastLoadObjective returns a new LeastObjective. It ranks the nodes by how much
+// they stray from their own median, whatever that median is: a node of 500ms that stays
+// there is steadier than a node of 100ms that swings, and the distance of the node is not
+// part of the question. Bounding the distance is what max_rtt is for.
 func NewLeastLoadObjective(options option.LoadBalancePickOptions) *LeastObjective {
 	objective := newLeastObjective(options)
 	objective.name = ObjectiveLeastLoad
-	// the jitter is the score itself, so jitter_weight is not used, adding it again
-	// would only scale every score by the same factor
-	// objective.jitterWeight = 0
-	objective.baseFunc = jitterRTT
+	objective.baseFunc = meanDeviationRTT
 	return objective
 }
 
-// NewLeastPingObjective returns a new LeastObjective.
+// NewLeastPingObjective returns a new LeastObjective. It ranks the nodes by what they
+// typically cost: the median delay of the checks, plus the jitter, since a node that is
+// near but unstable delays the traffic as a node that is simply slower does. The spread is
+// the typical one, so a check that timed out once does not decide it, see
+// healthcheck.Stats.MeanDeviation for the one that counts it.
 func NewLeastPingObjective(options option.LoadBalancePickOptions) *LeastObjective {
 	objective := newLeastObjective(options)
 	objective.name = ObjectiveLeastPing
 	objective.baseFunc = medianRTT
 	objective.jitterFunc = jitterRTT
-	// The weight is taken as it is: 0 is a score on the delay alone, and adding the
-	// jitter is an opt-in. A group that compares delays rather than loads does not want
-	// the jitter folded into the delay it compares, and one that does want it says so.
-	objective.jitterWeight = options.JitterWeight
 	return objective
 }
 
@@ -99,18 +102,18 @@ func float32Option(value float32, defaultValue float32) float32 {
 
 // Score returns the cost of using the node, lower is better:
 //
-//	base  = MED or STD of the checks that succeeded
-//	score = Cost(base, STD, jitterWeight)
+//	leastping = MED + JIT       what a node typically costs
+//	leastload = MeanDeviation   how much it strays from its own typical delay
 //
-// The jitter term is absent when the objective has no jitterFunc, which is the case
-// for leastload: its base is the jitter itself. See healthcheck.Stats.Cost for what
-// an attempt costs on average, including the failures.
+// The jitter term is absent when the objective has no jitterFunc, which is the case for
+// leastload: its base is a spread already. See healthcheck.Stats.Cost for what an attempt
+// costs on average, including the failures.
 func (o *LeastObjective) Score(node *Node) healthcheck.RTT {
 	base := o.baseFunc(node)
 	if o.jitterFunc == nil {
-		return node.Stats.Cost(base, 0, 0)
+		return node.Stats.Cost(base, 0)
 	}
-	return node.Stats.Cost(base, o.jitterFunc(node), o.jitterWeight)
+	return node.Stats.Cost(base, o.jitterFunc(node))
 }
 
 // scoreOf returns the score as a float, for the noise model of Keep, which compares
@@ -119,23 +122,25 @@ func (o *LeastObjective) scoreOf(node *Node) float64 {
 	return float64(o.Score(node))
 }
 
-// scoreStandardError returns the standard error of the score of the node, i.e. how
-// much the score would move if the health checks were run again. It only depends on
-// the number of samples and their jitter: the median of n samples has a standard error
-// of 1.25σ/√n, and the jitter itself of about σ/√(2(n-1)).
+// scoreStandardError returns the standard error of the score of the node, i.e. how much
+// the score would move if the health checks were run again. It only depends on the number
+// of samples and their spread.
 func (o *LeastObjective) scoreStandardError(node *Node) float64 {
-	jitter := float64(node.ScaleRTT(node.Jitter))
 	n := float64(node.Stats.Succeeded())
 	if n < 2 {
 		// a single sample says nothing about the accuracy of its own estimate
-		return jitter
+		return float64(o.baseFunc(node))
 	}
 	if o.jitterFunc == nil {
-		// the score is the jitter
-		return jitter / math.Sqrt(2*(n-1))
+		// the score is the mean distance to the median, and the standard error of a mean
+		// of n samples shrinks with √n
+		return float64(o.baseFunc(node)) / math.Sqrt(n)
 	}
+	// the score is the median and its jitter: the median of n samples has a standard
+	// error of 1.25σ/√n, the jitter of about σ/√(2(n-1))
+	jitter := float64(node.ScaleRTT(node.Jitter))
 	medianError := 1.25 * jitter / math.Sqrt(n)
-	jitterError := float64(o.jitterWeight) * jitter / math.Sqrt(2*(n-1))
+	jitterError := jitter / math.Sqrt(2*(n-1))
 	return math.Sqrt(medianError*medianError + jitterError*jitterError)
 }
 

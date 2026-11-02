@@ -48,10 +48,9 @@ func NewLoadBalance(ctx context.Context, router adapter.Router, logger log.Conte
 // Start implements adapter.Lifecycle
 func (s *LoadBalance) Start(stage adapter.StartStage, scope *adapter.Scope) error {
 	objective, err := selection.NewObjective(s.options.Pick.Objective, selection.ObjectiveOptions{
-		JitterWeight: s.options.Pick.JitterWeight,
-		Tolerance:    s.options.Pick.Tolerance,
-		MinNodes:     s.options.Pick.MinNodes,
-		MaxNodes:     s.options.Pick.MaxNodes,
+		Tolerance: s.options.Pick.Tolerance,
+		MinNodes:  s.options.Pick.MinNodes,
+		MaxNodes:  s.options.Pick.MaxNodes,
 	})
 	if err != nil {
 		return err

@@ -15,14 +15,19 @@ var failureDelay = RTTOf(C.TCPTimeout)
 
 // Stats is the statistics of RTTs
 type Stats struct {
-	All     int // total number of health checks
-	Fail    int // number of failed health checks
-	Jitter  RTT // jitter of RTTs, a robust estimate of their spread, see jitterOf
-	Average RTT // average RTT of all health checks
-	Median  RTT // median RTT of all health checks
-	Max     RTT // maximum RTT of all health checks
-	Min     RTT // minimum RTT of all health checks
-	Latest  RTT // latest RTT of all health checks
+	All  int // total number of health checks
+	Fail int // number of failed health checks
+	// Jitter is the typical distance of the checks to their median, a robust estimate
+	// of the standard deviation, see deviationOf.
+	Jitter RTT
+	// MeanDeviation is the average distance of the checks to their median, see
+	// deviationOf.
+	MeanDeviation RTT
+	Average       RTT // average RTT of all health checks
+	Median        RTT // median RTT of all health checks
+	Max           RTT // maximum RTT of all health checks
+	Min           RTT // minimum RTT of all health checks
+	Latest        RTT // latest RTT of all health checks
 
 	Expires time.Time // time of the statistics expires
 }
@@ -106,13 +111,15 @@ func newStats(all int, fail int, latest RTT, expires time.Time, values []RTT) St
 	stats.Median = medianOf(values)
 	stats.Min = min
 	if len(values) < 2 {
-		// no enough data for a jitter, we assume it's half of the average rtt
-		// if we don't do this, jitter of 1 round tested nodes is 0, will always
-		// selected before 2 or more rounds tested nodes
+		// a single check says nothing about how much the node varies, we assume it is
+		// half of its delay. Without it a node whose one check came out low would look
+		// like the steadiest one there is, and be picked over the nodes that are
+		// measured.
 		stats.Jitter = stats.Average / 2
+		stats.MeanDeviation = stats.Average / 2
 		return stats
 	}
-	stats.Jitter = jitterOf(values, stats.Median)
+	stats.Jitter, stats.MeanDeviation = deviationOf(values, stats.Median)
 	return stats
 }
 
@@ -130,41 +137,49 @@ func newStats(all int, fail int, latest RTT, expires time.Time, values []RTT) St
 // is the constant below.
 //
 // The scaling is what lets a robust deviation stand where a standard deviation is
-// expected, and nothing downstream has to know how it was estimated: the score of the
-// objectives reads it as the std term (cost = MED + weight·σ), and the retention reads it
-// as the standard error of an estimate (1.25σ/√n and σ/√(2(n-1))), both of which are
-// results about σ, not about the way it is measured.
+// expected, and the retention of the connections needs it to be one: it reads the spread
+// as the standard error of an estimate (1.25σ/√n and σ/√(2(n-1))), which are results
+// about σ, not about the way it is measured.
 const madToSigma = 1.482602218505602
 
-// jitterOf returns the jitter of the values, an estimate of the standard deviation
-// around their median: the median absolute deviation, scaled to σ. The values are
-// reordered.
+// deviationOf returns how far the values are from their median, in the two ways the
+// groups need it: the typical distance, and the average one. The values are reordered.
 //
 // The sample standard deviation is not used because a single slow check owns it: the
 // squared distance to the average lets one sample out of ten move the result by hundreds
 // of milliseconds, and it moves the average with it, so the estimate describes the worst
 // moment of the window instead of the node. In a run of the url test group, a node whose
 // checks were all within ±10ms of its median, save one, was reported with 106ms of
-// jitter, 88% of which came from that one check.
+// deviation, 83% of which came from that one check.
 //
-// The median absolute deviation is bounded by the middle of the samples instead: a value
-// only matters once it crosses the median, so it takes half of the samples to move the
-// estimate anywhere. A check that timed out once no longer ranks the node for the whole
-// window, while a node that is genuinely unstable moves the median of the deviations by
-// itself.
+// Both returned values measure the same distances, and they answer different questions:
 //
-// The estimate is 0 when every sample is the same, which the delay keeps meaning: RTT
-// reserves 0 for a missing value, so a cost of 0 is handled where it is read, see
-// Stats.mixed.
-func jitterOf(values []RTT, median RTT) RTT {
+//   - The median of the distances (scaled to σ) is how much the node usually varies. A
+//     value only matters to a median once it crosses the middle of the samples, so it
+//     takes half of them to move it: a check that timed out once does not describe the
+//     node, and a node that is genuinely unstable moves the median by itself. This is
+//     what a group ranks by when it wants the delay a node typically costs.
+//
+//   - The mean of the distances is how much the node cost in total. Every check counts
+//     once, so a rare spike adds its own share instead of being ignored, and a spike that
+//     repeats adds more. It is not squared, and the median it is measured from does not
+//     move with the spike, so the number stays a statement about the node rather than
+//     about one probe. This is what a group ranks by when it wants to know how much the
+//     node hurts.
+//
+// Neither value is 0 for a node that never varied: RTT reserves 0 for a missing value, so
+// a cost of 0 is handled where it is read, see Stats.mixed.
+func deviationOf(values []RTT, median RTT) (jitter RTT, meanDeviation RTT) {
+	sum := 0
 	for i, delay := range values {
 		if delay > median {
 			values[i] = delay - median
 		} else {
 			values[i] = median - delay
 		}
+		sum += int(values[i])
 	}
-	return RTT(math.Round(madToSigma * float64(medianOf(values))))
+	return RTT(math.Round(madToSigma * float64(medianOf(values)))), RTT(sum / len(values))
 }
 
 // Succeeded returns the number of checks that succeeded, the samples the delay
@@ -174,20 +189,16 @@ func (s Stats) Succeeded() int {
 }
 
 // Cost returns what an attempt costs on average, which is what the groups rank their
-// nodes by: base plus the jitter added to it, mixed with the failures.
+// nodes by: base plus the spread added to it, mixed with the failures.
 //
-// The caller chooses the metric: the median delay of the checks that succeeded, or
-// their jitter, scaled by whatever weight the group gives it.
-func (s Stats) Cost(base RTT, jitter RTT, jitterWeight float32) RTT {
+// The caller chooses the terms: the median delay of the checks that succeeded plus their
+// jitter is what a node typically costs, and the mean distance to their median is how much
+// it hurts in total. See Stats.Jitter and Stats.MeanDeviation.
+func (s Stats) Cost(base RTT, spread RTT) RTT {
 	if s.All == 0 {
 		return Failed
 	}
-	cost := uint64(base)
-	if jitterWeight > 0 {
-		// round instead of truncate, so the weight never loses a millisecond
-		cost += uint64(float32(jitter)*jitterWeight + 0.5)
-	}
-	return s.mixed(cost)
+	return s.mixed(uint64(base) + uint64(spread))
 }
 
 // mixed returns the expected value of cost per attempt: an attempt either succeeds

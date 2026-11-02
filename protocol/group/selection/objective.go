@@ -34,10 +34,6 @@ func Filter(objective Objective, all []*Node) []*Node {
 
 // ObjectiveOptions configure the ranking and the cluster around the best node.
 type ObjectiveOptions struct {
-	// JitterWeight is the weight of the jitter added to the score of the leastping
-	// objective, 0 for a score on the delay alone. It is not used by leastload, whose
-	// score is the jitter itself.
-	JitterWeight float32
 	// Tolerance is the band around the best node within which the nodes are equally
 	// good, relative to its score, e.g. 0.2 means 20%.
 	Tolerance float32
@@ -50,10 +46,9 @@ type ObjectiveOptions struct {
 // NewObjective returns the objective of the name, alive when the name is empty.
 func NewObjective(name string, options ObjectiveOptions) (Objective, error) {
 	pick := option.LoadBalancePickOptions{
-		JitterWeight: options.JitterWeight,
-		Tolerance:    options.Tolerance,
-		MinNodes:     options.MinNodes,
-		MaxNodes:     options.MaxNodes,
+		Tolerance: options.Tolerance,
+		MinNodes:  options.MinNodes,
+		MaxNodes:  options.MaxNodes,
 	}
 	switch name {
 	case "", ObjectiveAlive:
