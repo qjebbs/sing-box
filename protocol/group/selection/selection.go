@@ -64,13 +64,17 @@ func (s *Balancing) Pick(all, selected []*Node, metadata *adapter.InboundContext
 // group takes every connection from the former, so the latter only matter as the reason
 // a node is not one of them.
 func (s *Balancing) LogNodes(logger Logger, all, selected []*Node) {
+	ranked := s.objective.Rank(all)
+	var best *Node
+	if len(ranked) > 0 {
+		best = ranked[0]
+	}
 	logger.Info(s.String(), ", ", len(selected), " of ", len(all), " nodes available",
-		clusterDescription(s.objective))
+		clusterDescription(s.objective, best))
 	selectedTags := make(map[string]bool, len(selected))
 	for _, node := range selected {
 		selectedTags[node.Tag()] = true
 	}
-	ranked := s.objective.Rank(all)
 	available := make([]*Node, 0, len(selected))
 	unavailable := make([]*Node, 0, len(ranked)-len(selected))
 	for _, node := range ranked {
@@ -153,12 +157,17 @@ func (s *Single) Pick(_, selected []*Node, _ *adapter.InboundContext) *Node {
 // is no group to tell apart from another: every connection goes to that node, and the
 // order says how far the others are from it, which is what the tolerance decides.
 func (s *Single) LogNodes(logger Logger, all, selected []*Node) {
-	logger.Info(s.String(), ", ", len(all), " nodes", clusterDescription(s.objective))
+	ranked := s.objective.Rank(all)
+	var best *Node
+	if len(ranked) > 0 {
+		best = ranked[0]
+	}
+	logger.Info(s.String(), ", ", len(all), " nodes", clusterDescription(s.objective, best))
 	var inUse *Node
 	if len(selected) > 0 {
 		inUse = selected[0]
 	}
-	for _, node := range s.objective.Rank(all) {
+	for _, node := range ranked {
 		line := nodeLine(s.objective, node)
 		if inUse != nil && node.Tag() == inUse.Tag() {
 			line += " SELECTED"

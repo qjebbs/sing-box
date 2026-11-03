@@ -39,8 +39,13 @@ type HealthReport struct {
 	// measurement needs. It is the value the group is using, which is the configured one
 	// or the default of its objective, and it is absent for an objective that ranks no
 	// score.
+	//
+	// Band is the width of that band, Limit - score(Best), which is Tolerance plus the
+	// margin, so the two can be told apart without subtracting. It is absent under the
+	// same conditions as Limit.
 	Best      string  `json:"best,omitempty"`
 	Limit     *uint16 `json:"limit,omitempty"`
+	Band      *uint16 `json:"band,omitempty"`
 	Tolerance *uint16 `json:"tolerance,omitempty"`
 	// MinNodes is the fewest nodes the cluster is extended to, MaxNodes the most it is
 	// limited to, 0 for no limit, so a selection larger or smaller than the band explains

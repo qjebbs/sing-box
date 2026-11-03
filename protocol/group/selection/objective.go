@@ -97,13 +97,18 @@ type Clusterer interface {
 }
 
 // clusterDescription returns the part of a log line that names the cluster an objective
-// takes around the best node, empty for an objective that takes none.
-func clusterDescription(objective Objective) string {
+// takes around the best node, empty for an objective that takes none. The band is the
+// tolerance plus the margin the measurement adds to it, which only exists once there is a
+// best node to measure.
+func clusterDescription(objective Objective, best *Node) string {
 	clusterer, isClusterer := objective.(Clusterer)
 	if !isClusterer {
 		return ""
 	}
 	description := ", tolerance " + clusterer.Tolerance().String()
+	if band, loaded := BandOf(objective, best); loaded {
+		description += ", band " + band.String()
+	}
 	if minNodes := clusterer.MinNodes(); minNodes > 0 {
 		description += ", min nodes " + strconv.Itoa(minNodes)
 	}
@@ -111,6 +116,22 @@ func clusterDescription(objective Objective) string {
 		description += ", max nodes " + strconv.Itoa(maxNodes)
 	}
 	return description
+}
+
+// BandOf returns the width of the band around the best node, the tolerance plus the margin
+// the measurement adds to it, and whether the objective has one.
+func BandOf(objective Objective, best *Node) (healthcheck.RTT, bool) {
+	bander, isBander := objective.(Bander)
+	scorer, isScorer := objective.(Scorer)
+	if !isBander || !isScorer || best == nil {
+		return healthcheck.Failed, false
+	}
+	score := scorer.Score(best)
+	limit := bander.Limit(best)
+	if score == healthcheck.Failed || limit == healthcheck.Failed || limit < score {
+		return healthcheck.Failed, false
+	}
+	return limit - score, true
 }
 
 // Keeper is an optional interface for objectives that can tell whether a node that

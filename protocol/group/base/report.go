@@ -41,6 +41,7 @@ func (g *Group) HealthReport() adapter.HealthReport {
 		Selected:   selection.Tags(selected),
 		Alive:      aliveTagsOf(all),
 		Limit:      g.limitOf(best),
+		Band:       g.bandOf(best),
 	}
 	if clusterer, isClusterer := g.pick.Objective().(selection.Clusterer); isClusterer {
 		report.Tolerance = optionalRTT(clusterer.Tolerance())
@@ -68,6 +69,16 @@ func (g *Group) limitOf(best *selection.Node) *uint16 {
 		return nil
 	}
 	return optionalRTT(bander.Limit(best))
+}
+
+// bandOf returns the width of the band around the best node, the tolerance plus the margin
+// the measurement adds to it, nil for an objective that has none.
+func (g *Group) bandOf(best *selection.Node) *uint16 {
+	band, loaded := selection.BandOf(g.pick.Objective(), best)
+	if !loaded {
+		return nil
+	}
+	return optionalRTT(band)
 }
 
 func (g *Group) providersReport() []adapter.HealthProvider {
