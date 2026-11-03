@@ -200,7 +200,11 @@ func (g *Group) Networks() []string {
 // it ignores the selection, so the result only changes when a node's health
 // changes, not when it merely stops being the preferred one.
 func (g *Group) AliveTags() []string {
-	nodes := g.Nodes("")
+	return aliveTagsOf(g.Nodes(""))
+}
+
+// aliveTagsOf returns the tags of the nodes that are not dead, in the order given.
+func aliveTagsOf(nodes []*selection.Node) []string {
 	alive := make([]string, 0, len(nodes))
 	for _, node := range nodes {
 		if node.Status != selection.StatusDead {

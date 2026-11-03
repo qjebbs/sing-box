@@ -244,3 +244,12 @@ makes it a slower signal than the last check, which is already in the statistics
 The full report of a group — every statistic, every node, and the checks they were computed
 from — is served by the Clash API at `GET /private/health/{tag}`, so a ranking can be replayed
 and explained offline instead of being inferred from the log.
+
+The report describes one ranking, and it says enough to replay it: `best` is the node every
+other one is compared to, and `limit` the highest score that still counts as equally good.
+A node is as good as `best` when its `status` is the one of `best` and its `score` is at most
+`limit`. A load balance group selects every such node (or at least `min_nodes` of them), while
+a group that uses a single node keeps the one in use as long as it is one of them, so `best`
+and `selected` can name different nodes there. All of it comes from the same round of checks,
+so a report taken in the middle of a round shows that round's ranking, not a mixture of the
+nodes measured so far and the previous decision.

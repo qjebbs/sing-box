@@ -11,8 +11,8 @@ type HealthReporter interface {
 
 // HealthReport is the health of one group.
 //
-// It is a diagnostic view, not a configuration: every field describes what the group
-// measured and how it ranked it at the moment of the call.
+// It is a diagnostic view, not a configuration: every field describes the ranking the
+// group is using at the moment of the call, one round of checks at a time.
 type HealthReport struct {
 	Tag  string `json:"tag"`
 	Type string `json:"type"`
@@ -25,6 +25,13 @@ type HealthReport struct {
 	// Generation is the number of times the cached ranking was dropped, so a value that
 	// does not move between two calls means the results did not change.
 	Generation uint64 `json:"generation"`
+	// Best is the head of the ranking, Limit the highest score that still counts as
+	// equally good as it. Every other field describes the same ranking, so the decision
+	// can be replayed from one report: a node is as good as Best when its score is at
+	// most Limit and it is of the class Best belongs to. Limit is absent for an
+	// objective that ranks no score.
+	Best  string  `json:"best,omitempty"`
+	Limit *uint16 `json:"limit,omitempty"`
 	// Providers are the sources of the nodes, with the time their content last changed.
 	Providers []HealthProvider `json:"providers"`
 	// Selected are the nodes new connections may use, Alive every node that is not dead,
@@ -55,8 +62,7 @@ type HealthNode struct {
 	// Networks are the networks this node supports.
 	Networks []string `json:"networks"`
 	// Selected reports whether new connections may use this node, Score is what the
-	// objective ranks it by. Both are absent when the selection does not reach the node,
-	// which is the case for a node of another network.
+	// objective ranks it by, absent for an objective that ranks no score.
 	Selected bool    `json:"selected"`
 	Score    *uint16 `json:"score,omitempty"`
 

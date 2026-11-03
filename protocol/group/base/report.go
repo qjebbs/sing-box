@@ -7,15 +7,25 @@ import (
 	N "github.com/sagernet/sing/common/network"
 )
 
-// HealthReport implements adapter.HealthReporter. It reports every node of the group
-// with the statistics the ranking reads, and the checks those statistics were computed
-// from, so a ranking can be explained rather than only observed.
+// HealthReport implements adapter.HealthReporter. It reports every node of the network
+// the group ranks, with the statistics the ranking reads and the checks those statistics
+// were computed from, so a ranking can be explained rather than only observed.
+//
+// The nodes and the selection are read from the same snapshot of the ranking, never from
+// the storage: a round of checks writes its results node by node and drops the ranking
+// only when the last one is in, so a live read of the statistics would describe something
+// that no selection was made from.
 func (g *Group) HealthReport() adapter.HealthReport {
 	if g.pick == nil || g.HealthCheck == nil {
 		// the group is not started yet, there is nothing it has measured
 		return adapter.HealthReport{Tag: g.Tag(), Type: g.Type()}
 	}
-	_, selected, _ := g.selection(N.NetworkTCP)
+	all, selected, best := g.selection(N.NetworkTCP)
+	if len(all) == 0 {
+		// No node serves the network the selection is made for: list what the group
+		// has, with nothing selected.
+		all = g.Nodes("")
+	}
 	selectedTags := make(map[string]bool, len(selected))
 	for _, node := range selected {
 		selectedTags[node.Tag()] = true
@@ -29,14 +39,30 @@ func (g *Group) HealthReport() adapter.HealthReport {
 		Generation: g.generation.Load(),
 		Providers:  g.providersReport(),
 		Selected:   selection.Tags(selected),
-		Alive:      g.AliveTags(),
+		Alive:      aliveTagsOf(all),
+		Limit:      g.limitOf(best),
 	}
-	nodes := g.Nodes("")
-	report.Nodes = make([]adapter.HealthNode, 0, len(nodes))
-	for _, node := range nodes {
+	if best != nil {
+		report.Best = best.Tag()
+	}
+	report.Nodes = make([]adapter.HealthNode, 0, len(all))
+	for _, node := range all {
 		report.Nodes = append(report.Nodes, g.nodeReport(node, selectedTags[node.Tag()]))
 	}
 	return report
+}
+
+// limitOf returns the score up to which another node still counts as equally good as
+// best, nil for an objective whose band is not bounded and for a node that has none.
+func (g *Group) limitOf(best *selection.Node) *uint16 {
+	if best == nil {
+		return nil
+	}
+	bander, isBander := g.pick.Objective().(selection.Bander)
+	if !isBander {
+		return nil
+	}
+	return optionalRTT(bander.Limit(best))
 }
 
 func (g *Group) providersReport() []adapter.HealthProvider {
