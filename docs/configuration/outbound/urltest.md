@@ -18,7 +18,7 @@
   "exclude": "",
   "include": "",
   "health_check": "",
-  "objective": "leastping",
+  "objective": "quick",
   "rtt_tolerance": 0.2,
   "jitter_tolerance": "10ms",
   "interrupt_exist_connections": false
@@ -55,12 +55,12 @@ Required. There is no implicit default health check.
 
 #### objective
 
-The objective of the choice. Default is `leastping`.
+The objective of the choice. Default is `quick`.
 
-| Objective   | Description                    |
-| ----------- | ------------------------------ |
-| `leastping` | the node with the lowest delay |
-| `leastload` | the most stable node           |
+| Objective | Description                                        |
+| --------- | -------------------------------------------------- |
+| `quick`   | the node that usually costs the least              |
+| `steady`  | the node that varies the least, whatever its delay |
 
 The objectives rank the nodes the same way as the
 [load balance `objective`](/configuration/outbound/loadbalance/#objective) field, without
@@ -71,7 +71,7 @@ The reasoning behind the statistics, the scores and the tolerance is on the
 
 #### rtt_tolerance
 
-> Available only for the `leastping` objective, which must then be set explicitly
+> Available only for the `quick` objective, which must then be set explicitly
 
 The maximum **relative** difference to the best node, between `0` and `1`, default is `0.2`, i.e.
 20% of its score.
@@ -81,7 +81,7 @@ a difference that is not worth the switch keeps the connections where they are.
 
 #### jitter_tolerance
 
-> Available only for the `leastload` objective, which must then be set explicitly
+> Available only for the `steady` objective, which must then be set explicitly
 
 The maximum **absolute** difference to the best node, default is `10ms`, i.e. a node whose jitter
 is at most 10ms above the best one still counts as equally good.

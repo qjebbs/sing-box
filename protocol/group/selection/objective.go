@@ -37,10 +37,10 @@ func Filter(objective Objective, all []*Node) []*Node {
 
 // ObjectiveOptions configure the ranking and the cluster around the best node.
 type ObjectiveOptions struct {
-	// RTTTolerance is the band around the best node for the leastping objective, relative
+	// RTTTolerance is the band around the best node for the quick objective, relative
 	// to its score, e.g. 0.2 means 20%.
 	RTTTolerance float32
-	// JitterTolerance is the band around the best node for the leastload objective, in
+	// JitterTolerance is the band around the best node for the steady objective, in
 	// absolute milliseconds, e.g. 10ms.
 	JitterTolerance time.Duration
 	// MinNodes is the fewest nodes the cluster is extended to, MaxNodes the most it is
@@ -55,11 +55,11 @@ type ObjectiveOptions struct {
 // preference. The objective must be named for the question to have an answer, so a
 // tolerance cannot be set together with an objective left at its default.
 func ValidateTolerances(objective string, rttTolerance float32, jitterTolerance time.Duration) error {
-	if rttTolerance != 0 && objective != ObjectiveLeastPing {
-		return toleranceMismatch("rtt_tolerance", ObjectiveLeastPing, objective)
+	if rttTolerance != 0 && objective != ObjectiveQuick {
+		return toleranceMismatch("rtt_tolerance", ObjectiveQuick, objective)
 	}
-	if jitterTolerance != 0 && objective != ObjectiveLeastLoad {
-		return toleranceMismatch("jitter_tolerance", ObjectiveLeastLoad, objective)
+	if jitterTolerance != 0 && objective != ObjectiveSteady {
+		return toleranceMismatch("jitter_tolerance", ObjectiveSteady, objective)
 	}
 	return nil
 }
@@ -84,10 +84,10 @@ func NewObjective(name string, options ObjectiveOptions) (Objective, error) {
 		return NewAliveObjective(), nil
 	case ObjectiveQualified:
 		return NewQualifiedObjective(), nil
-	case ObjectiveLeastLoad:
-		return NewLeastLoadObjective(pick), nil
-	case ObjectiveLeastPing:
-		return NewLeastPingObjective(pick), nil
+	case ObjectiveSteady:
+		return NewSteadyObjective(pick), nil
+	case ObjectiveQuick:
+		return NewQuickObjective(pick), nil
 	default:
 		return nil, E.New("unknown objective: ", name)
 	}
@@ -110,6 +110,6 @@ type Bander interface {
 // just left the selection should still serve the connections it already has.
 type Keeper interface {
 	// Keep reports whether node, which is no longer selected, is close enough to
-	// best to keep its existing connections. See LeastObjective.Keep.
+	// best to keep its existing connections. See ScoreObjective.Keep.
 	Keep(node *Node, best *Node) bool
 }

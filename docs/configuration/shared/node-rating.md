@@ -15,7 +15,7 @@ A node can be bad in two independent ways, and a group has to answer one of them
 - **How steady is it?** A node that answers in 200ms most of the time and stalls for three
   seconds sometimes delays the traffic that lands on the stall.
 
-`leastping` answers the first and `leastload` the second, which is why they are not a single
+`quick` answers the first and `steady` the second, which is why they are not a single
 score with a weight between them: no weight is better than any other without a model of how
 much a stall costs, and a weight that has to be guessed is a number no measurement supports.
 
@@ -59,13 +59,13 @@ between the objectives:
 ### The Scores
 
 ```
-cost  = MED + JIT    # leastping, what a node typically costs, in milliseconds
-cost  = DEV          # leastload, how far it strays from its own typical delay, in ms
+cost  = MED + JIT    # quick, what a node typically costs, in milliseconds
+cost  = DEV          # steady, how far it strays from its own typical delay, in ms
 ```
 
 Both scores are in milliseconds, but they answer the two questions from the top:
 
-- `leastping` is the **cost of a node**. A node that is close but unstable costs as a node that
+- `quick` is the **cost of a node**. A node that is close but unstable costs as a node that
   is simply slower does, so `JIT` is added once, at its own scale. Written as a product it is
   the same thing, and shows what the addition means:
 
@@ -73,12 +73,12 @@ Both scores are in milliseconds, but they answer the two questions from the top:
   MED + JIT = MED × (1 + JIT / MED)
   ```
 
-  The factor in brackets is the **relative jitter**: `leastping` ranks by how far the node is,
+  The factor in brackets is the **relative jitter**: `quick` ranks by how far the node is,
   corrected by how much it typically varies.
 
-- `leastload` takes `DEV` alone, with no `MED` in it. It asks how far the node strays from its
-  own typical delay, so a node steady at 4s and a node steady at 100ms are equally steady. That
-  is what the name asks for: not how fast it is, but how steady it is.
+- `steady` takes `DEV` alone, with no `MED` in it. It asks how far the node strays from its own
+  typical delay, so a node steady at 4s and a node steady at 100ms are equally steady. The name
+  is the question: it does not ask how quickly the node answers, but how steadily.
 
 The failures are mixed in by their share, in the scale of the node:
 
@@ -99,10 +99,10 @@ A group does not switch for a difference it cannot trust. The band is the range 
 node within which the nodes count as equally good, and each objective has its own, because the
 **quantity** they compare is not the same — that is why the two cannot be one field:
 
-| Objective | Score | Field | Unit | Default |
-| --- | --- | --- | --- | --- |
-| `leastping` | `MED + JIT` | `rtt_tolerance` | share of the best value | `0.2` |
-| `leastload` | `DEV` | `jitter_tolerance` | absolute milliseconds | `10ms` |
+| Objective | Score       | Field              | Unit                    | Default |
+| --------- | ----------- | ------------------ | ----------------------- | ------- |
+| `quick`   | `MED + JIT` | `rtt_tolerance`    | share of the best value | `0.2`   |
+| `steady`  | `DEV`       | `jitter_tolerance` | absolute milliseconds   | `10ms`  |
 
 A tolerance belongs to the objective that measures its quantity: setting one for the other
 objective, or for an objective left at its default, is refused when the group is created
@@ -118,7 +118,7 @@ barely more than the millisecond the delays are stored in, while the measured 2�
 an absolute value anyone can reason about: `jitter_tolerance: 10ms` means "within 10ms of the
 steadiest node counts as equally steady".
 
-The band of `leastload` also carries a **resolution margin**:
+The band of `steady` also carries a **resolution margin**:
 
 ```
 band = jitter_tolerance + 2√2 × DEV_best / √n
@@ -146,7 +146,7 @@ the time. Adding the margin pushes the cut out and the same node is selected 74%
 The margin uses `DEV_best`, not each node's own standard error: the other way round, a noisier
 node would get a larger margin and become easier to include, which is the wrong direction.
 
-`leastping` needs no such term: with the best node at 408ms the band is 81.6ms, while the 2σ
+`quick` needs no such term: with the best node at 408ms the band is 81.6ms, while the 2σ
 noise of the score itself is about 1.8ms, 2.2% of it, and can be ignored.
 
 ### Retention

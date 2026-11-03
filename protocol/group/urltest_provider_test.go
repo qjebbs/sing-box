@@ -16,9 +16,9 @@ func TestURLTestObjective(t *testing.T) {
 		want    string
 		wantErr bool
 	}{
-		{name: "default", options: option.ProviderURLTestOptions{}, want: "leastping"},
-		{name: "leastping", options: option.ProviderURLTestOptions{Objective: "leastping"}, want: "leastping"},
-		{name: "leastload", options: option.ProviderURLTestOptions{Objective: "leastload"}, want: "leastload"},
+		{name: "default", options: option.ProviderURLTestOptions{}, want: "quick"},
+		{name: "quick", options: option.ProviderURLTestOptions{Objective: "quick"}, want: "quick"},
+		{name: "steady", options: option.ProviderURLTestOptions{Objective: "steady"}, want: "steady"},
 		// only the least* objectives limit the pick to max_nodes, the others would use
 		// a different node per connection
 		{name: "alive", options: option.ProviderURLTestOptions{Objective: "alive"}, wantErr: true},
@@ -37,33 +37,33 @@ func TestURLTestObjective(t *testing.T) {
 			wantErr: true,
 		},
 		{
-			name: "rtt on leastping",
+			name: "rtt on quick",
 			options: option.ProviderURLTestOptions{
-				Objective:    "leastping",
+				Objective:    "quick",
 				RTTTolerance: 0.2,
 			},
-			want: "leastping",
+			want: "quick",
 		},
 		{
-			name: "jitter on leastload",
+			name: "jitter on steady",
 			options: option.ProviderURLTestOptions{
-				Objective:       "leastload",
+				Objective:       "steady",
 				JitterTolerance: badoption.Duration(10 * time.Millisecond),
 			},
-			want: "leastload",
+			want: "steady",
 		},
 		{
-			name: "jitter on leastping",
+			name: "jitter on quick",
 			options: option.ProviderURLTestOptions{
-				Objective:       "leastping",
+				Objective:       "quick",
 				JitterTolerance: badoption.Duration(10 * time.Millisecond),
 			},
 			wantErr: true,
 		},
 		{
-			name: "rtt on leastload",
+			name: "rtt on steady",
 			options: option.ProviderURLTestOptions{
-				Objective:    "leastload",
+				Objective:    "steady",
 				RTTTolerance: 0.2,
 			},
 			wantErr: true,

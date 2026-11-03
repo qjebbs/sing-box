@@ -18,7 +18,7 @@
   "exclude": "",
   "include": "",
   "health_check": "",
-  "objective": "leastping",
+  "objective": "quick",
   "rtt_tolerance": 0.2,
   "jitter_tolerance": "10ms",
   "interrupt_exist_connections": false
@@ -55,12 +55,12 @@
 
 #### objective
 
-选择的目标，默认为 `leastping`。
+选择的目标，默认为 `quick`。
 
-| 目标        | 说明                     |
-| ----------- | ------------------------ |
-| `leastping` | 延时最低的节点 |
-| `leastload` | 最稳定的节点 |
+| 目标     | 说明                       |
+| -------- | -------------------------- |
+| `quick`  | 通常代价最低的节点         |
+| `steady` | 波动最小的节点，不论其延时 |
 
 不同目标的评价方法同[负载均衡 objective 字段](/zh/configuration/outbound/loadbalance/#objective)，但没有合格节点的概念。
 
@@ -68,7 +68,7 @@
 
 #### rtt_tolerance
 
-> 仅适用于 `leastping` 目标，此时必须显式指定该目标
+> 仅适用于 `quick` 目标，此时必须显式指定该目标
 
 与最好节点的最大**相对**差距，取值范围 `0-1`，默认为 `0.2`，即其分数的 20%。
 
@@ -76,7 +76,7 @@
 
 #### jitter_tolerance
 
-> 仅适用于 `leastload` 目标，此时必须显式指定该目标
+> 仅适用于 `steady` 目标，此时必须显式指定该目标
 
 与最好节点的最大**绝对**差距，默认为 `10ms`，即抖动最多比最优节点高 10ms 的节点仍算同样好。
 

@@ -248,7 +248,7 @@ func assertStats(t *testing.T, name string, want, got healthcheck.Stats) {
 
 func TestStatsCostZeroIsNotFailed(t *testing.T) {
 	t.Parallel()
-	// leastload costs a node by its jitter, and a steady node has none. Zero is
+	// steady costs a node by its jitter, and a steady node has none. Zero is
 	// reserved for a missing value, so the cost must stay measurable.
 	stats := healthcheck.Stats{All: 10, Median: 100, Jitter: 0, Latest: 100}
 	if cost := stats.Cost(0, 0); cost != healthcheck.Millisecond {

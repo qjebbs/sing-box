@@ -32,12 +32,12 @@ var (
 )
 
 // urlTestObjectives are the objectives this group accepts. It uses one node at a time,
-// which only the least* objectives rank: alive and qualified hand every node of their
-// class to the selection, which would then have to break the tie itself.
-var urlTestObjectives = []string{selection.ObjectiveLeastPing, selection.ObjectiveLeastLoad}
+// which only quick and steady rank: alive and qualified hand every node of their class to
+// the selection, which would then have to break the tie itself.
+var urlTestObjectives = []string{selection.ObjectiveQuick, selection.ObjectiveSteady}
 
 // urlTestObjective validates the configured objective and the tolerances that go with
-// it, and returns the objective, defaulting to leastping.
+// it, and returns the objective, defaulting to quick.
 func urlTestObjective(options option.ProviderURLTestOptions) (string, error) {
 	if options.Objective != "" && !slices.Contains(urlTestObjectives, options.Objective) {
 		return "", E.New(
@@ -52,7 +52,7 @@ func urlTestObjective(options option.ProviderURLTestOptions) (string, error) {
 		return "", err
 	}
 	if options.Objective == "" {
-		return selection.ObjectiveLeastPing, nil
+		return selection.ObjectiveQuick, nil
 	}
 	return options.Objective, nil
 }

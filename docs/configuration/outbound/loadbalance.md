@@ -82,8 +82,8 @@ The objective of load balancing. Default is `alive`.
 | ----------- | ---------------------------------------------------------- |
 | `alive`     | prefer alive nodes                                         |
 | `qualified` | prefer qualified nodes (`max_rtt`, `max_fail`)             |
-| `leastping` | the nodes that typically cost the least: delay plus jitter |
-| `leastload` | the steadiest nodes, whatever their distance               |
+| `quick`     | the nodes that typically cost the least: delay plus jitter |
+| `steady`    | the steadiest nodes, whatever their distance               |
 
 Load balancing divides nodes into three classes:
 
@@ -91,22 +91,22 @@ Load balancing divides nodes into three classes:
 2. Alive Nodes, that pass the health check
 3. Qualified Nodes, that are alive and meet the constraints (`max_rtt`, `max_fail`)
 
-It tries to pick from the class that the objective is targeting (see the table above). If there is no node for current class, it falls back to the next class. For example, the behavior of `leastload` could be:
+It tries to pick from the class that the objective is targeting (see the table above). If there is no node for current class, it falls back to the next class. For example, the behavior of `steady` could be:
 
-- Pick least load nodes from qualified ones
-- Pick least load nodes from alives ones
-- Pick least load nodes from failed ones (could be temporarily failed)
+- Pick steady nodes from qualified ones
+- Pick steady nodes from alives ones
+- Pick steady nodes from failed ones (could be temporarily failed)
 
-Generally speaking, use `leastload`, `leastping` for better network quality; use `alive` for more quantity of outbound nodes.
+Generally speaking, use `steady`, `quick` for better network quality; use `alive` for more quantity of outbound nodes.
 
-Both `leastload` and `leastping` rank the nodes by a score, lower is better:
+Both `steady` and `quick` rank the nodes by a score, lower is better:
 
 ```
 MED     = median(x₁ … xₙ)
 JIT     = 1.4826 * median(|xᵢ − MED|)
 DEV     = (1/n) * Σ|xᵢ − MED|
-cost    = DEV              # leastload
-cost    = MED + JIT        # leastping
+cost    = DEV              # steady
+cost    = MED + JIT        # quick
 failure = min(TIMEOUT, 3 * cost)
 
 score   = (ALL - FAIL) / ALL * cost + FAIL / ALL * failure
@@ -148,14 +148,14 @@ The maximum number of health check failures for qulified nodes, default is `0`, 
 
 #### rtt_tolerance
 
-> Available only for the `leastping` objective, which must then be set explicitly
+> Available only for the `quick` objective, which must then be set explicitly
 
 The maximum **relative** difference to the best node, default is `0.2`, i.e. nodes that are at
 most 20% worse than the best one are selected with it.
 
 #### jitter_tolerance
 
-> Available only for the `leastload` objective, which must then be set explicitly
+> Available only for the `steady` objective, which must then be set explicitly
 
 The maximum **absolute** difference to the steadiest node, default is `10ms`, i.e. nodes whose
 jitter is at most 10ms above the best one are selected with it.

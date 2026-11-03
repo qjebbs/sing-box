@@ -11,6 +11,6 @@ const (
 const (
 	ObjectiveAlive     string = "alive"
 	ObjectiveQualified string = "qualified"
-	ObjectiveLeastPing string = "leastping"
-	ObjectiveLeastLoad string = "leastload"
+	ObjectiveQuick     string = "quick"
+	ObjectiveSteady    string = "steady"
 )

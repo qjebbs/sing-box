@@ -92,7 +92,7 @@ func TestSelectCluster(t *testing.T) {
 
 func TestSelectClusterSortsFirst(t *testing.T) {
 	t.Parallel()
-	objective := selection.NewLeastLoadObjective(option.LoadBalancePickOptions{})
+	objective := selection.NewSteadyObjective(option.LoadBalancePickOptions{})
 	nodes := []*selection.Node{
 		{Index: 0, Status: selection.StatusQualified, Stats: healthcheck.Stats{MeanDeviation: 120, All: 10}},
 		{Index: 1, Status: selection.StatusQualified, Stats: healthcheck.Stats{MeanDeviation: 15, All: 10}},
@@ -182,7 +182,7 @@ func TestLeastPingUsesMedian(t *testing.T) {
 		Stats:  healthcheck.Stats{All: 10, Average: 520, Median: 500},
 	}
 	nodes := []*selection.Node{steady, spiky}
-	selected := selection.Filter(selection.NewLeastPingObjective(option.LoadBalancePickOptions{}), nodes)
+	selected := selection.Filter(selection.NewQuickObjective(option.LoadBalancePickOptions{}), nodes)
 	if len(selected) != 1 {
 		t.Fatalf("want 1 node, got %v", len(selected))
 	}
@@ -193,7 +193,7 @@ func TestLeastPingUsesMedian(t *testing.T) {
 
 func TestLeastPingScore(t *testing.T) {
 	t.Parallel()
-	objective := selection.NewLeastPingObjective(option.LoadBalancePickOptions{})
+	objective := selection.NewQuickObjective(option.LoadBalancePickOptions{})
 	testCases := []struct {
 		name  string
 		stats healthcheck.Stats
@@ -224,9 +224,9 @@ func TestLeastPingScore(t *testing.T) {
 
 func TestLeastLoadScore(t *testing.T) {
 	t.Parallel()
-	// leastload scores by how much the node strays from its own median, whatever that
+	// steady scores by how much the node strays from its own median, whatever that
 	// median is: the distance of the node is not part of the question.
-	objective := selection.NewLeastLoadObjective(option.LoadBalancePickOptions{})
+	objective := selection.NewSteadyObjective(option.LoadBalancePickOptions{})
 	testCases := []struct {
 		name  string
 		stats healthcheck.Stats
@@ -256,10 +256,10 @@ func TestLeastLoadScore(t *testing.T) {
 
 func TestLeastPingScoreDoesNotUseMeanDeviation(t *testing.T) {
 	t.Parallel()
-	// A node that stalled once has a large mean deviation and a small jitter. leastping
+	// A node that stalled once has a large mean deviation and a small jitter. quick
 	// ranks what the node typically costs, so the stall does not turn it into a slow
-	// node; that is what leastload is for.
-	objective := selection.NewLeastPingObjective(option.LoadBalancePickOptions{})
+	// node; that is what steady is for.
+	objective := selection.NewQuickObjective(option.LoadBalancePickOptions{})
 	node := &selection.Node{Status: selection.StatusQualified, Stats: healthcheck.Stats{
 		Median: 160, Jitter: 10, MeanDeviation: 457, All: 10,
 	}}
@@ -270,9 +270,9 @@ func TestLeastPingScoreDoesNotUseMeanDeviation(t *testing.T) {
 
 func TestLeastLoadScoreDoesNotUseJitter(t *testing.T) {
 	t.Parallel()
-	// A node with one stall and a node without any rank the same by leastload when their
+	// A node with one stall and a node without any rank the same by steady when their
 	// mean deviations match: the jitter is the typical one, and it ignores the stall.
-	objective := selection.NewLeastLoadObjective(option.LoadBalancePickOptions{})
+	objective := selection.NewSteadyObjective(option.LoadBalancePickOptions{})
 	stalled := &selection.Node{Status: selection.StatusQualified, Stats: healthcheck.Stats{
 		Median: 160, Jitter: 13, MeanDeviation: 457, All: 10,
 	}}
@@ -297,7 +297,7 @@ func TestLeastPingScoreRanks(t *testing.T) {
 		Stats: healthcheck.Stats{Median: 164, Jitter: 8, All: 10},
 	}
 	// 161 + 10 = 171, 164 + 8 = 172, both are in the cluster, the score orders them
-	selected := selection.Filter(selection.NewLeastPingObjective(option.LoadBalancePickOptions{}), []*selection.Node{flaky, steady})
+	selected := selection.Filter(selection.NewQuickObjective(option.LoadBalancePickOptions{}), []*selection.Node{flaky, steady})
 	if len(selected) != 2 {
 		t.Fatalf("want both nodes, got %v", selected)
 	}
@@ -318,7 +318,7 @@ func TestLeastPingOrdersFasterFirst(t *testing.T) {
 		Index: 2, Status: selection.StatusQualified,
 		Stats: healthcheck.Stats{Median: 170, Jitter: 10, All: 10},
 	}
-	selected := selection.Filter(selection.NewLeastPingObjective(option.LoadBalancePickOptions{}), []*selection.Node{slow, fast})
+	selected := selection.Filter(selection.NewQuickObjective(option.LoadBalancePickOptions{}), []*selection.Node{slow, fast})
 	if len(selected) == 0 || selected[0].Index != 1 {
 		t.Fatalf("want node 1 first, got %v", selected)
 	}
@@ -328,7 +328,7 @@ func TestLeastScoreIsBoundedByTheTimeout(t *testing.T) {
 	t.Parallel()
 	// A node checked with a longer timeout can have a delay above the current one. An
 	// attempt still cannot cost more than the timeout it waits for.
-	objective := selection.NewLeastPingObjective(option.LoadBalancePickOptions{})
+	objective := selection.NewQuickObjective(option.LoadBalancePickOptions{})
 	node := &selection.Node{Status: selection.StatusQualified, Stats: healthcheck.Stats{
 		Median: 65000, Jitter: 65000, All: 10, Latest: 65000,
 	}}
@@ -394,7 +394,7 @@ func TestLeastPingKeep(t *testing.T) {
 			want: false,
 		},
 	}
-	objective := selection.NewLeastPingObjective(option.LoadBalancePickOptions{})
+	objective := selection.NewQuickObjective(option.LoadBalancePickOptions{})
 	for _, testCase := range testCases {
 		testCase := testCase
 		t.Run(testCase.name, func(t *testing.T) {
@@ -420,20 +420,20 @@ func TestLeastKeepIsCappedByTheBand(t *testing.T) {
 		Status: selection.StatusQualified,
 		Stats:  healthcheck.Stats{All: 2, Median: 3000, Jitter: 4000},
 	}
-	if selection.NewLeastPingObjective(option.LoadBalancePickOptions{}).Keep(node, best) {
+	if selection.NewQuickObjective(option.LoadBalancePickOptions{}).Keep(node, best) {
 		t.Fatalf("a node beyond twice the tolerance was kept")
 	}
 }
 
 func TestLeastLoadKeep(t *testing.T) {
 	t.Parallel()
-	// leastload scores by the mean distance to the median: 40ms with 10 samples, so the
+	// steady scores by the mean distance to the median: 40ms with 10 samples, so the
 	// band of 8ms plus the noise of two such estimates keeps a node up to roughly 55ms.
 	best := &selection.Node{
 		Status: selection.StatusQualified,
 		Stats:  healthcheck.Stats{All: 10, MeanDeviation: 40},
 	}
-	objective := selection.NewLeastLoadObjective(option.LoadBalancePickOptions{})
+	objective := selection.NewSteadyObjective(option.LoadBalancePickOptions{})
 	close := &selection.Node{
 		Status: selection.StatusQualified,
 		Stats:  healthcheck.Stats{All: 10, MeanDeviation: 52},
@@ -453,14 +453,14 @@ func TestLeastLoadKeep(t *testing.T) {
 func TestLeastLoadRanksSteadyFirst(t *testing.T) {
 	t.Parallel()
 	// A node whose spread is exactly zero has a cost of zero, which must not read as
-	// a missing score: leastload would rank the steadiest node behind every other one.
+	// a missing score: steady would rank the steadiest node behind every other one.
 	steady := &selection.Node{Status: selection.StatusQualified, Stats: healthcheck.Stats{
 		All: 10, Median: 100, MeanDeviation: 0, Latest: 100,
 	}}
 	unstable := &selection.Node{Status: selection.StatusQualified, Stats: healthcheck.Stats{
 		All: 10, Median: 100, MeanDeviation: 50, Latest: 100,
 	}}
-	objective := selection.NewLeastLoadObjective(option.LoadBalancePickOptions{MinNodes: 1, MaxNodes: 1})
+	objective := selection.NewSteadyObjective(option.LoadBalancePickOptions{MinNodes: 1, MaxNodes: 1})
 	ranked := objective.Rank([]*selection.Node{unstable, steady})
 	if ranked[0] != steady {
 		t.Fatalf("want the steady node first, got %v to %v", objective.Score(ranked[0]), objective.Score(ranked[1]))

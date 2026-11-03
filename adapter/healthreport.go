@@ -17,7 +17,7 @@ type HealthReport struct {
 	Tag  string `json:"tag"`
 	Type string `json:"type"`
 	// Objective is the objective the nodes are ranked by, Selection the whole selection,
-	// e.g. "leastping" and "leastping/single".
+	// e.g. "quick" and "quick/single".
 	Objective string `json:"objective"`
 	Selection string `json:"selection"`
 	// Networks are the networks the nodes support.

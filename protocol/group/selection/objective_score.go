@@ -10,16 +10,15 @@ import (
 )
 
 var (
-	_ Objective = (*LeastObjective)(nil)
-	_ Bander    = (*LeastObjective)(nil)
-	_ Keeper    = (*LeastObjective)(nil)
+	_ Objective = (*ScoreObjective)(nil)
+	_ Bander    = (*ScoreObjective)(nil)
+	_ Keeper    = (*ScoreObjective)(nil)
 )
 
 const (
-	// DefaultTolerance is the default relative tolerance of leastping, around the best
-	// node.
+	// DefaultTolerance is the default relative tolerance of quick, around the best node.
 	DefaultTolerance float32 = 0.2
-	// DefaultJitterTolerance is the default absolute tolerance of leastload, around the
+	// DefaultJitterTolerance is the default absolute tolerance of steady, around the
 	// steadiest node.
 	DefaultJitterTolerance = 10 * healthcheck.Millisecond
 	// resolutionSigma is how many standard errors of the best score it takes to tell two
@@ -32,14 +31,14 @@ const (
 	hysteresisSigma = 2
 )
 
-// LeastObjective is the least load / least ping balancing objective. Both rank the
-// nodes by Score, they only differ in the base statistic and whether the jitter is
+// ScoreObjective is the objective of a group that ranks its nodes by a score: quick and
+// steady are both one. They only differ in the base statistic, and whether the jitter is
 // added to it.
-type LeastObjective struct {
+type ScoreObjective struct {
 	*QualifiedObjective
 	name string
-	// tolerance is the relative band of leastping, jitterTolerance the absolute band of
-	// leastload. Which one is used follows the objective, see band.
+	// tolerance is the relative band of quick, jitterTolerance the absolute band of steady.
+	// Which one is used follows the objective, see band.
 	tolerance       float32
 	jitterTolerance healthcheck.RTT
 	minNodes        int
@@ -53,7 +52,7 @@ type LeastObjective struct {
 }
 
 // Name implements Objective.
-func (o *LeastObjective) Name() string {
+func (o *ScoreObjective) Name() string {
 	return o.name
 }
 
@@ -69,33 +68,33 @@ func medianRTT(node *Node) healthcheck.RTT {
 	return node.ScaleRTT(node.Median)
 }
 
-// NewLeastLoadObjective returns a new LeastObjective. It ranks the nodes by how much
+// NewSteadyObjective returns a new ScoreObjective. It ranks the nodes by how much
 // they stray from their own median, whatever that median is: a node of 500ms that stays
 // there is steadier than a node of 100ms that swings, and the distance of the node is not
 // part of the question. Bounding the distance is what max_rtt is for.
-func NewLeastLoadObjective(options option.LoadBalancePickOptions) *LeastObjective {
-	objective := newLeastObjective(options)
-	objective.name = ObjectiveLeastLoad
+func NewSteadyObjective(options option.LoadBalancePickOptions) *ScoreObjective {
+	objective := newScoreObjective(options)
+	objective.name = ObjectiveSteady
 	objective.baseFunc = meanDeviationRTT
 	return objective
 }
 
-// NewLeastPingObjective returns a new LeastObjective. It ranks the nodes by what they
+// NewQuickObjective returns a new ScoreObjective. It ranks the nodes by what they
 // typically cost: the median delay of the checks, plus the jitter, since a node that is
 // near but unstable delays the traffic as a node that is simply slower does. The spread is
 // the typical one, so a check that timed out once does not decide it, see
 // healthcheck.Stats.MeanDeviation for the one that counts it.
-func NewLeastPingObjective(options option.LoadBalancePickOptions) *LeastObjective {
-	objective := newLeastObjective(options)
-	objective.name = ObjectiveLeastPing
+func NewQuickObjective(options option.LoadBalancePickOptions) *ScoreObjective {
+	objective := newScoreObjective(options)
+	objective.name = ObjectiveQuick
 	objective.baseFunc = medianRTT
 	objective.jitterFunc = jitterRTT
 	return objective
 }
 
-// newLeastObjective returns a new LeastObjective with the common options.
-func newLeastObjective(options option.LoadBalancePickOptions) *LeastObjective {
-	return &LeastObjective{
+// newScoreObjective returns a new ScoreObjective with the common options.
+func newScoreObjective(options option.LoadBalancePickOptions) *ScoreObjective {
+	return &ScoreObjective{
 		QualifiedObjective: NewQualifiedObjective(),
 		tolerance:          float32Option(options.RTTTolerance, DefaultTolerance),
 		jitterTolerance:    jitterToleranceOption(options.JitterTolerance),
@@ -113,13 +112,13 @@ func float32Option(value float32, defaultValue float32) float32 {
 
 // Score returns the cost of using the node, lower is better:
 //
-//	leastping = MED + JIT       what a node typically costs
-//	leastload = MeanDeviation   how much it strays from its own typical delay
+//	quick  = MED + JIT       what a node typically costs
+//	steady = MeanDeviation   how much it strays from its own typical delay
 //
 // The jitter term is absent when the objective has no jitterFunc, which is the case for
-// leastload: its base is a spread already. See healthcheck.Stats.Cost for what an attempt
+// steady: its base is a spread already. See healthcheck.Stats.Cost for what an attempt
 // costs on average, including the failures.
-func (o *LeastObjective) Score(node *Node) healthcheck.RTT {
+func (o *ScoreObjective) Score(node *Node) healthcheck.RTT {
 	base := o.baseFunc(node)
 	if o.jitterFunc == nil {
 		return node.Stats.Cost(base, 0)
@@ -129,14 +128,14 @@ func (o *LeastObjective) Score(node *Node) healthcheck.RTT {
 
 // scoreOf returns the score as a float, for the noise model of Keep, which compares
 // the scores rather than reporting them.
-func (o *LeastObjective) scoreOf(node *Node) float64 {
+func (o *ScoreObjective) scoreOf(node *Node) float64 {
 	return float64(o.Score(node))
 }
 
 // scoreStandardError returns the standard error of the score of the node, i.e. how much
 // the score would move if the health checks were run again. It only depends on the number
 // of samples and their spread.
-func (o *LeastObjective) scoreStandardError(node *Node) float64 {
+func (o *ScoreObjective) scoreStandardError(node *Node) float64 {
 	n := float64(node.Stats.Succeeded())
 	if n < 2 {
 		// a single sample says nothing about the accuracy of its own estimate
@@ -162,7 +161,7 @@ func (o *LeastObjective) scoreStandardError(node *Node) float64 {
 // The allowance is capped at the band itself: hysteresis is there to ride out noise,
 // not to keep a node that is clearly worse, so a node never survives more than twice
 // the tolerance.
-func (o *LeastObjective) Keep(node *Node, best *Node) bool {
+func (o *ScoreObjective) Keep(node *Node, best *Node) bool {
 	if node.Status != best.Status {
 		return false
 	}
@@ -190,7 +189,7 @@ func rttFromFloat(value float64) healthcheck.RTT {
 
 // Rank implements Objective, the nodes of a better status come first, then the
 // nodes are ordered by score.
-func (o *LeastObjective) Rank(all []*Node) []*Node {
+func (o *ScoreObjective) Rank(all []*Node) []*Node {
 	ranked := o.QualifiedObjective.Rank(all)
 	SortByLeast(ranked, o.Score)
 	return ranked
@@ -198,7 +197,7 @@ func (o *LeastObjective) Rank(all []*Node) []*Node {
 
 // Select implements Objective.
 // NOTICE: be aware of the coding convention of this function
-func (o *LeastObjective) Select(ranked []*Node) []*Node {
+func (o *ScoreObjective) Select(ranked []*Node) []*Node {
 	// nodes are either qualified, alive or all nodes
 	nodes := o.QualifiedObjective.Select(ranked)
 	if len(nodes) == 0 {
@@ -280,14 +279,14 @@ func SortByLeast(nodes []*Node, rttFunc func(*Node) healthcheck.RTT) {
 // The two objectives measure different quantities, so their bands are in different
 // units and neither can be a share of the other:
 //
-//   - leastping compares delays, which are far from zero, so a share of the best one is
+//   - quick compares delays, which are far from zero, so a share of the best one is
 //     a meaningful band: 20% of 170ms is 34ms.
-//   - leastload compares a spread that approaches zero for a steady node, so a share of
+//   - steady compares a spread that approaches zero for a steady node, so a share of
 //     it would be smaller than the measurement can resolve: 20% of 2ms is 0.4ms. The band
 //     is absolute milliseconds instead, and a resolution margin is added to it, because
 //     the configured value describes the true difference while the comparison only sees
 //     the observed one.
-func (o *LeastObjective) band(best *Node) float64 {
+func (o *ScoreObjective) band(best *Node) float64 {
 	if o.jitterFunc != nil {
 		return o.scoreOf(best) * float64(o.tolerance)
 	}
@@ -302,7 +301,7 @@ func (o *LeastObjective) band(best *Node) float64 {
 
 // Limit implements Bander. It returns the highest score that still counts as equally
 // good as best.
-func (o *LeastObjective) Limit(best *Node) healthcheck.RTT {
+func (o *ScoreObjective) Limit(best *Node) healthcheck.RTT {
 	score := o.Score(best)
 	if score == healthcheck.Failed {
 		return healthcheck.Failed
@@ -310,7 +309,7 @@ func (o *LeastObjective) Limit(best *Node) healthcheck.RTT {
 	return rttFromFloat(float64(score) + o.band(best))
 }
 
-// jitterToleranceOption returns the absolute band of leastload, the default when it is
+// jitterToleranceOption returns the absolute band of steady, the default when it is
 // not set. A negative value would make the band narrower than the measurement.
 func jitterToleranceOption(value badoption.Duration) healthcheck.RTT {
 	if value <= 0 {

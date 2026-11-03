@@ -20,7 +20,7 @@ import (
 var (
 	benchmarkPickOptions            = option.LoadBalancePickOptions{}
 	benchmarkAliveObjective         = selection.NewAliveObjective()
-	benchmarkLeastLoadObjective     = selection.NewLeastLoadObjective(benchmarkPickOptions)
+	benchmarkSteadyObjective        = selection.NewSteadyObjective(benchmarkPickOptions)
 	benchmarkRandomStrategy         = selection.NewRandomStrategy()
 	benchmarkRoundRobinStrategy     = selection.NewRoundRobinStrategy()
 	benchmarkConsistentHashStrategy = selection.NewConsistentHashStrategy()
@@ -34,12 +34,12 @@ func BenchmarkAliveRandom128(b *testing.B) {
 	benchmarkBalancer(b, benchmarkAliveObjective, benchmarkRandomStrategy, 128)
 }
 
-func BenchmarkLeastloadRandom32(b *testing.B) {
-	benchmarkBalancer(b, benchmarkLeastLoadObjective, benchmarkRandomStrategy, 32)
+func BenchmarkSteadyRandom32(b *testing.B) {
+	benchmarkBalancer(b, benchmarkSteadyObjective, benchmarkRandomStrategy, 32)
 }
 
-func BenchmarkLeastloadRandom128(b *testing.B) {
-	benchmarkBalancer(b, benchmarkLeastLoadObjective, benchmarkRandomStrategy, 128)
+func BenchmarkSteadyRandom128(b *testing.B) {
+	benchmarkBalancer(b, benchmarkSteadyObjective, benchmarkRandomStrategy, 128)
 }
 
 func BenchmarkAliveRoundRobin32(b *testing.B) {
@@ -50,12 +50,12 @@ func BenchmarkAliveRoundRobin128(b *testing.B) {
 	benchmarkBalancer(b, benchmarkAliveObjective, benchmarkRoundRobinStrategy, 128)
 }
 
-func BenchmarkLeastloadRoundRobin32(b *testing.B) {
-	benchmarkBalancer(b, benchmarkLeastLoadObjective, benchmarkRoundRobinStrategy, 32)
+func BenchmarkSteadyRoundRobin32(b *testing.B) {
+	benchmarkBalancer(b, benchmarkSteadyObjective, benchmarkRoundRobinStrategy, 32)
 }
 
-func BenchmarkLeastloadRoundRobin128(b *testing.B) {
-	benchmarkBalancer(b, benchmarkLeastLoadObjective, benchmarkRoundRobinStrategy, 128)
+func BenchmarkSteadyRoundRobin128(b *testing.B) {
+	benchmarkBalancer(b, benchmarkSteadyObjective, benchmarkRoundRobinStrategy, 128)
 }
 
 func BenchmarkAliveConsistentHash32(b *testing.B) {
@@ -66,12 +66,12 @@ func BenchmarkAliveConsistentHash128(b *testing.B) {
 	benchmarkBalancer(b, benchmarkAliveObjective, benchmarkConsistentHashStrategy, 128)
 }
 
-func BenchmarkLeastloadConsistentHash32(b *testing.B) {
-	benchmarkBalancer(b, benchmarkLeastLoadObjective, benchmarkConsistentHashStrategy, 32)
+func BenchmarkSteadyConsistentHash32(b *testing.B) {
+	benchmarkBalancer(b, benchmarkSteadyObjective, benchmarkConsistentHashStrategy, 32)
 }
 
-func BenchmarkLeastloadConsistentHash128(b *testing.B) {
-	benchmarkBalancer(b, benchmarkLeastLoadObjective, benchmarkConsistentHashStrategy, 128)
+func BenchmarkSteadyConsistentHash128(b *testing.B) {
+	benchmarkBalancer(b, benchmarkSteadyObjective, benchmarkConsistentHashStrategy, 128)
 }
 
 func benchmarkBalancer(b *testing.B, f selection.Objective, s selection.Strategy, count int) {
@@ -214,7 +214,7 @@ func TestRetainNodesUsesObjective(t *testing.T) {
 	// The real objective decides, not a stub: 5 minutes of statistics put the node
 	// right outside the band, but its jitter is large enough that the excess is
 	// noise, so its connections are kept.
-	objective := selection.NewLeastPingObjective(option.LoadBalancePickOptions{})
+	objective := selection.NewQuickObjective(option.LoadBalancePickOptions{})
 	all := []*selection.Node{
 		{
 			Index: 0, Status: selection.StatusQualified,
