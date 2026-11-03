@@ -1,29 +1,79 @@
 package group
 
-import "testing"
+import (
+	"testing"
+	"time"
+
+	"github.com/sagernet/sing-box/option"
+	"github.com/sagernet/sing/common/json/badoption"
+)
 
 func TestURLTestObjective(t *testing.T) {
 	t.Parallel()
 	testCases := []struct {
 		name    string
-		value   string
+		options option.ProviderURLTestOptions
 		want    string
 		wantErr bool
 	}{
-		{name: "default", value: "", want: "leastping"},
-		{name: "leastping", value: "leastping", want: "leastping"},
-		{name: "leastload", value: "leastload", want: "leastload"},
+		{name: "default", options: option.ProviderURLTestOptions{}, want: "leastping"},
+		{name: "leastping", options: option.ProviderURLTestOptions{Objective: "leastping"}, want: "leastping"},
+		{name: "leastload", options: option.ProviderURLTestOptions{Objective: "leastload"}, want: "leastload"},
 		// only the least* objectives limit the pick to max_nodes, the others would use
 		// a different node per connection
-		{name: "alive", value: "alive", wantErr: true},
-		{name: "qualified", value: "qualified", wantErr: true},
-		{name: "unknown", value: "fastest", wantErr: true},
+		{name: "alive", options: option.ProviderURLTestOptions{Objective: "alive"}, wantErr: true},
+		{name: "qualified", options: option.ProviderURLTestOptions{Objective: "qualified"}, wantErr: true},
+		{name: "unknown", options: option.ProviderURLTestOptions{Objective: "fastest"}, wantErr: true},
+		// a tolerance belongs to a single objective, so the objective has to be stated
+		// for the group to know whether the tolerance applies
+		{
+			name:    "rtt on the default",
+			options: option.ProviderURLTestOptions{RTTTolerance: 0.2},
+			wantErr: true,
+		},
+		{
+			name:    "jitter on the default",
+			options: option.ProviderURLTestOptions{JitterTolerance: badoption.Duration(10 * time.Millisecond)},
+			wantErr: true,
+		},
+		{
+			name: "rtt on leastping",
+			options: option.ProviderURLTestOptions{
+				Objective:    "leastping",
+				RTTTolerance: 0.2,
+			},
+			want: "leastping",
+		},
+		{
+			name: "jitter on leastload",
+			options: option.ProviderURLTestOptions{
+				Objective:       "leastload",
+				JitterTolerance: badoption.Duration(10 * time.Millisecond),
+			},
+			want: "leastload",
+		},
+		{
+			name: "jitter on leastping",
+			options: option.ProviderURLTestOptions{
+				Objective:       "leastping",
+				JitterTolerance: badoption.Duration(10 * time.Millisecond),
+			},
+			wantErr: true,
+		},
+		{
+			name: "rtt on leastload",
+			options: option.ProviderURLTestOptions{
+				Objective:    "leastload",
+				RTTTolerance: 0.2,
+			},
+			wantErr: true,
+		},
 	}
 	for _, testCase := range testCases {
 		testCase := testCase
 		t.Run(testCase.name, func(t *testing.T) {
 			t.Parallel()
-			got, err := urlTestObjective(testCase.value)
+			got, err := urlTestObjective(testCase.options)
 			if testCase.wantErr {
 				if err == nil {
 					t.Fatalf("want an error, got %v", got)

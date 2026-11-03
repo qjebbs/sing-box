@@ -104,6 +104,11 @@ node within which the nodes count as equally good, and each objective has its ow
 | `leastping` | `MED + JIT` | `rtt_tolerance` | share of the best value | `0.2` |
 | `leastload` | `DEV` | `jitter_tolerance` | absolute milliseconds | `10ms` |
 
+A tolerance belongs to the objective that measures its quantity: setting one for the other
+objective, or for an objective left at its default, is refused when the group is created
+instead of being silently ignored, since a value that has no effect is a mistake rather
+than a preference.
+
 **The delay is relative**, because it is far from zero: 20% of the best 170ms is 34ms, a real
 band.
 

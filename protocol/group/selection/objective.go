@@ -49,6 +49,28 @@ type ObjectiveOptions struct {
 	MaxNodes uint
 }
 
+// ValidateTolerances returns an error when a tolerance is set for an objective that does
+// not use it. Each tolerance measures the quantity of one objective, so it means nothing
+// for the other one, and a value that is silently ignored is a mistake rather than a
+// preference. The objective must be named for the question to have an answer, so a
+// tolerance cannot be set together with an objective left at its default.
+func ValidateTolerances(objective string, rttTolerance float32, jitterTolerance time.Duration) error {
+	if rttTolerance != 0 && objective != ObjectiveLeastPing {
+		return toleranceMismatch("rtt_tolerance", ObjectiveLeastPing, objective)
+	}
+	if jitterTolerance != 0 && objective != ObjectiveLeastLoad {
+		return toleranceMismatch("jitter_tolerance", ObjectiveLeastLoad, objective)
+	}
+	return nil
+}
+
+func toleranceMismatch(field string, expected string, objective string) error {
+	if objective == "" {
+		return E.New(field, " requires the ", expected, " objective, which must be set explicitly")
+	}
+	return E.New(field, " requires the ", expected, " objective, not ", objective)
+}
+
 // NewObjective returns the objective of the name, alive when the name is empty.
 func NewObjective(name string, options ObjectiveOptions) (Objective, error) {
 	pick := option.LoadBalancePickOptions{

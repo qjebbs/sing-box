@@ -36,18 +36,25 @@ var (
 // class to the selection, which would then have to break the tie itself.
 var urlTestObjectives = []string{selection.ObjectiveLeastPing, selection.ObjectiveLeastLoad}
 
-// urlTestObjective validates the configured objective, defaulting to leastping.
-func urlTestObjective(objective string) (string, error) {
-	if objective == "" {
-		return selection.ObjectiveLeastPing, nil
-	}
-	if !slices.Contains(urlTestObjectives, objective) {
+// urlTestObjective validates the configured objective and the tolerances that go with
+// it, and returns the objective, defaulting to leastping.
+func urlTestObjective(options option.ProviderURLTestOptions) (string, error) {
+	if options.Objective != "" && !slices.Contains(urlTestObjectives, options.Objective) {
 		return "", E.New(
-			"unsupported objective for ", C.TypeURLTest, ": ", objective,
+			"unsupported objective for ", C.TypeURLTest, ": ", options.Objective,
 			", expected one of ", strings.Join(urlTestObjectives, ", "),
 		)
 	}
-	return objective, nil
+	// A default objective is not a stated one, so it cannot carry a tolerance, and the
+	// objectives that ignore the tolerances are not accepted either.
+	err := selection.ValidateTolerances(options.Objective, options.RTTTolerance, options.JitterTolerance.Build())
+	if err != nil {
+		return "", err
+	}
+	if options.Objective == "" {
+		return selection.ObjectiveLeastPing, nil
+	}
+	return options.Objective, nil
 }
 
 // URLTestProvider is the url test group. It uses one node at a time, and replaces it
@@ -63,7 +70,7 @@ type URLTestProvider struct {
 }
 
 func NewURLTestProvider(ctx context.Context, router adapter.Router, logger log.ContextLogger, tag string, options option.ProviderURLTestOptions) (adapter.Outbound, error) {
-	objective, err := urlTestObjective(options.Objective)
+	objective, err := urlTestObjective(options)
 	if err != nil {
 		return nil, err
 	}

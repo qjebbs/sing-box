@@ -36,6 +36,12 @@ type LoadBalance struct {
 
 // NewLoadBalance creates a new load balance outbound
 func NewLoadBalance(ctx context.Context, router adapter.Router, logger log.ContextLogger, tag string, options option.LoadBalanceOutboundOptions) (adapter.Outbound, error) {
+	// Neither tolerance applies to an objective left at its default (alive), and one set
+	// for the wrong objective is a mistake, see selection.ValidateTolerances.
+	err := selection.ValidateTolerances(options.Pick.Objective, options.Pick.RTTTolerance, options.Pick.JitterTolerance.Build())
+	if err != nil {
+		return nil, err
+	}
 	return &LoadBalance{
 		Group: base.NewGroup(
 			ctx, logger, C.TypeLoadBalance, tag,

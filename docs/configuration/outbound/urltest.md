@@ -71,7 +71,7 @@ The reasoning behind the statistics, the scores and the tolerance is on the
 
 #### rtt_tolerance
 
-> Available only for the `leastping` objective
+> Available only for the `leastping` objective, which must then be set explicitly
 
 The maximum **relative** difference to the best node, between `0` and `1`, default is `0.2`, i.e.
 20% of its score.
@@ -81,7 +81,7 @@ a difference that is not worth the switch keeps the connections where they are.
 
 #### jitter_tolerance
 
-> Available only for the `leastload` objective
+> Available only for the `leastload` objective, which must then be set explicitly
 
 The maximum **absolute** difference to the best node, default is `10ms`, i.e. a node whose jitter
 is at most 10ms above the best one still counts as equally good.

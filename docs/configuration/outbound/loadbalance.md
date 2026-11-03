@@ -148,14 +148,14 @@ The maximum number of health check failures for qulified nodes, default is `0`, 
 
 #### rtt_tolerance
 
-> Available only for the `leastping` objective
+> Available only for the `leastping` objective, which must then be set explicitly
 
 The maximum **relative** difference to the best node, default is `0.2`, i.e. nodes that are at
 most 20% worse than the best one are selected with it.
 
 #### jitter_tolerance
 
-> Available only for the `leastload` objective
+> Available only for the `leastload` objective, which must then be set explicitly
 
 The maximum **absolute** difference to the steadiest node, default is `10ms`, i.e. nodes whose
 jitter is at most 10ms above the best one are selected with it.

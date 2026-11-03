@@ -23,10 +23,11 @@ type LoadBalancePickOptions struct {
 	MaxRTT badoption.Duration `json:"max_rtt,omitempty"`
 	// rtt_tolerance is the maximum relative difference to the best node, for the
 	// leastping objective, e.g. 0.2 means nodes up to 20% worse than the best one are
-	// selected too. Default is 0.2.
+	// selected too. Default is 0.2. Requires the objective to be set to leastping.
 	RTTTolerance float32 `json:"rtt_tolerance,omitempty"`
 	// jitter_tolerance is the maximum absolute difference to the steadiest node, for the
-	// leastload objective, a duration. Default is 10ms.
+	// leastload objective, a duration. Default is 10ms. Requires the objective to be set
+	// to leastload.
 	JitterTolerance badoption.Duration `json:"jitter_tolerance,omitempty"`
 	// min_nodes is the minimum number of nodes to select. Default is 1.
 	MinNodes uint `json:"min_nodes,omitempty"`

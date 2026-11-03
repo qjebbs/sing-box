@@ -143,13 +143,13 @@ score   = (ALL - FAIL) / ALL × cost + FAIL / ALL × failure
 
 #### rtt_tolerance
 
-> 仅适用于 `leastping` 目标
+> 仅适用于 `leastping` 目标，此时必须显式指定该目标
 
 与最优节点的最大**相对**差距，默认为 `0.2`，即最多比最优节点慢 20% 的节点会与它一起被选中。
 
 #### jitter_tolerance
 
-> 仅适用于 `leastload` 目标
+> 仅适用于 `leastload` 目标，此时必须显式指定该目标
 
 与最稳节点的最大**绝对**差距，默认为 `10ms`，即抖动最多比最优节点高 10ms 的节点会与它一起被选中。
 
