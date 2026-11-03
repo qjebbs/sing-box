@@ -1,5 +1,7 @@
 package option
 
+import "github.com/sagernet/sing/common/json/badoption"
+
 // ProviderSelectorOptions is the options for selector outbounds with providers support
 type ProviderSelectorOptions struct {
 	ProviderGroupCommonOption
@@ -14,12 +16,16 @@ type ProviderURLTestOptions struct {
 	// objective ranks the nodes, it is leastping or leastload. Default is leastping,
 	// the median delay plus the failures.
 	Objective string `json:"objective,omitempty"`
-	// tolerance is the relative score band of the best node within which the node in use
-	// keeps its place, e.g. 0.2 keeps it while it is at most 20% worse than the best
-	// one. The same band decides whether a node that was just replaced keeps the
-	// connections it already carries.
-	Tolerance                 float32 `json:"tolerance,omitempty"`
-	InterruptExistConnections bool    `json:"interrupt_exist_connections,omitempty"`
+	// rtt_tolerance is the relative score band of the best node within which the node in
+	// use keeps its place, for the leastping objective, e.g. 0.2 keeps it while it is at
+	// most 20% worse than the best one. The same band decides whether a node that was
+	// just replaced keeps the connections it already carries.
+	RTTTolerance float32 `json:"rtt_tolerance,omitempty"`
+	// jitter_tolerance is the absolute band of the best node, for the leastload
+	// objective, e.g. 10ms keeps the node in use while its jitter is at most 10ms above
+	// the best one.
+	JitterTolerance           badoption.Duration `json:"jitter_tolerance,omitempty"`
+	InterruptExistConnections bool               `json:"interrupt_exist_connections,omitempty"`
 }
 
 // RelayOptions is the chain of outbounds, which the connection passes through in the order

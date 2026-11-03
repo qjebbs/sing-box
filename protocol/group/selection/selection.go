@@ -99,16 +99,15 @@ func (s *Balancing) String() string {
 // group. It keeps the node it chose while its score is within the tolerance of the best
 // one: a change takes every new connection with it, so a difference that is not worth
 // it keeps the node where it is.
+//
+// The tolerance is the one of the objective it was created with: the two objectives
+// measure different quantities, so their bands are in different units.
 type Single struct {
 	objective Objective
-	tolerance float32
 }
 
-func NewSingle(objective Objective, tolerance float32) *Single {
-	return &Single{
-		objective: objective,
-		tolerance: float32Option(tolerance, DefaultTolerance),
-	}
+func NewSingle(objective Objective) *Single {
+	return &Single{objective: objective}
 }
 
 func (s *Single) Objective() Objective {
@@ -122,15 +121,17 @@ func (s *Single) Select(ranked []*Node, previous string) ([]*Node, string) {
 	}
 	best := selected[0]
 	scorer, isScorer := s.objective.(Scorer)
-	if !isScorer {
+	bander, isBander := s.objective.(Bander)
+	if !isScorer || !isBander {
 		return []*Node{best}, best.Tag()
 	}
 	if previous != "" && previous != best.Tag() {
+		limit := bander.Limit(best)
 		for _, node := range ranked {
 			if node.Tag() != previous {
 				continue
 			}
-			if node.Status == best.Status && scorer.Score(node) <= clusterLimit(scorer.Score(best), s.tolerance) {
+			if node.Status == best.Status && scorer.Score(node) <= limit {
 				return []*Node{node}, previous
 			}
 			break

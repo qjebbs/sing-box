@@ -22,7 +22,8 @@
     "strategy": "random",
     "max_fail": 0,
     "max_rtt": "1000ms",
-    "tolerance": 0.2,
+    "rtt_tolerance": 0.2,
+    "jitter_tolerance": "10ms",
     "min_nodes": 1,
     "max_nodes": 0,
     "biases": [
@@ -122,6 +123,9 @@ failures are mixed in by their shares.
   a whole.
 - `TIMEOUT` is the timeout a failed check waits for, 15s.
 
+The reasoning behind the statistics, the scores and the tolerance is on the
+[Node Rating](/configuration/shared/node-rating/) page.
+
 #### strategy
 
 The strategy of load balancing. Default is `random`.
@@ -142,18 +146,19 @@ The maximum round-trip time of health check that is acceptable for qulified node
 
 The maximum number of health check failures for qulified nodes, default is `0`, i.e. no failures allowed.
 
-#### tolerance
+#### rtt_tolerance
 
-> Available only for `least*` objectives
+> Available only for the `leastping` objective
 
-The maximum relative difference to the best node, default is `0.2`, i.e. nodes that are at most 20% worse than the best one are selected with it.
+The maximum **relative** difference to the best node, default is `0.2`, i.e. nodes that are at
+most 20% worse than the best one are selected with it.
 
-The value compared is the [score](#objective): the spread a node is ranked by is part of it, and so are the failures of both objectives, by their share of the samples.
+#### jitter_tolerance
 
-The tolerance is applied to the best node in the selection, so a clearly worse node is never selected just to fill a count.
-A minimum absolute difference of `10ms` is always used, so tiny values, such as the spread of an always stable node, aren't split by noise.
+> Available only for the `leastload` objective
 
-For example, with `tolerance: 0.2` and nodes of `174ms`, `504ms`, `505ms`, only the `174ms` node is selected, as the others are nearly three times slower.
+The maximum **absolute** difference to the steadiest node, default is `10ms`, i.e. nodes whose
+jitter is at most 10ms above the best one are selected with it.
 
 #### min_nodes
 
@@ -193,6 +198,6 @@ Interrupt existing connections when the selected outbound has changed.
 
 Only inbound connections are affected by this setting, internal connections will always be interrupted.
 
-For `least*` objectives the connections are kept while the node that left the selection is still within the noise of the health check statistics, so the connections are not closed by a measurement that could go either way. New connections always keep to the selection. The allowance is at most the tolerance itself, so a node never survives more than twice the tolerance.
+For `least*` objectives the connections are kept while the node that left the selection is still within the noise of the health check statistics, so the connections are not closed by a measurement that could go either way. New connections always keep to the selection. The allowance is at most the band itself, so a node never survives more than twice its tolerance away from the best.
 
 The retention applies to the inbound connections only, and only when this option is enabled: internal connections are interrupted either way.

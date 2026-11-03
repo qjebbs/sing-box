@@ -48,25 +48,32 @@ func TestSelectCluster(t *testing.T) {
 	for i := 0; i < 8; i++ {
 		equalNodes = append(equalNodes, newNode(selection.StatusQualified, 500))
 	}
+	// The band is the policy of an objective, not of the cluster: the tests below only
+	// check that a prefix of the ranking is taken, so any monotonic limit will do.
+	relative := func(tolerance float32) func(best *selection.Node) healthcheck.RTT {
+		return func(best *selection.Node) healthcheck.RTT {
+			return healthcheck.RTT(float64(jitterRTT(best)) * (1 + float64(tolerance)))
+		}
+	}
 	testCases := []struct {
-		name      string
-		nodes     []*selection.Node
-		tolerance float32
-		minNodes  int
-		maxNodes  int
-		want      int
+		name     string
+		nodes    []*selection.Node
+		limit    func(best *selection.Node) healthcheck.RTT
+		minNodes int
+		maxNodes int
+		want     int
 	}{
-		{name: "empty", nodes: nil, tolerance: selection.DefaultTolerance, want: 0},
-		{name: "single", nodes: realData[:1], tolerance: selection.DefaultTolerance, want: 1},
-		{name: "real data", nodes: realData, tolerance: selection.DefaultTolerance, want: 1},
-		{name: "close pair", nodes: closePair, tolerance: selection.DefaultTolerance, want: 2},
-		{name: "equal nodes", nodes: equalNodes, tolerance: selection.DefaultTolerance, want: len(equalNodes)},
-		{name: "tiny values", nodes: tinyValues, tolerance: selection.DefaultTolerance, want: len(tinyValues)},
-		{name: "wide tolerance", nodes: realData, tolerance: 2, want: 3},
-		{name: "min nodes", nodes: realData, tolerance: selection.DefaultTolerance, minNodes: 3, want: 3},
-		{name: "min nodes larger than available", nodes: closePair, tolerance: selection.DefaultTolerance, minNodes: 9, want: len(closePair)},
-		{name: "min nodes within tolerance", nodes: closePair, tolerance: selection.DefaultTolerance, minNodes: 1, want: 2},
-		{name: "max nodes", nodes: equalNodes, tolerance: selection.DefaultTolerance, maxNodes: 3, want: 3},
+		{name: "empty", nodes: nil, limit: relative(selection.DefaultTolerance), want: 0},
+		{name: "single", nodes: realData[:1], limit: relative(selection.DefaultTolerance), want: 1},
+		{name: "real data", nodes: realData, limit: relative(selection.DefaultTolerance), want: 1},
+		{name: "close pair", nodes: closePair, limit: relative(selection.DefaultTolerance), want: 2},
+		{name: "equal nodes", nodes: equalNodes, limit: relative(selection.DefaultTolerance), want: len(equalNodes)},
+		{name: "tiny values", nodes: tinyValues, limit: relative(selection.DefaultTolerance), want: 1},
+		{name: "wide tolerance", nodes: realData, limit: relative(2), want: 3},
+		{name: "min nodes", nodes: realData, limit: relative(selection.DefaultTolerance), minNodes: 3, want: 3},
+		{name: "min nodes larger than available", nodes: closePair, limit: relative(selection.DefaultTolerance), minNodes: 9, want: len(closePair)},
+		{name: "min nodes within tolerance", nodes: closePair, limit: relative(selection.DefaultTolerance), minNodes: 1, want: 2},
+		{name: "max nodes", nodes: equalNodes, limit: relative(selection.DefaultTolerance), maxNodes: 3, want: 3},
 	}
 	for _, testCase := range testCases {
 		testCase := testCase
@@ -74,7 +81,7 @@ func TestSelectCluster(t *testing.T) {
 			t.Parallel()
 			selection.SortByLeast(testCase.nodes, jitterRTT)
 			got := selection.SelectCluster(
-				testCase.nodes, testCase.tolerance, testCase.minNodes, testCase.maxNodes, jitterRTT,
+				testCase.nodes, testCase.minNodes, testCase.maxNodes, jitterRTT, testCase.limit,
 			)
 			if len(got) != testCase.want {
 				t.Errorf("want %v nodes, got %v", testCase.want, len(got))
@@ -114,7 +121,9 @@ func TestSelectClusterAndStatus(t *testing.T) {
 	// Sorted by status first: qualified nodes are selected, and the selection never
 	// crosses into a fallback status, even when its value is lower.
 	selection.SortByLeast(nodes, jitterRTT)
-	selected := selection.SelectCluster(nodes, selection.DefaultTolerance, 0, 0, jitterRTT)
+	selected := selection.SelectCluster(nodes, 0, 0, jitterRTT, func(best *selection.Node) healthcheck.RTT {
+		return healthcheck.RTT(float64(jitterRTT(best)) * (1 + float64(selection.DefaultTolerance)))
+	})
 	if len(selected) != 2 {
 		t.Fatalf("want 2 qualified nodes, got %v", len(selected))
 	}

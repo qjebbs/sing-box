@@ -1,9 +1,12 @@
 package selection
 
 import (
+	"time"
+
 	"github.com/sagernet/sing-box/common/healthcheck"
 	"github.com/sagernet/sing-box/option"
 	E "github.com/sagernet/sing/common/exceptions"
+	"github.com/sagernet/sing/common/json/badoption"
 )
 
 // Objective is the interface for balancer objectives
@@ -34,9 +37,12 @@ func Filter(objective Objective, all []*Node) []*Node {
 
 // ObjectiveOptions configure the ranking and the cluster around the best node.
 type ObjectiveOptions struct {
-	// Tolerance is the band around the best node within which the nodes are equally
-	// good, relative to its score, e.g. 0.2 means 20%.
-	Tolerance float32
+	// RTTTolerance is the band around the best node for the leastping objective, relative
+	// to its score, e.g. 0.2 means 20%.
+	RTTTolerance float32
+	// JitterTolerance is the band around the best node for the leastload objective, in
+	// absolute milliseconds, e.g. 10ms.
+	JitterTolerance time.Duration
 	// MinNodes is the fewest nodes the cluster is extended to, MaxNodes the most it is
 	// limited to, 0 for no limit.
 	MinNodes uint
@@ -46,9 +52,10 @@ type ObjectiveOptions struct {
 // NewObjective returns the objective of the name, alive when the name is empty.
 func NewObjective(name string, options ObjectiveOptions) (Objective, error) {
 	pick := option.LoadBalancePickOptions{
-		Tolerance: options.Tolerance,
-		MinNodes:  options.MinNodes,
-		MaxNodes:  options.MaxNodes,
+		RTTTolerance:    options.RTTTolerance,
+		JitterTolerance: badoption.Duration(options.JitterTolerance),
+		MinNodes:        options.MinNodes,
+		MaxNodes:        options.MaxNodes,
 	}
 	switch name {
 	case "", ObjectiveAlive:
@@ -68,6 +75,13 @@ func NewObjective(name string, options ObjectiveOptions) (Objective, error) {
 type Scorer interface {
 	// Score returns the cost of using the node, lower is better.
 	Score(node *Node) healthcheck.RTT
+}
+
+// Bander is an optional interface for objectives whose band around the best node is
+// not a fixed share of its score.
+type Bander interface {
+	// Limit returns the highest score that still counts as equally good as best.
+	Limit(best *Node) healthcheck.RTT
 }
 
 // Keeper is an optional interface for objectives that can tell whether a node that

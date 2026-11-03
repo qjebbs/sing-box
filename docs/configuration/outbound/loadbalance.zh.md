@@ -22,7 +22,8 @@
     "strategy": "random",
     "max_fail": 0,
     "max_rtt": "1000ms",
-    "tolerance": 0.2,
+    "rtt_tolerance": 0.2,
+    "jitter_tolerance": "10ms",
     "min_nodes": 1,
     "max_nodes": 0,
     "biases": [
@@ -118,6 +119,8 @@ score   = (ALL - FAIL) / ALL × cost + FAIL / ALL × failure
 - `DEV` 是**平均偏差**，偶发的尖峰不会被忽略，它描述的是整个窗口的稳定。
 - `TIMEOUT` 是失败检查放弃前等待的超时（15s）。
 
+统计量、分数与容差的设计理由见[节点评分](/zh/configuration/shared/node-rating/)。
+
 #### strategy
 
 负载均衡的策略。默认为 `random`。
@@ -138,18 +141,17 @@ score   = (ALL - FAIL) / ALL × cost + FAIL / ALL × failure
 
 合格节点健康检查最大失败次。默认为 `0`，即不允许任何失败。
 
-#### tolerance
+#### rtt_tolerance
 
-> 仅适用于 `least*` 目标
+> 仅适用于 `leastping` 目标
 
-与最优节点的最大相对差距，默认为 `0.2`，即最多比最优节点慢 20% 的节点会与它一起被选中。
+与最优节点的最大**相对**差距，默认为 `0.2`，即最多比最优节点慢 20% 的节点会与它一起被选中。
 
-比较的是[分数](#objective)：节点所依据的离散度包含在分数里，两个目标的分数也都按失败检查的占比计入失败。
+#### jitter_tolerance
 
-容差以选择中最优的节点为基准计算，因此不会为了凑数而选中明显更差的节点。
-同时始终应用 `10ms` 的绝对下限，避免过小的数值（例如始终稳定节点的离散度）被噪声拆开。
+> 仅适用于 `leastload` 目标
 
-例如 `tolerance: 0.2` 时，节点为 `174ms`、`504ms`、`505ms`，只会选中 `174ms` 的节点，因为其余节点慢了接近三倍。
+与最稳节点的最大**绝对**差距，默认为 `10ms`，即抖动最多比最优节点高 10ms 的节点会与它一起被选中。
 
 #### min_nodes
 

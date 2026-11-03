@@ -80,13 +80,14 @@ func NewURLTestProvider(ctx context.Context, router adapter.Router, logger log.C
 // Start implements adapter.Lifecycle
 func (s *URLTestProvider) Start(stage adapter.StartStage, scope *adapter.Scope) error {
 	objective, err := selection.NewObjective(s.objective, selection.ObjectiveOptions{
-		Tolerance: s.options.Tolerance,
+		RTTTolerance:    s.options.RTTTolerance,
+		JitterTolerance: s.options.JitterTolerance.Build(),
 	})
 	if err != nil {
 		return err
 	}
 	return s.Group.Start(stage, scope, s.options.HealthCheck,
-		selection.NewSingle(objective, s.options.Tolerance),
+		selection.NewSingle(objective),
 		selection.NodeOptions{
 			// The failures are already priced into the score of a node, in its own
 			// scale, see healthcheck.Stats.Cost. Qualifying on them would rank a node

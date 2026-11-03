@@ -132,6 +132,7 @@ nav:
           - TLS: configuration/shared/tls.md
           - HTTP Client: configuration/shared/http-client.md
           - Health Check: configuration/shared/health-check.md
+          - Node Rating: configuration/shared/node-rating.md
           - HTTP2 Fields: configuration/shared/http2.md
           - QUIC Fields: configuration/shared/quic.md
           - Certificate Provider:

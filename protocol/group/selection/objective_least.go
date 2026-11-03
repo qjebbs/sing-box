@@ -6,19 +6,26 @@ import (
 
 	"github.com/sagernet/sing-box/common/healthcheck"
 	"github.com/sagernet/sing-box/option"
+	"github.com/sagernet/sing/common/json/badoption"
 )
 
 var (
 	_ Objective = (*LeastObjective)(nil)
+	_ Bander    = (*LeastObjective)(nil)
 	_ Keeper    = (*LeastObjective)(nil)
 )
 
 const (
-	// DefaultTolerance is the default relative tolerance around the best node.
+	// DefaultTolerance is the default relative tolerance of leastping, around the best
+	// node.
 	DefaultTolerance float32 = 0.2
-	// toleranceFloor is the absolute floor of the tolerance, so tiny values, such as
-	// the jitter of an always stable node, are not split by noise.
-	toleranceFloor = 10 * healthcheck.Millisecond
+	// DefaultJitterTolerance is the default absolute tolerance of leastload, around the
+	// steadiest node.
+	DefaultJitterTolerance = 10 * healthcheck.Millisecond
+	// resolutionSigma is how many standard errors of the best score it takes to tell two
+	// nodes apart: the difference of two estimates carries the error of both, √2 each,
+	// and the comparison is taken at two standard errors.
+	resolutionSigma = 2 * math.Sqrt2
 	// hysteresisSigma is how many standard errors a node may exceed the selection
 	// band by and still keep its existing connections. Two standard errors is the
 	// usual 95% confidence, the excess is then not distinguishable from noise.
@@ -30,10 +37,13 @@ const (
 // added to it.
 type LeastObjective struct {
 	*QualifiedObjective
-	name      string
-	tolerance float32
-	minNodes  int
-	maxNodes  int
+	name string
+	// tolerance is the relative band of leastping, jitterTolerance the absolute band of
+	// leastload. Which one is used follows the objective, see band.
+	tolerance       float32
+	jitterTolerance healthcheck.RTT
+	minNodes        int
+	maxNodes        int
 	// baseFunc is the primary statistic of the objective, it is the first term of
 	// the score. It is a delay of the checks that succeeded, see healthcheck.Stats.
 	baseFunc func(node *Node) healthcheck.RTT
@@ -87,7 +97,8 @@ func NewLeastPingObjective(options option.LoadBalancePickOptions) *LeastObjectiv
 func newLeastObjective(options option.LoadBalancePickOptions) *LeastObjective {
 	return &LeastObjective{
 		QualifiedObjective: NewQualifiedObjective(),
-		tolerance:          float32Option(options.Tolerance, DefaultTolerance),
+		tolerance:          float32Option(options.RTTTolerance, DefaultTolerance),
+		jitterTolerance:    jitterToleranceOption(options.JitterTolerance),
 		minNodes:           int(options.MinNodes),
 		maxNodes:           int(options.MaxNodes),
 	}
@@ -156,10 +167,7 @@ func (o *LeastObjective) Keep(node *Node, best *Node) bool {
 		return false
 	}
 	bestScore := o.scoreOf(best)
-	band := bestScore * float64(o.tolerance)
-	if band < float64(toleranceFloor) {
-		band = float64(toleranceFloor)
-	}
+	band := o.band(best)
 	nodeError := o.scoreStandardError(node)
 	bestError := o.scoreStandardError(best)
 	noise := hysteresisSigma * math.Sqrt(nodeError*nodeError+bestError*bestError)
@@ -196,7 +204,7 @@ func (o *LeastObjective) Select(ranked []*Node) []*Node {
 	if len(nodes) == 0 {
 		return nil
 	}
-	return SelectCluster(nodes, o.tolerance, o.minNodes, o.maxNodes, o.Score)
+	return SelectCluster(nodes, o.minNodes, o.maxNodes, o.Score, o.Limit)
 }
 
 // SelectCluster selects the nodes that are statistically close enough to the best
@@ -205,20 +213,21 @@ func (o *LeastObjective) Select(ranked []*Node) []*Node {
 // minNodes extends the selection to that count when the cluster is too small,
 // maxNodes limits it when set.
 func SelectCluster(
-	nodes []*Node, tolerance float32, minNodes int, maxNodes int,
+	nodes []*Node, minNodes int, maxNodes int,
 	rttFunc func(node *Node) healthcheck.RTT,
+	limit func(best *Node) healthcheck.RTT,
 ) []*Node {
 	if len(nodes) == 0 {
 		return nil
 	}
-	limit := clusterLimit(rttFunc(nodes[0]), tolerance)
+	highest := limit(nodes[0])
 	count := 1
 	for count < len(nodes) {
 		// Nodes are sorted by status first, never mix a fallback status in.
 		if nodes[count].Status != nodes[0].Status {
 			break
 		}
-		if rttFunc(nodes[count]) > limit {
+		if rttFunc(nodes[count]) > highest {
 			break
 		}
 		count++
@@ -265,12 +274,47 @@ func SortByLeast(nodes []*Node, rttFunc func(*Node) healthcheck.RTT) {
 	})
 }
 
-// clusterLimit returns the highest value that is still within tolerance of best, the
-// band around the best node that a difference within it is not worth acting on.
-func clusterLimit(best healthcheck.RTT, tolerance float32) healthcheck.RTT {
-	toleranceRange := float32(best) * tolerance
-	if toleranceRange < float32(toleranceFloor) {
-		toleranceRange = float32(toleranceFloor)
+// band returns the width of the tolerance around the best node, the range in which
+// another node counts as equally good.
+//
+// The two objectives measure different quantities, so their bands are in different
+// units and neither can be a share of the other:
+//
+//   - leastping compares delays, which are far from zero, so a share of the best one is
+//     a meaningful band: 20% of 170ms is 34ms.
+//   - leastload compares a spread that approaches zero for a steady node, so a share of
+//     it would be smaller than the measurement can resolve: 20% of 2ms is 0.4ms. The band
+//     is absolute milliseconds instead, and a resolution margin is added to it, because
+//     the configured value describes the true difference while the comparison only sees
+//     the observed one.
+func (o *LeastObjective) band(best *Node) float64 {
+	if o.jitterFunc != nil {
+		return o.scoreOf(best) * float64(o.tolerance)
 	}
-	return rttFromFloat(float64(best) + float64(toleranceRange))
+	band := float64(o.jitterTolerance)
+	if succeeded := float64(best.Stats.Succeeded()); succeeded >= 2 {
+		// the standard error of the mean deviation, which is what the score is made of
+		spread := float64(best.ScaleRTT(best.MeanDeviation))
+		band += resolutionSigma * spread / math.Sqrt(succeeded)
+	}
+	return band
+}
+
+// Limit implements Bander. It returns the highest score that still counts as equally
+// good as best.
+func (o *LeastObjective) Limit(best *Node) healthcheck.RTT {
+	score := o.Score(best)
+	if score == healthcheck.Failed {
+		return healthcheck.Failed
+	}
+	return rttFromFloat(float64(score) + o.band(best))
+}
+
+// jitterToleranceOption returns the absolute band of leastload, the default when it is
+// not set. A negative value would make the band narrower than the measurement.
+func jitterToleranceOption(value badoption.Duration) healthcheck.RTT {
+	if value <= 0 {
+		return DefaultJitterTolerance
+	}
+	return healthcheck.RTT(value.Build().Milliseconds())
 }

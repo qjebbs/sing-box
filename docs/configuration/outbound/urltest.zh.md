@@ -19,7 +19,8 @@
   "include": "",
   "health_check": "",
   "objective": "leastping",
-  "tolerance": 0.2,
+  "rtt_tolerance": 0.2,
+  "jitter_tolerance": "10ms",
   "interrupt_exist_connections": false
 }
 ```
@@ -63,13 +64,21 @@
 
 不同目标的评价方法同[负载均衡 objective 字段](/zh/configuration/outbound/loadbalance/#objective)，但没有合格节点的概念。
 
-#### tolerance
+统计量、分数与容差的设计理由见[节点评分](/zh/configuration/shared/node-rating/)。
 
-最好节点周围的相对分数区间，默认为 `0.2`，即其分数的 20%。
+#### rtt_tolerance
+
+> 仅适用于 `leastping` 目标
+
+与最好节点的最大**相对**差距，取值范围 `0-1`，默认为 `0.2`，即其分数的 20%。
 
 当前节点的分数处在最好节点的该区间之内时保持原位，因此不值得切换的差距会保持连接不动。
-同一区间也决定刚被替换的节点能否保有既有连接：统计上无法与噪声区分的差距，不足以断开这些连接。
-容许量最多为区间本身，因此一个节点最多存活两倍容差。
+
+#### jitter_tolerance
+
+> 仅适用于 `leastload` 目标
+
+与最好节点的最大**绝对**差距，默认为 `10ms`，即抖动最多比最优节点高 10ms 的节点仍算同样好。
 
 #### interrupt_exist_connections
 
@@ -77,5 +86,5 @@
 
 仅入站连接受此设置影响，内部连接将始终被中断。
 
-刚被替换的节点的连接，在其分数仍处于 tolerance 区间内时会被保留，因此不会被
+刚被替换的节点的连接，在其分数仍处于 `rtt_tolerance` 区间内时会被保留，因此不会被
 一个两可的测量结果断开。新连接始终使用分数最好的节点。
