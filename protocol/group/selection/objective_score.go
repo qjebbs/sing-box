@@ -28,6 +28,15 @@ const (
 	// nodes apart: the difference of two estimates carries the error of both, √2 each,
 	// and the comparison is taken at two standard errors.
 	resolutionSigma = 2 * math.Sqrt2
+	// medianToError is the standard error of a median in units of σ/√n. The asymptotic
+	// variance of a median is 1/(4n·f(m)²), which is (1.2533σ)²/n for a normal sample: a
+	// median uses only the rank of the samples, so it is a quarter less accurate than the
+	// mean of the same samples.
+	medianToError = 1.2533
+	// jitterToError is the same for the jitter. It is a median of the deviations, scaled by
+	// 1.4826 to a σ estimate, so its standard error is 1.4826 × 1.2533 times the standard
+	// error of one deviation.
+	jitterToError = 1.4826 * medianToError
 	// hysteresisSigma is how many standard errors a node may exceed the selection
 	// band by and still keep its existing connections. Two standard errors is the
 	// usual 95% confidence, the excess is then not distinguishable from noise.
@@ -137,7 +146,14 @@ func (o *ScoreObjective) scoreOf(node *Node) float64 {
 
 // scoreStandardError returns the standard error of the score of the node, i.e. how much
 // the score would move if the health checks were run again. It only depends on the number
-// of samples and their spread.
+// of samples and how far apart they are.
+//
+// It is computed from the spreads of the samples, not from the robust statistics the score
+// is made of. A standard error is a spread over √n, and the spread it needs is the one a
+// sum of squares is taken over; reading it off the jitter or the mean deviation instead
+// assumes normal samples and a robust centre as accurate as σ, and no real window is. On
+// live windows that assumption understated the standard error of a quick score by about
+// three times, and of a steady score by half again.
 func (o *ScoreObjective) scoreStandardError(node *Node) float64 {
 	n := float64(node.Stats.Succeeded())
 	if n < 2 {
@@ -145,16 +161,15 @@ func (o *ScoreObjective) scoreStandardError(node *Node) float64 {
 		return float64(o.baseFunc(node))
 	}
 	if o.jitterFunc == nil {
-		// steady: the score is the mean distance to the median, and the standard error of
-		// a mean of n samples shrinks with √n
-		return float64(o.baseFunc(node)) / math.Sqrt(n)
+		// steady: the score is the average distance to the median, and the standard error
+		// of an average is the spread of the values it averages over √n
+		return float64(node.ScaleRTT(node.Stats.DeviationSpread)) / math.Sqrt(n)
 	}
-	// quick: the score is the median and its jitter; the median of n samples has a
-	// standard error of 1.25σ/√n, the jitter of about σ/√(2(n-1))
-	jitter := float64(node.ScaleRTT(node.Jitter))
-	medianError := 1.25 * jitter / math.Sqrt(n)
-	jitterError := jitter / math.Sqrt(2*(n-1))
-	return math.Sqrt(medianError*medianError + jitterError*jitterError)
+	// quick: the score is the median plus the jitter, two estimates of the same samples,
+	// each with its own error, combined by their variance
+	medianStandardError := medianToError * float64(node.ScaleRTT(node.Stats.Spread)) / math.Sqrt(n)
+	jitterStandardError := jitterToError * float64(node.ScaleRTT(node.Stats.DeviationSpread)) / math.Sqrt(n)
+	return math.Sqrt(medianStandardError*medianStandardError + jitterStandardError*jitterStandardError)
 }
 
 // Keep implements Keeper. A node that left the selection is still kept while the
@@ -280,12 +295,16 @@ func SortByLeast(nodes []*Node, rttFunc func(*Node) healthcheck.RTT) {
 // node counts as equally good: the tolerance of the objective plus a resolution margin.
 //
 // The margin is always added, because the tolerance describes the true difference while the
-// comparison only sees observed values. It is scaled by the jitter of the best node, not by
-// its mean deviation: the score of steady counts every deviation, and one slow check is
-// enough to inflate it, which is the property that makes steady rank a stalling node behind
-// a steady one. The margin instead estimates how far the reading can be off, and that scale
-// has to survive a single check: a median of the deviations does, so one probe cannot decide
-// who counts as equally good.
+// comparison only sees observed values. Its scale is the jitter of the best node, not the
+// standard error of its score: the margin decides who counts as equally good, and a margin
+// that followed the full error of the score would be widened by a single slow check, letting
+// one probe decide that a clearly worse node is equally good. The jitter is a median, so it
+// describes the node while the margin stays put.
+//
+// The price is that the margin is narrower than the error of the score: measured on live
+// windows, the standard error of a quick score is about 2.8 times the jitter over √n. The
+// band is therefore a floor on the resolution, not a 95% one, and the tolerance is sized
+// knowing that.
 func (o *ScoreObjective) band(best *Node) float64 {
 	band := float64(o.tolerance)
 	if succeeded := float64(best.Stats.Succeeded()); succeeded >= 2 {

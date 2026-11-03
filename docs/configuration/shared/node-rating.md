@@ -105,13 +105,18 @@ The more samples, the smaller the noise and the closer the band to the configure
     With `max`, once `tolerance` (50ms, say) is larger than the margin (7ms), the margin does not
     exist, and a node sitting on the cut flips in and out with the measurement noise.
 
-The scale of the noise is `JIT_best`, not `DEV_best`: the two answer different questions.
+The scale of the noise is `JIT_best`, and that choice says two things:
 
-- `DEV` is **how much the node paid in total**, and `steady` ranks by it, so a single spike must
-  count in full ("a node that stalls is not a steady node").
-- The margin has to estimate **how far this reading can be off**, i.e. the scale of the
-  fluctuation. `JIT` is the **median** of the deviations, converted to σ, and one slow check does
-  not move it.
+- **Not `DEV_best`**: `DEV` is **how much the node paid in total**, and `steady` ranks by it, so a
+  single spike must count in full ("a node that stalls is not a steady node"). The margin needs
+  "how far this reading can be off", and only the median-based `JIT` is not moved by one slow
+  check.
+- **Not the standard error `SE` of the score either**: `SE` is the exact resolution, but it is a
+  sum of squares, so one slow check inflates it just the same, and the band decides who counts as
+  equally good — inflating it lets a clearly worse node in (see [Noise](#noise)). The price is that
+  the margin is a **floor**: the standard error of a score is about 2.8 times it when measured, so
+  the band guarantees "never narrower than the tolerance", not a 95% resolution — `tolerance`
+  should be sized with that in mind.
 
 ### Retention
 
@@ -129,23 +134,18 @@ The allowance is capped at the band itself, so a node never survives more than *
 away from the best node — hysteresis is there to ride out noise, not to keep a node that is
 clearly worse.
 
-The two objectives share the band, and differ in the noise: the score of `quick` is made of the
-median and the jitter, the one of `steady` of the mean deviation.
+The two objectives differ in practice by the size of their noise, which is the standard error of a
+score, see [Noise](#noise).
 
-| Objective | Noise (`SE`) |
-| --- | --- |
-| `quick` | combined from the median and the jitter: `1.25·JIT/√n` and `JIT/√(2(n−1))` |
-| `steady` | `DEV/√n` |
-
-- `quick` defaults to 50ms, while its noise at `sampling` 10 with a `JIT` of 10ms is about 13ms,
-  small against the band, so the allowance is essentially "band plus two standard errors" and the
-  cap rarely binds.
-- `steady` defaults to 10ms, while `DEV/√n` runs from 4ms on a clean node to 58ms on a node with a
-  spike at `sampling` 10, so the cap often binds and the allowance falls back to `2 × band`. The
-  noise here deliberately stays on `DEV` rather than moving to `JIT`: retention asks "is it worth
-  breaking", and being lenient towards what may be a single transient spike is right; the band
-  measures the reading, retention measures the cost the node has already paid, and the two are not
-  the same quantity.
+- `quick` defaults to 50ms, while its noise is usually some tens of milliseconds at a `sampling`
+  of 10 (`sd(x)` and `sd(deviation)` each contribute a term), so the allowance is essentially
+  "band plus two standard errors" and the cap sometimes binds.
+- `steady` defaults to 10ms, while `sd(|xᵢ − MED|)/√n` reaches tens of milliseconds at a
+  `sampling` of 10, so the cap often binds and the allowance falls back to `2 × band`. The noise
+  here is the spread of the samples rather than `JIT`, because retention asks "is it worth
+  breaking": one slow check makes the spread larger and keeps the connections longer, which is the
+  outcome wanted. The band, by contrast, uses the robust `JIT` — the two sources differ on
+  purpose.
 
 A `urltest` group has no second layer: it uses one whole node at a time, so the hysteresis lives in
 the **selection** — the node in use keeps its place while its score stays within `Limit(best)` of
@@ -158,36 +158,77 @@ breaking the connections a node already has.
 
 ### Noise
 
-Every statistic here is an estimate from a small window, so every comparison has an error bar.
-For a mean of `n` samples the standard error is `σ/√n`; `DEV` is a mean of deviations, so its
-standard error is the spread of **those deviations** over `√n`:
+Every statistic here is an estimate from a small window, so a score is an estimate, and a
+comparison of two scores is an estimate too. There are two levels of noise: of one score, and of
+the difference between two. The selection and the retention use the same model, with different
+nodes substituted into it.
+
+**The noise of one score.** A score is computed from `n` samples; how much it would move if the
+checks ran again is its standard error, the spread of the statistic it is made of over `√n`:
+
+```
+SE = sd(statistic) / √n
+```
+
+`√n` is "what is left after averaging `n` times": the more samples, the closer the score is to the
+truth. The two objectives are made of different statistics, so their `sd` differs.
+
+`steady` scores by `DEV`, the average distance to the median, so its spread is the one of **those
+distances**:
 
 ```
 SE(DEV) = sd(|xᵢ − MED|) / √n
 ```
 
-Only while those deviations are alike is `sd(deviation) ≈ DEV`, and only then does
-`SE(DEV) ≈ DEV/√n` — which is how a clean node behaves. **One slow check breaks that premise**:
-the deviations become "nine small ones and one large one", their spread is far larger than their
-mean, and the true standard error grows with it while `DEV/√n` does not.
+`quick` scores by a sum of two terms, each an estimate with its own error, combined by their
+variance. The median of `n` samples has a standard error of `1.2533σ/√n` (an asymptotic result: the
+variance of a median is `1/(4n·f(m)²)`, which is `(1.2533σ)²/n` for a normal sample — it uses only
+the rank of the samples, a quarter worse than the mean). The jitter is a **median of the
+deviations** scaled by `1.4826`, so its standard error is `1.4826 × 1.2533` times the one of a
+single deviation:
 
-That is why the margin is not taken from `DEV_best`: `DEV` describes the node (how much it paid),
-not the error of this reading. The scale of the error has to be measured by something a single
-sample cannot move, which is `JIT`.
+```
+SE(MED) = 1.2533 · sd(x) / √n
+SE(JIT) = 1.858 · sd(|xᵢ − MED|) / √n
+SE      = √( SE(MED)² + SE(JIT)² )
+```
+
+**The noise of the difference of two scores.** `SE_node` and `SE_best` are how much each score
+would move, and they are fixed numbers once computed; what moves is the score, so
+`score_node − score_best` moves as well. The two nodes are measured separately, their errors are
+independent, and so their **variances add**:
+
+```
+SD(score_node − score_best) = √(SE_node² + SE_best²)
+```
+
+Squared first and then taken back to milliseconds, not the two `SE` added or subtracted: independent
+errors cancel each other out in part, and this says exactly how much.
+
+**Why another 2.** Under a normal distribution `1.96σ` covers 95% of the probability, rounded up to
+2 for the engineering version: "beyond this, it no longer looks like noise".
+
+**The same model substituted two ways, in the selection and in the retention:**
+
+| | compared with | margin | why |
+| --- | --- | --- | --- |
+| Selection: the band | the best vs an **unknown candidate** | `2√2 × JIT_best/√n` | the cut applies to every candidate, so it can only assume the candidate is measured as well as the best; using each node's own `SE` would give a noisier node a wider margin, the wrong direction. The robust `JIT` is used here on purpose instead of `SE`, see below |
+| Retention: the allowance | the best vs **this one node** | `2 × √(SE_node² + SE_best²)` | the node is known, so its own real `SE` is used; and the allowance is capped at the band, so a noisy node cannot stay forever |
+
+Both `SE` already carry the `1/√n`, there is nothing else to divide by: more samples shrink both
+automatically. The selection is written as `2√2 × JIT_best/√n` because that is what the "two
+equally measured estimates" substitution gives, `2√2` folding the 2 and the `√2` into one constant.
+
+**Why the selection does not use `SE` directly.** The band decides who counts as equally good; if
+its margin followed the full error of the score, one slow check would widen the band and let a
+clearly worse node in — the opposite of "a single probe must not decide the selection" (see
+[Tolerance](#tolerance)). The price is a margin narrower than `SE`: the measured standard error of
+a score is **2.8 times** `JIT_best/√n` on median, so this margin is a **floor**, not a 95%
+resolution. The retention has no such problem — it only acts on nodes that were already selected,
+where a wider allowance just breaks fewer connections, so it uses the real `SE`.
 
 **The relative noise is `1/√n`, the same for every node, and it depends only on the sample
 count** — but it is relative to the node's own scale, not to `DEV`.
-
-The resolution needed to separate two nodes is the difference of two estimates, so it is about
-`2√2/√n` at two standard errors. That is the margin, in units of `JIT_best`, and it shrinks with
-the sample count:
-
-| `sampling` | margin (in `JIT_best`) |
-| --- | --- |
-| 10 | 89% |
-| 50 | 40% |
-| 200 | 20% |
-| 500 | 13% |
 
 The band is a configured value that does not shrink with the sample count, and the margin only
 widens it, so there is no regime where too few samples turn the band into noise-chasing. But the

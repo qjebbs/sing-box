@@ -23,11 +23,17 @@ type Stats struct {
 	// MeanDeviation is the average distance of the checks to their median, see
 	// deviationOf.
 	MeanDeviation RTT
-	Average       RTT // average RTT of all health checks
-	Median        RTT // median RTT of all health checks
-	Max           RTT // maximum RTT of all health checks
-	Min           RTT // minimum RTT of all health checks
-	Latest        RTT // latest RTT of all health checks
+	// Spread is the sample standard deviation of the checks, DeviationSpread the one of
+	// their distances to the median. A standard error is the spread of a statistic over
+	// √n, so these are what it is made of: the robust statistics above describe a node
+	// well, but they are not the sum of squares a standard error is computed from.
+	Spread          RTT
+	DeviationSpread RTT
+	Average         RTT // average RTT of all health checks
+	Median          RTT // median RTT of all health checks
+	Max             RTT // maximum RTT of all health checks
+	Min             RTT // minimum RTT of all health checks
+	Latest          RTT // latest RTT of all health checks
 
 	Expires time.Time // time of the statistics expires
 }
@@ -119,8 +125,34 @@ func newStats(all int, fail int, latest RTT, expires time.Time, values []RTT) St
 		stats.MeanDeviation = stats.Average / 2
 		return stats
 	}
+	stats.Spread = standardDeviationOf(values)
 	stats.Jitter, stats.MeanDeviation = deviationOf(values, stats.Median)
+	stats.DeviationSpread = standardDeviationOf(values)
 	return stats
+}
+
+// standardDeviationOf returns the sample standard deviation of the values, zero for
+// fewer than two of them.
+//
+// The statistics the groups rank by are robust ones, but the accuracy of an estimate is
+// not a robust quantity: it is a sum of squares, and that is what a standard error is
+// made of. So the spreads are kept as statistics of their own rather than read off the
+// robust ones.
+func standardDeviationOf(values []RTT) RTT {
+	if len(values) < 2 {
+		return 0
+	}
+	sum := 0
+	for _, value := range values {
+		sum += int(value)
+	}
+	mean := float64(sum) / float64(len(values))
+	squares := 0.0
+	for _, value := range values {
+		difference := float64(value) - mean
+		squares += difference * difference
+	}
+	return RTT(math.Round(math.Sqrt(squares / float64(len(values)-1))))
 }
 
 // madToSigma turns a median absolute deviation into an estimate of the standard

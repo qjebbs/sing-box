@@ -18,16 +18,20 @@ func TestStorageStats(t *testing.T) {
 	// Jitter: the median absolute deviation of the delays that are kept, {60, 140}, is
 	// 40, scaled to an estimate of the standard deviation: 1.4826 × 40 ≈ 59.
 	// MeanDeviation: every distance is 40, so their mean is 40 as well.
+	// Spread: the sample standard deviation of {60, 60, 140, 140} is 46, and the distances
+	// are all 40, so their own spread is 0.
 	want := healthcheck.Stats{
-		All:           4,
-		Fail:          0,
-		Jitter:        59,
-		MeanDeviation: 40,
-		Average:       100,
-		Median:        100,
-		Max:           140,
-		Min:           60,
-		Latest:        140,
+		All:             4,
+		Fail:            0,
+		Jitter:          59,
+		MeanDeviation:   40,
+		Spread:          46,
+		DeviationSpread: 0,
+		Average:         100,
+		Median:          100,
+		Max:             140,
+		Min:             60,
+		Latest:          140,
 	}
 	assertStats(t, "Stats() - All Success", want, s.Stats())
 
@@ -36,15 +40,17 @@ func TestStorageStats(t *testing.T) {
 	s.Put(healthcheck.Failed)
 	s.Put(healthcheck.Failed)
 	want = healthcheck.Stats{
-		All:           4,
-		Fail:          2,
-		Jitter:        59,
-		MeanDeviation: 40,
-		Average:       100,
-		Median:        100,
-		Max:           140,
-		Min:           60,
-		Latest:        healthcheck.Failed,
+		All:             4,
+		Fail:            2,
+		Jitter:          59,
+		MeanDeviation:   40,
+		Spread:          57,
+		DeviationSpread: 0,
+		Average:         100,
+		Median:          100,
+		Max:             140,
+		Min:             60,
+		Latest:          healthcheck.Failed,
 	}
 	assertStats(t, "Stats() - Half Fail", want, s.Stats())
 
@@ -111,15 +117,17 @@ func TestStorageStatsIgnoreOutdated(t *testing.T) {
 		s.Put(rtt)
 	}
 	want := healthcheck.Stats{
-		All:           2,
-		Fail:          0,
-		Jitter:        59,
-		MeanDeviation: 40,
-		Average:       100,
-		Median:        100,
-		Max:           140,
-		Min:           60,
-		Latest:        140,
+		All:             2,
+		Fail:            0,
+		Jitter:          59,
+		MeanDeviation:   40,
+		Spread:          57,
+		DeviationSpread: 0,
+		Average:         100,
+		Median:          100,
+		Max:             140,
+		Min:             60,
+		Latest:          140,
 	}
 
 	assertStats(t, "Stats() - Half Outdated", want, s.Stats())
