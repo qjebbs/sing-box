@@ -8,6 +8,10 @@ import (
 	"github.com/sagernet/sing-box/protocol/group/selection"
 )
 
+// testTolerance is the share the cluster tests compare with, the band is the policy of an
+// objective and any monotonic limit will do here.
+const testTolerance = 0.2
+
 func jitterRTT(node *selection.Node) healthcheck.RTT {
 	return node.Jitter
 }
@@ -63,17 +67,17 @@ func TestSelectCluster(t *testing.T) {
 		maxNodes int
 		want     int
 	}{
-		{name: "empty", nodes: nil, limit: relative(selection.DefaultTolerance), want: 0},
-		{name: "single", nodes: realData[:1], limit: relative(selection.DefaultTolerance), want: 1},
-		{name: "real data", nodes: realData, limit: relative(selection.DefaultTolerance), want: 1},
-		{name: "close pair", nodes: closePair, limit: relative(selection.DefaultTolerance), want: 2},
-		{name: "equal nodes", nodes: equalNodes, limit: relative(selection.DefaultTolerance), want: len(equalNodes)},
-		{name: "tiny values", nodes: tinyValues, limit: relative(selection.DefaultTolerance), want: 1},
+		{name: "empty", nodes: nil, limit: relative(testTolerance), want: 0},
+		{name: "single", nodes: realData[:1], limit: relative(testTolerance), want: 1},
+		{name: "real data", nodes: realData, limit: relative(testTolerance), want: 1},
+		{name: "close pair", nodes: closePair, limit: relative(testTolerance), want: 2},
+		{name: "equal nodes", nodes: equalNodes, limit: relative(testTolerance), want: len(equalNodes)},
+		{name: "tiny values", nodes: tinyValues, limit: relative(testTolerance), want: 1},
 		{name: "wide tolerance", nodes: realData, limit: relative(2), want: 3},
-		{name: "min nodes", nodes: realData, limit: relative(selection.DefaultTolerance), minNodes: 3, want: 3},
-		{name: "min nodes larger than available", nodes: closePair, limit: relative(selection.DefaultTolerance), minNodes: 9, want: len(closePair)},
-		{name: "min nodes within tolerance", nodes: closePair, limit: relative(selection.DefaultTolerance), minNodes: 1, want: 2},
-		{name: "max nodes", nodes: equalNodes, limit: relative(selection.DefaultTolerance), maxNodes: 3, want: 3},
+		{name: "min nodes", nodes: realData, limit: relative(testTolerance), minNodes: 3, want: 3},
+		{name: "min nodes larger than available", nodes: closePair, limit: relative(testTolerance), minNodes: 9, want: len(closePair)},
+		{name: "min nodes within tolerance", nodes: closePair, limit: relative(testTolerance), minNodes: 1, want: 2},
+		{name: "max nodes", nodes: equalNodes, limit: relative(testTolerance), maxNodes: 3, want: 3},
 	}
 	for _, testCase := range testCases {
 		testCase := testCase
@@ -122,7 +126,7 @@ func TestSelectClusterAndStatus(t *testing.T) {
 	// crosses into a fallback status, even when its value is lower.
 	selection.SortByLeast(nodes, jitterRTT)
 	selected := selection.SelectCluster(nodes, 0, 0, jitterRTT, func(best *selection.Node) healthcheck.RTT {
-		return healthcheck.RTT(float64(jitterRTT(best)) * (1 + float64(selection.DefaultTolerance)))
+		return healthcheck.RTT(float64(jitterRTT(best)) * (1 + float64(testTolerance)))
 	})
 	if len(selected) != 2 {
 		t.Fatalf("want 2 qualified nodes, got %v", len(selected))
@@ -408,17 +412,17 @@ func TestLeastPingKeep(t *testing.T) {
 
 func TestLeastKeepIsCappedByTheBand(t *testing.T) {
 	t.Parallel()
-	// Both nodes are extremely noisy (a jitter of 4s from 2 samples), so the
-	// noise allowance would be enormous. It is capped at the band, a node cannot
-	// survive more than twice the tolerance however unreliable its statistics are.
+	// Both nodes are noisy (a jitter of 400ms from 10 samples), so the noise allowance
+	// exceeds the band of 50ms plus its margin, 408ms. The allowance is capped at the
+	// band: a node cannot survive more than twice it, however unreliable the statistics.
 	best := &selection.Node{
 		Status: selection.StatusQualified,
-		Stats:  healthcheck.Stats{All: 2, Median: 100, Jitter: 4000},
+		Stats:  healthcheck.Stats{All: 10, Median: 100, Jitter: 400},
 	}
-	// 70% worse than the best, beyond the 40% of twice the tolerance
+	// 1900ms worse than the best, beyond the 816ms of twice the band
 	node := &selection.Node{
 		Status: selection.StatusQualified,
-		Stats:  healthcheck.Stats{All: 2, Median: 3000, Jitter: 4000},
+		Stats:  healthcheck.Stats{All: 10, Median: 2000, Jitter: 400},
 	}
 	if selection.NewQuickObjective(option.LoadBalancePickOptions{}).Keep(node, best) {
 		t.Fatalf("a node beyond twice the tolerance was kept")

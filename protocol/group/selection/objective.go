@@ -1,6 +1,7 @@
 package selection
 
 import (
+	"strconv"
 	"time"
 
 	"github.com/sagernet/sing-box/common/healthcheck"
@@ -37,47 +38,22 @@ func Filter(objective Objective, all []*Node) []*Node {
 
 // ObjectiveOptions configure the ranking and the cluster around the best node.
 type ObjectiveOptions struct {
-	// RTTTolerance is the band around the best node for the quick objective, relative
-	// to its score, e.g. 0.2 means 20%.
-	RTTTolerance float32
-	// JitterTolerance is the band around the best node for the steady objective, in
-	// absolute milliseconds, e.g. 10ms.
-	JitterTolerance time.Duration
+	// Tolerance is the band around the best node, in absolute milliseconds: a node whose
+	// score is at most this far above the best one counts as equally good. 0 for the
+	// default of the objective, 10ms for steady and 50ms for quick.
+	Tolerance time.Duration
 	// MinNodes is the fewest nodes the cluster is extended to, MaxNodes the most it is
 	// limited to, 0 for no limit.
 	MinNodes uint
 	MaxNodes uint
 }
 
-// ValidateTolerances returns an error when a tolerance is set for an objective that does
-// not use it. Each tolerance measures the quantity of one objective, so it means nothing
-// for the other one, and a value that is silently ignored is a mistake rather than a
-// preference. The objective must be named for the question to have an answer, so a
-// tolerance cannot be set together with an objective left at its default.
-func ValidateTolerances(objective string, rttTolerance float32, jitterTolerance time.Duration) error {
-	if rttTolerance != 0 && objective != ObjectiveQuick {
-		return toleranceMismatch("rtt_tolerance", ObjectiveQuick, objective)
-	}
-	if jitterTolerance != 0 && objective != ObjectiveSteady {
-		return toleranceMismatch("jitter_tolerance", ObjectiveSteady, objective)
-	}
-	return nil
-}
-
-func toleranceMismatch(field string, expected string, objective string) error {
-	if objective == "" {
-		return E.New(field, " requires the ", expected, " objective, which must be set explicitly")
-	}
-	return E.New(field, " requires the ", expected, " objective, not ", objective)
-}
-
 // NewObjective returns the objective of the name, alive when the name is empty.
 func NewObjective(name string, options ObjectiveOptions) (Objective, error) {
 	pick := option.LoadBalancePickOptions{
-		RTTTolerance:    options.RTTTolerance,
-		JitterTolerance: badoption.Duration(options.JitterTolerance),
-		MinNodes:        options.MinNodes,
-		MaxNodes:        options.MaxNodes,
+		Tolerance: badoption.Duration(options.Tolerance),
+		MinNodes:  options.MinNodes,
+		MaxNodes:  options.MaxNodes,
 	}
 	switch name {
 	case "", ObjectiveAlive:
@@ -104,6 +80,37 @@ type Scorer interface {
 type Bander interface {
 	// Limit returns the highest score that still counts as equally good as best.
 	Limit(best *Node) healthcheck.RTT
+}
+
+// Clusterer is an optional interface for objectives that take a cluster around the best
+// node, so a report can name the part of the decision that comes from the configuration
+// rather than from the measurements.
+type Clusterer interface {
+	// Tolerance is the configured width of the band around the best node, the part of it
+	// that describes a difference worth switching for: the rest is the margin the
+	// measurement needs.
+	Tolerance() healthcheck.RTT
+	// MinNodes is the fewest nodes the cluster is extended to, MaxNodes the most it is
+	// limited to, 0 for no limit.
+	MinNodes() int
+	MaxNodes() int
+}
+
+// clusterDescription returns the part of a log line that names the cluster an objective
+// takes around the best node, empty for an objective that takes none.
+func clusterDescription(objective Objective) string {
+	clusterer, isClusterer := objective.(Clusterer)
+	if !isClusterer {
+		return ""
+	}
+	description := ", tolerance " + clusterer.Tolerance().String()
+	if minNodes := clusterer.MinNodes(); minNodes > 0 {
+		description += ", min nodes " + strconv.Itoa(minNodes)
+	}
+	if maxNodes := clusterer.MaxNodes(); maxNodes > 0 {
+		description += ", max nodes " + strconv.Itoa(maxNodes)
+	}
+	return description
 }
 
 // Keeper is an optional interface for objectives that can tell whether a node that

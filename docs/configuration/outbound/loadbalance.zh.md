@@ -22,8 +22,7 @@
     "strategy": "random",
     "max_fail": 0,
     "max_rtt": "1000ms",
-    "rtt_tolerance": 0.2,
-    "jitter_tolerance": "10ms",
+    "tolerance": "50ms",
     "min_nodes": 1,
     "max_nodes": 0,
     "biases": [
@@ -141,22 +140,18 @@ score   = (ALL - FAIL) / ALL × cost + FAIL / ALL × failure
 
 合格节点健康检查最大失败次。默认为 `0`，即不允许任何失败。
 
-#### rtt_tolerance
+#### tolerance
 
-> 仅适用于 `quick` 目标，此时必须显式指定该目标
+> 仅用于 `quick` 与 `steady` 目标：`alive` 与 `qualified` 没有分数，设置它不会有任何效果
 
-与最优节点的最大**相对**差距，默认为 `0.2`，即最多比最优节点慢 20% 的节点会与它一起被选中。
+与最优节点的最大**绝对**差距，默认为 `quick` 时 `50ms`、`steady` 时 `10ms`，即分数最多比最优节点高这么多的节点会与它一起被选中。
+两个目标的分数量级不同，所以默认值不同：`quick` 的分数是几百毫秒的延时，`steady` 的是几毫秒的离散度。
 
-#### jitter_tolerance
-
-> 仅适用于 `steady` 目标，此时必须显式指定该目标
-
-与最稳节点的最大**绝对**差距，默认为 `10ms`，即抖动最多比最优节点高 10ms 的节点会与它一起被选中。
 实际区间还会加上一份随采样数与最优节点抖动收缩的**分辨力余量**，因此区间永不窄于该值，见[节点评分](/zh/configuration/shared/node-rating/#容差)。
 
 #### min_nodes
 
-> 仅适用于 `least*` 目标
+> 仅适用于 `quick` 与 `steady` 目标
 
 最少选出的节点数量，默认为 `1`。
 
@@ -164,7 +159,7 @@ score   = (ALL - FAIL) / ALL × cost + FAIL / ALL × failure
 
 #### max_nodes
 
-> 仅适用于 `least*` 目标
+> 仅适用于 `quick` 与 `steady` 目标
 
 最多选出的节点数量，默认为 `0`，即不限制。
 

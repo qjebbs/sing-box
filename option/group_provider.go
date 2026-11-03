@@ -16,16 +16,11 @@ type ProviderURLTestOptions struct {
 	// objective ranks the nodes, it is quick or steady. Default is quick, the median delay
 	// plus the jitter and the failures.
 	Objective string `json:"objective,omitempty"`
-	// rtt_tolerance is the relative score band of the best node within which the node in
-	// use keeps its place, for the quick objective, e.g. 0.2 keeps it while it is at
-	// most 20% worse than the best one. The same band decides whether a node that was
-	// just replaced keeps the connections it already carries. Requires the objective to
-	// be set to quick.
-	RTTTolerance float32 `json:"rtt_tolerance,omitempty"`
-	// jitter_tolerance is the absolute band of the best node, for the steady
-	// objective, e.g. 10ms keeps the node in use while its jitter is at most 10ms above
-	// the best one. Requires the objective to be set to steady.
-	JitterTolerance           badoption.Duration `json:"jitter_tolerance,omitempty"`
+	// tolerance is the absolute band of the best node: the node in use keeps its place
+	// while its score is at most this far above the best one, and the same band decides
+	// whether a node that was just replaced keeps the connections it already carries.
+	// Default is 10ms for steady and 50ms for quick.
+	Tolerance                 badoption.Duration `json:"tolerance,omitempty"`
 	InterruptExistConnections bool               `json:"interrupt_exist_connections,omitempty"`
 }
 

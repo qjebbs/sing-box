@@ -64,7 +64,8 @@ func (s *Balancing) Pick(all, selected []*Node, metadata *adapter.InboundContext
 // group takes every connection from the former, so the latter only matter as the reason
 // a node is not one of them.
 func (s *Balancing) LogNodes(logger Logger, all, selected []*Node) {
-	logger.Info(s.String(), ", ", len(selected), " of ", len(all), " nodes available")
+	logger.Info(s.String(), ", ", len(selected), " of ", len(all), " nodes available",
+		clusterDescription(s.objective))
 	selectedTags := make(map[string]bool, len(selected))
 	for _, node := range selected {
 		selectedTags[node.Tag()] = true
@@ -152,7 +153,7 @@ func (s *Single) Pick(_, selected []*Node, _ *adapter.InboundContext) *Node {
 // is no group to tell apart from another: every connection goes to that node, and the
 // order says how far the others are from it, which is what the tolerance decides.
 func (s *Single) LogNodes(logger Logger, all, selected []*Node) {
-	logger.Info(s.String(), ", ", len(all), " nodes")
+	logger.Info(s.String(), ", ", len(all), " nodes", clusterDescription(s.objective))
 	var inUse *Node
 	if len(selected) > 0 {
 		inUse = selected[0]

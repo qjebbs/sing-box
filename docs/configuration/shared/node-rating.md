@@ -59,66 +59,51 @@ between the objectives:
 ### The Scores
 
 ```
-cost  = MED + JIT    # quick, what a node typically costs, in milliseconds
-cost  = DEV          # steady, how far it strays from its own typical delay, in ms
+cost    = MED + JIT  # quick, what a node typically costs, in milliseconds
+cost    = DEV        # steady, how far it strays from its own typical delay, in ms
+failure = min(TIMEOUT, 3 × cost)
+score   = (ALL - FAIL) / ALL × cost + FAIL / ALL × failure
 ```
 
 Both scores are in milliseconds, but they answer the two questions from the top:
 
 - `quick` is the **cost of a node**. A node that is close but unstable costs as a node that
-  is simply slower does, so `JIT` is added once, at its own scale. Written as a product it is
-  the same thing, and shows what the addition means:
-
-  ```
-  MED + JIT = MED × (1 + JIT / MED)
-  ```
-
-  The factor in brackets is the **relative jitter**: `quick` ranks by how far the node is,
-  corrected by how much it typically varies.
-
+  is simply slower does, so `JIT` is added once, at its own scale.
 - `steady` takes `DEV` alone, with no `MED` in it. It asks how far the node strays from its own
   typical delay, so a node steady at 4s and a node steady at 100ms are equally steady. The name
   is the question: it does not ask how quickly the node answers, but how steadily.
-
-The failures are mixed in by their share, in the scale of the node:
-
-```
-failure = min(TIMEOUT, 3 × cost)
-score   = (ALL - FAIL) / ALL × cost + FAIL / ALL × failure
-```
-
-A failed attempt costs three attempts that worked: it had to be tried again, but it is scored in
-the scale of the node rather than as the timeout it waited for. Scoring it as the timeout would
-bury a fast node that failed once behind every node that never failed, whatever its delay; the
-cap at `TIMEOUT` keeps a node that fails most of the time from being scored better than the
-failure it is.
+- The failures are mixed in by their share, in the scale of the node. A failed attempt costs
+  three attempts that worked: it had to be tried again, but it is scored in the scale of the node
+  rather than as the timeout it waited for. Scoring it as the timeout would bury a fast node that
+  failed once behind every node that never failed, whatever its delay; the cap at `TIMEOUT` keeps
+  a node that fails most of the time from being scored better than the failure it is.
 
 ### Tolerance
 
 A group does not switch for a difference it cannot trust. The band is the range around the best
-node within which the nodes count as equally good, and each objective has its own, because the
-**quantity** they compare is not the same — that is why the two cannot be one field:
+node within which the nodes count as equally good. The defaults differ, because the **quantity**
+the two objectives compare is not the same:
 
-| Objective | Score       | Field              | Unit                    | Default |
-| --------- | ----------- | ------------------ | ----------------------- | ------- |
-| `quick`   | `MED + JIT` | `rtt_tolerance`    | share of the best value | `0.2`   |
-| `steady`  | `DEV`       | `jitter_tolerance` | absolute milliseconds   | `10ms`  |
+| Objective | Score       | Default |
+| --------- | ----------- | ------- |
+| `quick`   | `MED + JIT` | `50ms`  |
+| `steady`  | `DEV`       | `10ms`  |
 
-The band of `steady` also carries a **resolution margin** (the noise):
+The band also carries a **resolution margin** (the noise), in the same shape for both objectives:
 
 ```
-band = jitter_tolerance + 2√2 × JIT_best / √n
-cut  = DEV_best + band
+band = tolerance + 2√2 × JIT_best / √n
+cut  = score_best + band
 ```
 
-`jitter_tolerance` describes the **true** difference, while the comparison only sees **observed**
-values. The more samples, the smaller the noise and the closer the band to the configured value —
-but it is **never narrower than it**.
+`tolerance` describes the **true** difference, while the comparison only sees **observed** values.
+The more samples, the smaller the noise and the closer the band to the configured value — but it is
+**never narrower than it**.
 
 !!! note "Why added rather than the larger of the two"
 
-    With `max`, once `jitter_tolerance` (10ms) is larger than the margin (7.2ms, say), the margin
-    does not exist, and a node sitting on the cut flips in and out with the measurement noise.
+    With `max`, once `tolerance` (50ms, say) is larger than the margin (7ms), the margin does not
+    exist, and a node sitting on the cut flips in and out with the measurement noise.
 
 The scale of the noise is `JIT_best`, not `DEV_best`: the two answer different questions.
 
@@ -127,9 +112,6 @@ The scale of the noise is `JIT_best`, not `DEV_best`: the two answer different q
 - The margin has to estimate **how far this reading can be off**, i.e. the scale of the
   fluctuation. `JIT` is the **median** of the deviations, converted to σ, and one slow check does
   not move it.
-
-`quick` needs no such term: with the best node at 408ms the band is 81.6ms, while the 2σ
-noise of the score itself is about 1.8ms, 2.2% of it, and can be ignored.
 
 ### Retention
 
@@ -147,23 +129,23 @@ The allowance is capped at the band itself, so a node never survives more than *
 away from the best node — hysteresis is there to ride out noise, not to keep a node that is
 clearly worse.
 
-The two objectives have differently shaped allowances, because their scores are in different
-units:
+The two objectives share the band, and differ in the noise: the score of `quick` is made of the
+median and the jitter, the one of `steady` of the mean deviation.
 
-| Objective | Band | Noise (`SE`) |
-| --- | --- | --- |
-| `quick` | `score × rtt_tolerance`, relative | combined from the median and the jitter: `1.25·JIT/√n` and `JIT/√(2(n−1))` |
-| `steady` | `jitter_tolerance + 2√2·JIT_best/√n`, absolute | `DEV/√n` |
+| Objective | Noise (`SE`) |
+| --- | --- |
+| `quick` | combined from the median and the jitter: `1.25·JIT/√n` and `JIT/√(2(n−1))` |
+| `steady` | `DEV/√n` |
 
-- The `quick` band is both relative and generous: a node of 500ms with `JIT` 10ms has a band of
-  100ms and a noise of about 13ms at `sampling` 10, so the noise is small against it, the allowance
-  is essentially "band plus two standard errors", and the cap rarely binds.
-- The `steady` band is both absolute and tight (of the order of 10ms), while `DEV/√n` runs from 4ms
-  on a clean node to 58ms on a node with a spike at `sampling` 10, so the cap often binds and the
-  allowance falls back to `2 × band`. The noise here deliberately stays on `DEV` rather than moving
-  to `JIT`: retention asks "is it worth breaking", and being lenient towards what may be a single
-  transient spike is right; the band measures the reading, retention measures the cost the node has
-  already paid, and the two are not the same quantity.
+- `quick` defaults to 50ms, while its noise at `sampling` 10 with a `JIT` of 10ms is about 13ms,
+  small against the band, so the allowance is essentially "band plus two standard errors" and the
+  cap rarely binds.
+- `steady` defaults to 10ms, while `DEV/√n` runs from 4ms on a clean node to 58ms on a node with a
+  spike at `sampling` 10, so the cap often binds and the allowance falls back to `2 × band`. The
+  noise here deliberately stays on `DEV` rather than moving to `JIT`: retention asks "is it worth
+  breaking", and being lenient towards what may be a single transient spike is right; the band
+  measures the reading, retention measures the cost the node has already paid, and the two are not
+  the same quantity.
 
 A `urltest` group has no second layer: it uses one whole node at a time, so the hysteresis lives in
 the **selection** — the node in use keeps its place while its score stays within `Limit(best)` of
@@ -197,24 +179,20 @@ sample cannot move, which is `JIT`.
 count** — but it is relative to the node's own scale, not to `DEV`.
 
 The resolution needed to separate two nodes is the difference of two estimates, so it is about
-`2√2/√n` at two standard errors:
+`2√2/√n` at two standard errors. That is the margin, in units of `JIT_best`, and it shrinks with
+the sample count:
 
-| `sampling` | resolution `2√2/√n` | a 20% relative band |
-| --- | --- | --- |
-| 10 | 89% | 4.5× narrower than the noise |
-| 50 | 40% | 2× narrower |
-| 200 | 20% | exactly level |
-| 500 | 13% | the band decides |
+| `sampling` | margin (in `JIT_best`) |
+| --- | --- |
+| 10 | 89% |
+| 50 | 40% |
+| 200 | 20% |
+| 500 | 13% |
 
-This is why **the jitter is measured in absolute milliseconds and the delay in relative ones**.
-A 20% relative band on the jitter would need `sampling > 200`; at an `interval` of 2 minutes that
-is 400 minutes, about 6.7 hours, and the longer the window the older what it reads —
-**lowering the noise and following a change are two ends of one knob**.
-
-With an absolute `jitter_tolerance`, the question disappears: the band is a configured value that
-does not shrink with the sample count, and the resolution margin is always added and shrinks as
-the window grows (see [Tolerance](#tolerance)). There is no regime where too few
-samples turn the band into noise-chasing.
+The band is a configured value that does not shrink with the sample count, and the margin only
+widens it, so there is no regime where too few samples turn the band into noise-chasing. But the
+longer the window the older what it reads: **lowering the noise and following a change are two
+ends of one knob**.
 
 !!! note ""
 

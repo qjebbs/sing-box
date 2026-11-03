@@ -19,8 +19,7 @@
   "include": "",
   "health_check": "",
   "objective": "quick",
-  "rtt_tolerance": 0.2,
-  "jitter_tolerance": "10ms",
+  "tolerance": "50ms",
   "interrupt_exist_connections": false
 }
 ```
@@ -66,19 +65,12 @@
 
 统计量、分数与容差的设计理由见[节点评分](/zh/configuration/shared/node-rating/)。
 
-#### rtt_tolerance
+#### tolerance
 
-> 仅适用于 `quick` 目标，此时必须显式指定该目标
-
-与最好节点的最大**相对**差距，取值范围 `0-1`，默认为 `0.2`，即其分数的 20%。
+与最好节点的最大**绝对**差距，默认为 `quick` 时 `50ms`、`steady` 时 `10ms`，即分数最多比最优节点高这么多的节点仍算同样好。
+两个目标的分数量级不同，所以默认值不同。
 
 当前节点的分数处在最好节点的该区间之内时保持原位，因此不值得切换的差距会保持连接不动。
-
-#### jitter_tolerance
-
-> 仅适用于 `steady` 目标，此时必须显式指定该目标
-
-与最好节点的最大**绝对**差距，默认为 `10ms`，即抖动最多比最优节点高 10ms 的节点仍算同样好。
 实际区间还会加上一份随采样数与最优节点抖动收缩的**分辨力余量**，因此区间永不窄于该值，见[节点评分](/zh/configuration/shared/node-rating/#容差)。
 
 #### interrupt_exist_connections
@@ -87,5 +79,5 @@
 
 仅入站连接受此设置影响，内部连接将始终被中断。
 
-刚被替换的节点的连接，在其分数仍处于 `rtt_tolerance` 区间内时会被保留，因此不会被
+刚被替换的节点的连接，在其分数仍处于 `tolerance` 区间内时会被保留，因此不会被
 一个两可的测量结果断开。新连接始终使用分数最好的节点。

@@ -12,12 +12,15 @@ type HealthReporter interface {
 // HealthReport is the health of one group.
 //
 // It is a diagnostic view, not a configuration: every field describes the ranking the
-// group is using at the moment of the call, one round of checks at a time.
+// group is using at the moment of the call, one round of checks at a time, and the few
+// fields that come from the configuration are the ones the decision reads, not the whole
+// group.
 type HealthReport struct {
 	Tag  string `json:"tag"`
 	Type string `json:"type"`
 	// Objective is the objective the nodes are ranked by, Selection the whole selection,
-	// e.g. "quick" and "quick/single".
+	// e.g. "quick" and "quick/single". The cluster the objective takes around the best
+	// node is in Tolerance, MinNodes and MaxNodes.
 	Objective string `json:"objective"`
 	Selection string `json:"selection"`
 	// Networks are the networks the nodes support.
@@ -30,8 +33,20 @@ type HealthReport struct {
 	// can be replayed from one report: a node is as good as Best when its score is at
 	// most Limit and it is of the class Best belongs to. Limit is absent for an
 	// objective that ranks no score.
-	Best  string  `json:"best,omitempty"`
-	Limit *uint16 `json:"limit,omitempty"`
+	//
+	// Tolerance is the configured part of that band, in milliseconds: the difference
+	// worth switching for, so the rest of Limit - score(Best) is the resolution margin the
+	// measurement needs. It is the value the group is using, which is the configured one
+	// or the default of its objective, and it is absent for an objective that ranks no
+	// score.
+	Best      string  `json:"best,omitempty"`
+	Limit     *uint16 `json:"limit,omitempty"`
+	Tolerance *uint16 `json:"tolerance,omitempty"`
+	// MinNodes is the fewest nodes the cluster is extended to, MaxNodes the most it is
+	// limited to, 0 for no limit, so a selection larger or smaller than the band explains
+	// is accounted for.
+	MinNodes int `json:"min_nodes"`
+	MaxNodes int `json:"max_nodes"`
 	// Providers are the sources of the nodes, with the time their content last changed.
 	Providers []HealthProvider `json:"providers"`
 	// Selected are the nodes new connections may use, Alive every node that is not dead,

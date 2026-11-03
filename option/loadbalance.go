@@ -21,14 +21,12 @@ type LoadBalancePickOptions struct {
 	MaxFail uint `json:"max_fail,omitempty"`
 	// max acceptable rtt. defalut 0
 	MaxRTT badoption.Duration `json:"max_rtt,omitempty"`
-	// rtt_tolerance is the maximum relative difference to the best node, for the
-	// quick objective, e.g. 0.2 means nodes up to 20% worse than the best one are
-	// selected too. Default is 0.2. Requires the objective to be set to quick.
-	RTTTolerance float32 `json:"rtt_tolerance,omitempty"`
-	// jitter_tolerance is the maximum absolute difference to the steadiest node, for the
-	// steady objective, a duration. Default is 10ms. Requires the objective to be set to
-	// steady.
-	JitterTolerance badoption.Duration `json:"jitter_tolerance,omitempty"`
+	// tolerance is the maximum absolute difference to the best node, for the objectives
+	// that rank the nodes by a score: a node whose score is at most this far above the
+	// best one is selected with it, and a node that just left the selection is kept while
+	// the excess stays within the noise. A duration, e.g. 50ms. Default is 10ms for
+	// steady and 50ms for quick. Requires the objective to be set to quick or steady.
+	Tolerance badoption.Duration `json:"tolerance,omitempty"`
 	// min_nodes is the minimum number of nodes to select. Default is 1.
 	MinNodes uint `json:"min_nodes,omitempty"`
 	// max_nodes is the maximum number of nodes to select, 0 means unlimited.

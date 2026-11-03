@@ -9223,10 +9223,7 @@
         "max_rtt": {
           "$ref": "#/$defs/Duration"
         },
-        "rtt_tolerance": {
-          "type": "number"
-        },
-        "jitter_tolerance": {
+        "tolerance": {
           "$ref": "#/$defs/Duration"
         },
         "min_nodes": {
@@ -9277,10 +9274,7 @@
         "max_rtt": {
           "$ref": "#/$defs/Duration"
         },
-        "rtt_tolerance": {
-          "type": "number"
-        },
-        "jitter_tolerance": {
+        "tolerance": {
           "$ref": "#/$defs/Duration"
         },
         "min_nodes": {
@@ -14682,10 +14676,7 @@
             "objective": {
               "type": "string"
             },
-            "rtt_tolerance": {
-              "type": "number"
-            },
-            "jitter_tolerance": {
+            "tolerance": {
               "$ref": "#/$defs/Duration"
             },
             "interrupt_exist_connections": {

@@ -13,14 +13,17 @@ var (
 	_ Objective = (*ScoreObjective)(nil)
 	_ Bander    = (*ScoreObjective)(nil)
 	_ Keeper    = (*ScoreObjective)(nil)
+	_ Clusterer = (*ScoreObjective)(nil)
 )
 
 const (
-	// DefaultTolerance is the default relative tolerance of quick, around the best node.
-	DefaultTolerance float32 = 0.2
-	// DefaultJitterTolerance is the default absolute tolerance of steady, around the
-	// steadiest node.
-	DefaultJitterTolerance = 10 * healthcheck.Millisecond
+	// DefaultQuickTolerance is the default tolerance of quick, around the fastest node.
+	// Its score is a delay of hundreds of milliseconds, so a difference worth switching
+	// for is a share of a second: 50ms of a 500ms node.
+	DefaultQuickTolerance = 50 * healthcheck.Millisecond
+	// DefaultSteadyTolerance is the default tolerance of steady, around the steadiest
+	// node. Its score approaches zero for a steady node, so the band is much narrower.
+	DefaultSteadyTolerance = 10 * healthcheck.Millisecond
 	// resolutionSigma is how many standard errors of the best score it takes to tell two
 	// nodes apart: the difference of two estimates carries the error of both, √2 each,
 	// and the comparison is taken at two standard errors.
@@ -32,26 +35,21 @@ const (
 )
 
 // ScoreObjective is the objective of a group that ranks its nodes by a score: quick and
-// steady are both one. They only differ in the base statistic, whether the jitter is added
-// to it, and how the band around the best node is shaped.
+// steady are both one. They only differ in the statistic the score is made of, which is
+// also what their default tolerance is sized for.
 type ScoreObjective struct {
 	*QualifiedObjective
 	name string
-	// tolerance is the relative band of quick, jitterTolerance the absolute band of steady.
-	// Which one is used follows the objective, see quickBand and steadyBand.
-	tolerance       float32
-	jitterTolerance healthcheck.RTT
-	minNodes        int
-	maxNodes        int
+	// tolerance is the band around the best node, in absolute milliseconds, see band.
+	tolerance healthcheck.RTT
+	minNodes  int
+	maxNodes  int
 	// baseFunc is the primary statistic of the objective, it is the first term of
 	// the score. It is a delay of the checks that succeeded, see healthcheck.Stats.
 	baseFunc func(node *Node) healthcheck.RTT
 	// jitterFunc is added to the score as a penalty, it is nil when the base already is a
 	// spread, since adding another one would rank the same thing twice.
 	jitterFunc func(node *Node) healthcheck.RTT
-	// bandFunc returns the width of the tolerance around the best node: a share of its
-	// score for quick, absolute milliseconds plus a resolution margin for steady.
-	bandFunc func(best *Node) float64
 }
 
 // Name implements Objective.
@@ -76,10 +74,9 @@ func medianRTT(node *Node) healthcheck.RTT {
 // there is steadier than a node of 100ms that swings, and the distance of the node is not
 // part of the question. Bounding the distance is what max_rtt is for.
 func NewSteadyObjective(options option.LoadBalancePickOptions) *ScoreObjective {
-	objective := newScoreObjective(options)
+	objective := newScoreObjective(options, DefaultSteadyTolerance)
 	objective.name = ObjectiveSteady
 	objective.baseFunc = meanDeviationRTT
-	objective.bandFunc = objective.steadyBand
 	return objective
 }
 
@@ -89,30 +86,29 @@ func NewSteadyObjective(options option.LoadBalancePickOptions) *ScoreObjective {
 // the typical one, so a check that timed out once does not decide it, see
 // healthcheck.Stats.MeanDeviation for the one that counts it.
 func NewQuickObjective(options option.LoadBalancePickOptions) *ScoreObjective {
-	objective := newScoreObjective(options)
+	objective := newScoreObjective(options, DefaultQuickTolerance)
 	objective.name = ObjectiveQuick
 	objective.baseFunc = medianRTT
 	objective.jitterFunc = jitterRTT
-	objective.bandFunc = objective.quickBand
 	return objective
 }
 
-// newScoreObjective returns a new ScoreObjective with the common options.
-func newScoreObjective(options option.LoadBalancePickOptions) *ScoreObjective {
+// newScoreObjective returns a new ScoreObjective with the common options, and the default
+// tolerance of the objective for the value it leaves unset.
+func newScoreObjective(options option.LoadBalancePickOptions, defaultTolerance healthcheck.RTT) *ScoreObjective {
 	return &ScoreObjective{
 		QualifiedObjective: NewQualifiedObjective(),
-		tolerance:          float32Option(options.RTTTolerance, DefaultTolerance),
-		jitterTolerance:    jitterToleranceOption(options.JitterTolerance),
+		tolerance:          toleranceOption(options.Tolerance, defaultTolerance),
 		minNodes:           int(options.MinNodes),
 		maxNodes:           int(options.MaxNodes),
 	}
 }
 
-func float32Option(value float32, defaultValue float32) float32 {
+func toleranceOption(value badoption.Duration, defaultValue healthcheck.RTT) healthcheck.RTT {
 	if value <= 0 {
 		return defaultValue
 	}
-	return value
+	return healthcheck.RTT(value.Build().Milliseconds())
 }
 
 // Score returns the cost of using the node, lower is better:
@@ -173,7 +169,7 @@ func (o *ScoreObjective) Keep(node *Node, best *Node) bool {
 		return false
 	}
 	bestScore := o.scoreOf(best)
-	band := o.bandFunc(best)
+	band := o.band(best)
 	nodeError := o.scoreStandardError(node)
 	bestError := o.scoreStandardError(best)
 	noise := hysteresisSigma * math.Sqrt(nodeError*nodeError+bestError*bestError)
@@ -280,31 +276,41 @@ func SortByLeast(nodes []*Node, rttFunc func(*Node) healthcheck.RTT) {
 	})
 }
 
-// quickBand returns the width of the tolerance around the best node, the range in which
-// another node counts as equally good. quick compares delays, which are far from zero, so
-// a share of the best one is a meaningful band: 20% of 170ms is 34ms.
-func (o *ScoreObjective) quickBand(best *Node) float64 {
-	return o.scoreOf(best) * float64(o.tolerance)
-}
-
-// steadyBand returns the band of steady around the best node: the absolute tolerance plus
-// a resolution margin. steady compares a spread that approaches zero for a steady node, so
-// a share of it would be smaller than the measurement can resolve (20% of 2ms is 0.4ms).
-// The configured value describes the true difference, the margin covers the observed one.
+// band returns the width of the tolerance around the best node, the range in which another
+// node counts as equally good: the tolerance of the objective plus a resolution margin.
 //
-// The margin is scaled by the jitter of the best node, not by its mean deviation: the score
-// counts every deviation, and one slow check is enough to inflate it, which is the property
-// that makes steady rank a stalling node behind a steady one. The margin instead estimates
-// how far the reading can be off, and that scale has to survive a single check: a median of
-// the deviations does, so one probe cannot decide who counts as equally good.
-func (o *ScoreObjective) steadyBand(best *Node) float64 {
-	band := float64(o.jitterTolerance)
+// The margin is always added, because the tolerance describes the true difference while the
+// comparison only sees observed values. It is scaled by the jitter of the best node, not by
+// its mean deviation: the score of steady counts every deviation, and one slow check is
+// enough to inflate it, which is the property that makes steady rank a stalling node behind
+// a steady one. The margin instead estimates how far the reading can be off, and that scale
+// has to survive a single check: a median of the deviations does, so one probe cannot decide
+// who counts as equally good.
+func (o *ScoreObjective) band(best *Node) float64 {
+	band := float64(o.tolerance)
 	if succeeded := float64(best.Stats.Succeeded()); succeeded >= 2 {
 		// the typical spread of the node, the scale the reading of its score can be off by
 		spread := float64(best.ScaleRTT(best.Jitter))
 		band += resolutionSigma * spread / math.Sqrt(succeeded)
 	}
 	return band
+}
+
+// Tolerance implements Tolerancer. It returns the configured width of the band, the part
+// of it that describes a difference worth switching for: the rest is the resolution
+// margin, see band.
+func (o *ScoreObjective) Tolerance() healthcheck.RTT {
+	return o.tolerance
+}
+
+// MinNodes implements Clusterer.
+func (o *ScoreObjective) MinNodes() int {
+	return o.minNodes
+}
+
+// MaxNodes implements Clusterer.
+func (o *ScoreObjective) MaxNodes() int {
+	return o.maxNodes
 }
 
 // Limit implements Bander. It returns the highest score that still counts as equally
@@ -314,14 +320,5 @@ func (o *ScoreObjective) Limit(best *Node) healthcheck.RTT {
 	if score == healthcheck.Failed {
 		return healthcheck.Failed
 	}
-	return rttFromFloat(float64(score) + o.bandFunc(best))
-}
-
-// jitterToleranceOption returns the absolute band of steady, the default when it is
-// not set. A negative value would make the band narrower than the measurement.
-func jitterToleranceOption(value badoption.Duration) healthcheck.RTT {
-	if value <= 0 {
-		return DefaultJitterTolerance
-	}
-	return healthcheck.RTT(value.Build().Milliseconds())
+	return rttFromFloat(float64(score) + o.band(best))
 }

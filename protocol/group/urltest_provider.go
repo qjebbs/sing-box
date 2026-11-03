@@ -36,20 +36,13 @@ var (
 // the selection, which would then have to break the tie itself.
 var urlTestObjectives = []string{selection.ObjectiveQuick, selection.ObjectiveSteady}
 
-// urlTestObjective validates the configured objective and the tolerances that go with
-// it, and returns the objective, defaulting to quick.
+// urlTestObjective validates the configured objective and returns it, defaulting to quick.
 func urlTestObjective(options option.ProviderURLTestOptions) (string, error) {
 	if options.Objective != "" && !slices.Contains(urlTestObjectives, options.Objective) {
 		return "", E.New(
 			"unsupported objective for ", C.TypeURLTest, ": ", options.Objective,
 			", expected one of ", strings.Join(urlTestObjectives, ", "),
 		)
-	}
-	// A default objective is not a stated one, so it cannot carry a tolerance, and the
-	// objectives that ignore the tolerances are not accepted either.
-	err := selection.ValidateTolerances(options.Objective, options.RTTTolerance, options.JitterTolerance.Build())
-	if err != nil {
-		return "", err
 	}
 	if options.Objective == "" {
 		return selection.ObjectiveQuick, nil
@@ -87,8 +80,7 @@ func NewURLTestProvider(ctx context.Context, router adapter.Router, logger log.C
 // Start implements adapter.Lifecycle
 func (s *URLTestProvider) Start(stage adapter.StartStage, scope *adapter.Scope) error {
 	objective, err := selection.NewObjective(s.objective, selection.ObjectiveOptions{
-		RTTTolerance:    s.options.RTTTolerance,
-		JitterTolerance: s.options.JitterTolerance.Build(),
+		Tolerance: s.options.Tolerance.Build(),
 	})
 	if err != nil {
 		return err

@@ -19,8 +19,7 @@
   "include": "",
   "health_check": "",
   "objective": "quick",
-  "rtt_tolerance": 0.2,
-  "jitter_tolerance": "10ms",
+  "tolerance": "50ms",
   "interrupt_exist_connections": false
 }
 ```
@@ -69,25 +68,16 @@ the notion of a qualified node.
 The reasoning behind the statistics, the scores and the tolerance is on the
 [Node Rating](/configuration/shared/node-rating/) page.
 
-#### rtt_tolerance
+#### tolerance
 
-> Available only for the `quick` objective, which must then be set explicitly
+The maximum **absolute** difference to the best node, default is `50ms` for `quick` and `10ms` for
+`steady`, i.e. a node whose score is at most this far above the best one still counts as equally
+good. The two scores are of different magnitudes, which is why the defaults differ.
 
-The maximum **relative** difference to the best node, between `0` and `1`, default is `0.2`, i.e.
-20% of its score.
-
-The node in use keeps its place while its score is within this band of the best one, so
-a difference that is not worth the switch keeps the connections where they are.
-
-#### jitter_tolerance
-
-> Available only for the `steady` objective, which must then be set explicitly
-
-The maximum **absolute** difference to the best node, default is `10ms`, i.e. a node whose jitter
-is at most 10ms above the best one still counts as equally good.
-
-The band also carries a **resolution margin** that shrinks with the sample count and grows with the
-jitter of the best node, so it is never narrower than this value, see
+The node in use keeps its place while its score is within this band of the best one, so a
+difference that is not worth the switch keeps the connections where they are. The band also carries
+a **resolution margin** that shrinks with the sample count and grows with the jitter of the best
+node, so it is never narrower than this value, see
 [Node Rating](/configuration/shared/node-rating/#tolerance).
 
 #### interrupt_exist_connections

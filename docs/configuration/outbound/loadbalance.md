@@ -22,8 +22,7 @@
     "strategy": "random",
     "max_fail": 0,
     "max_rtt": "1000ms",
-    "rtt_tolerance": 0.2,
-    "jitter_tolerance": "10ms",
+    "tolerance": "50ms",
     "min_nodes": 1,
     "max_nodes": 0,
     "biases": [
@@ -146,27 +145,23 @@ The maximum round-trip time of health check that is acceptable for qulified node
 
 The maximum number of health check failures for qulified nodes, default is `0`, i.e. no failures allowed.
 
-#### rtt_tolerance
+#### tolerance
 
-> Available only for the `quick` objective, which must then be set explicitly
+> Only used by the `quick` and `steady` objectives: `alive` and `qualified` have no score, so
+> setting it has no effect
 
-The maximum **relative** difference to the best node, default is `0.2`, i.e. nodes that are at
-most 20% worse than the best one are selected with it.
-
-#### jitter_tolerance
-
-> Available only for the `steady` objective, which must then be set explicitly
-
-The maximum **absolute** difference to the steadiest node, default is `10ms`, i.e. nodes whose
-jitter is at most 10ms above the best one are selected with it.
+The maximum **absolute** difference to the best node, default is `50ms` for `quick` and `10ms` for
+`steady`, i.e. nodes whose score is at most this far above the best one are selected with it. The
+two scores are of different magnitudes, which is why the defaults differ: the score of `quick` is a
+delay of hundreds of milliseconds, the one of `steady` a spread of a few.
 
 The band also carries a **resolution margin** that shrinks with the sample count and grows with the
-jitter of the steadiest node, so it is never narrower than this value, see
+jitter of the best node, so it is never narrower than this value, see
 [Node Rating](/configuration/shared/node-rating/#tolerance).
 
 #### min_nodes
 
-> Available only for `least*` objectives
+> Available only for the `quick` and `steady` objectives
 
 The minimum number of nodes to select, default is `1`.
 
@@ -174,7 +169,7 @@ This only affects the case when the nodes within the tolerance are fewer than `m
 
 #### max_nodes
 
-> Available only for `least*` objectives
+> Available only for the `quick` and `steady` objectives
 
 The maximum number of nodes to select, default is `0`, which means unlimited.
 

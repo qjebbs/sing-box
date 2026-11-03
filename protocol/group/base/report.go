@@ -42,6 +42,11 @@ func (g *Group) HealthReport() adapter.HealthReport {
 		Alive:      aliveTagsOf(all),
 		Limit:      g.limitOf(best),
 	}
+	if clusterer, isClusterer := g.pick.Objective().(selection.Clusterer); isClusterer {
+		report.Tolerance = optionalRTT(clusterer.Tolerance())
+		report.MinNodes = clusterer.MinNodes()
+		report.MaxNodes = clusterer.MaxNodes()
+	}
 	if best != nil {
 		report.Best = best.Tag()
 	}

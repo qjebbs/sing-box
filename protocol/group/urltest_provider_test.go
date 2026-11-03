@@ -24,49 +24,28 @@ func TestURLTestObjective(t *testing.T) {
 		{name: "alive", options: option.ProviderURLTestOptions{Objective: "alive"}, wantErr: true},
 		{name: "qualified", options: option.ProviderURLTestOptions{Objective: "qualified"}, wantErr: true},
 		{name: "unknown", options: option.ProviderURLTestOptions{Objective: "fastest"}, wantErr: true},
-		// a tolerance belongs to a single objective, so the objective has to be stated
-		// for the group to know whether the tolerance applies
+		// one tolerance serves both objectives, so it applies whatever the objective and
+		// does not have to be tied to one of them
 		{
-			name:    "rtt on the default",
-			options: option.ProviderURLTestOptions{RTTTolerance: 0.2},
-			wantErr: true,
+			name:    "tolerance on the default",
+			options: option.ProviderURLTestOptions{Tolerance: badoption.Duration(50 * time.Millisecond)},
+			want:    "quick",
 		},
 		{
-			name:    "jitter on the default",
-			options: option.ProviderURLTestOptions{JitterTolerance: badoption.Duration(10 * time.Millisecond)},
-			wantErr: true,
-		},
-		{
-			name: "rtt on quick",
+			name: "tolerance on quick",
 			options: option.ProviderURLTestOptions{
-				Objective:    "quick",
-				RTTTolerance: 0.2,
+				Objective: "quick",
+				Tolerance: badoption.Duration(50 * time.Millisecond),
 			},
 			want: "quick",
 		},
 		{
-			name: "jitter on steady",
+			name: "tolerance on steady",
 			options: option.ProviderURLTestOptions{
-				Objective:       "steady",
-				JitterTolerance: badoption.Duration(10 * time.Millisecond),
+				Objective: "steady",
+				Tolerance: badoption.Duration(10 * time.Millisecond),
 			},
 			want: "steady",
-		},
-		{
-			name: "jitter on quick",
-			options: option.ProviderURLTestOptions{
-				Objective:       "quick",
-				JitterTolerance: badoption.Duration(10 * time.Millisecond),
-			},
-			wantErr: true,
-		},
-		{
-			name: "rtt on steady",
-			options: option.ProviderURLTestOptions{
-				Objective:    "steady",
-				RTTTolerance: 0.2,
-			},
-			wantErr: true,
 		},
 	}
 	for _, testCase := range testCases {
