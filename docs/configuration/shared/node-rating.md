@@ -104,58 +104,71 @@ node within which the nodes count as equally good, and each objective has its ow
 | `quick`   | `MED + JIT` | `rtt_tolerance`    | share of the best value | `0.2`   |
 | `steady`  | `DEV`       | `jitter_tolerance` | absolute milliseconds   | `10ms`  |
 
-A tolerance belongs to the objective that measures its quantity: setting one for the other
-objective, or for an objective left at its default, is refused when the group is created
-instead of being silently ignored, since a value that has no effect is a mistake rather
-than a preference.
-
-**The delay is relative**, because it is far from zero: 20% of the best 170ms is 34ms, a real
-band.
-
-**The jitter must be absolute**, because it approaches zero: 20% of the best 2.8ms is 0.56ms,
-barely more than the millisecond the delays are stored in, while the measured 2σ resolution is
-6.6ms — **a 0.56ms band selects noise, not nodes** (see [Noise](#noise)). So the jitter band is
-an absolute value anyone can reason about: `jitter_tolerance: 10ms` means "within 10ms of the
-steadiest node counts as equally steady".
-
-The band of `steady` also carries a **resolution margin**:
+The band of `steady` also carries a **resolution margin** (the noise):
 
 ```
-band = jitter_tolerance + 2√2 × DEV_best / √n
+band = jitter_tolerance + 2√2 × JIT_best / √n
 cut  = DEV_best + band
 ```
 
-The second term is not a floor that applies only sometimes, it is always added — because
 `jitter_tolerance` describes the **true** difference, while the comparison only sees **observed**
-values:
+values. The more samples, the smaller the noise and the closer the band to the configured value —
+but it is **never narrower than it**.
 
-| `sampling` | margin | band (`jitter_tolerance: 10ms`) |
-| --- | --- | --- |
-| 10 | 2.5ms | 12.5ms |
-| 50 | 1.1ms | 11.1ms |
-| 200 | 0.6ms | 10.6ms |
+!!! note "Why added rather than the larger of the two"
 
-The more samples, the smaller the margin and the closer the band to the configured value — but it
-is **never narrower than it**.
+    With `max`, once `jitter_tolerance` (10ms) is larger than the margin (7.2ms, say), the margin
+    does not exist, and a node sitting on the cut flips in and out with the measurement noise.
 
-Why added rather than the larger of the two: with `max`, a `jitter_tolerance` of 10ms against a
-2.5ms margin means the margin does not exist, and a node sitting on the cut flips in and out with
-the measurement noise — measured, a node whose true `DEV` is exactly at the cut is selected 50% of
-the time. Adding the margin pushes the cut out and the same node is selected 74% of the time.
+The scale of the noise is `JIT_best`, not `DEV_best`: the two answer different questions.
 
-The margin uses `DEV_best`, not each node's own standard error: the other way round, a noisier
-node would get a larger margin and become easier to include, which is the wrong direction.
+- `DEV` is **how much the node paid in total**, and `steady` ranks by it, so a single spike must
+  count in full ("a node that stalls is not a steady node").
+- The margin has to estimate **how far this reading can be off**, i.e. the scale of the
+  fluctuation. `JIT` is the **median** of the deviations, converted to σ, and one slow check does
+  not move it.
 
 `quick` needs no such term: with the best node at 408ms the band is 81.6ms, while the 2σ
 noise of the score itself is about 1.8ms, 2.2% of it, and can be ignored.
 
 ### Retention
 
-When the node in use is replaced, its existing connections are not necessarily interrupted.
-A node that left the selection is kept while its excess over the band is within the noise of
-the two estimates, so a connection is not broken by a measurement that could have gone either
-way. The allowance is capped at the band itself, so a node never survives more than twice the
-tolerance away from the best.
+With `interrupt_exist_connections` enabled, when the node in use is replaced, its existing
+connections are not necessarily interrupted. A node that just left the selection is kept while its
+excess over the band is still within the noise of the two estimates, so a connection is not broken
+by a measurement that is not representative:
+
+```
+allowance = band + min(band, 2 × √(SE_node² + SE_best²))
+```
+
+The `2 ×` is the usual 95% confidence: an excess within that is not distinguishable from noise.
+The allowance is capped at the band itself, so a node never survives more than **twice the band**
+away from the best node — hysteresis is there to ride out noise, not to keep a node that is
+clearly worse.
+
+The two objectives have differently shaped allowances, because their scores are in different
+units:
+
+| Objective | Band | Noise (`SE`) |
+| --- | --- | --- |
+| `quick` | `score × rtt_tolerance`, relative | combined from the median and the jitter: `1.25·JIT/√n` and `JIT/√(2(n−1))` |
+| `steady` | `jitter_tolerance + 2√2·JIT_best/√n`, absolute | `DEV/√n` |
+
+- The `quick` band is both relative and generous: a node of 500ms with `JIT` 10ms has a band of
+  100ms and a noise of about 13ms at `sampling` 10, so the noise is small against it, the allowance
+  is essentially "band plus two standard errors", and the cap rarely binds.
+- The `steady` band is both absolute and tight (of the order of 10ms), while `DEV/√n` runs from 4ms
+  on a clean node to 58ms on a node with a spike at `sampling` 10, so the cap often binds and the
+  allowance falls back to `2 × band`. The noise here deliberately stays on `DEV` rather than moving
+  to `JIT`: retention asks "is it worth breaking", and being lenient towards what may be a single
+  transient spike is right; the band measures the reading, retention measures the cost the node has
+  already paid, and the two are not the same quantity.
+
+A `urltest` group has no second layer: it uses one whole node at a time, so the hysteresis lives in
+the **selection** — the node in use keeps its place while its score stays within `Limit(best)` of
+the best node, that is **one** band rather than two, and it is measured against the best node for
+the same reason.
 
 This is hysteresis for connections, and it is a different question from the selection: the
 selection asks which node new connections should use, the retention asks whether it is worth
@@ -164,16 +177,24 @@ breaking the connections a node already has.
 ### Noise
 
 Every statistic here is an estimate from a small window, so every comparison has an error bar.
-For a mean of `n` samples the standard error is `σ/√n`, and `DEV` is a mean of deviations whose
-own spread is about `DEV`:
+For a mean of `n` samples the standard error is `σ/√n`; `DEV` is a mean of deviations, so its
+standard error is the spread of **those deviations** over `√n`:
 
 ```
-SE(DEV) ≈ DEV / √n
+SE(DEV) = sd(|xᵢ − MED|) / √n
 ```
+
+Only while those deviations are alike is `sd(deviation) ≈ DEV`, and only then does
+`SE(DEV) ≈ DEV/√n` — which is how a clean node behaves. **One slow check breaks that premise**:
+the deviations become "nine small ones and one large one", their spread is far larger than their
+mean, and the true standard error grows with it while `DEV/√n` does not.
+
+That is why the margin is not taken from `DEV_best`: `DEV` describes the node (how much it paid),
+not the error of this reading. The scale of the error has to be measured by something a single
+sample cannot move, which is `JIT`.
 
 **The relative noise is `1/√n`, the same for every node, and it depends only on the sample
-count.** Measured with `sampling` 10 on the raw samples of ten nodes, `SE(DEV)/DEV` fell between
-24% and 38%, against `1/√10 = 32%`.
+count** — but it is relative to the node's own scale, not to `DEV`.
 
 The resolution needed to separate two nodes is the difference of two estimates, so it is about
 `2√2/√n` at two standard errors:
@@ -192,14 +213,14 @@ is 400 minutes, about 6.7 hours, and the longer the window the older what it rea
 
 With an absolute `jitter_tolerance`, the question disappears: the band is a configured value that
 does not shrink with the sample count, and the resolution margin is always added and shrinks as
-the window grows (see the table under [Tolerance](#tolerance)). There is no regime where too few
+the window grows (see [Tolerance](#tolerance)). There is no regime where too few
 samples turn the band into noise-chasing.
 
 !!! note ""
 
-    One intuition worth correcting: **the noise cannot be subtracted away.**
-    `SE(DEV)/DEV = 1/√n` is the same ratio for every node, so removing it from each `DEV`
-    multiplies them all by `√(1−1/n)` — the ranking and the selection are unchanged. Noise is not
+    One intuition worth correcting: **the noise cannot be subtracted away.** In the scale of each
+    node, the relative noise is `1/√n` for every node, so removing it from each score multiplies
+    them all by the same factor — the ranking and the selection are unchanged. Noise is not
     a bias that can be subtracted, it is a spread around the true value that cannot be. The only
     place it can be accounted for is the band, which is the resolution term above.
 
@@ -238,18 +259,3 @@ measurement.
 It also needs care: with a `sampling` of 10, two consecutive bad checks out of five in the
 second half do not move its median, so the trend only appears from the third one onward. That
 makes it a slower signal than the last check, which is already in the statistics.
-
-### Debugging a Rating
-
-The full report of a group — every statistic, every node, and the checks they were computed
-from — is served by the Clash API at `GET /private/health/{tag}`, so a ranking can be replayed
-and explained offline instead of being inferred from the log.
-
-The report describes one ranking, and it says enough to replay it: `best` is the node every
-other one is compared to, and `limit` the highest score that still counts as equally good.
-A node is as good as `best` when its `status` is the one of `best` and its `score` is at most
-`limit`. A load balance group selects every such node (or at least `min_nodes` of them), while
-a group that uses a single node keeps the one in use as long as it is one of them, so `best`
-and `selected` can name different nodes there. All of it comes from the same round of checks,
-so a report taken in the middle of a round shows that round's ranking, not a mixture of the
-nodes measured so far and the previous decision.

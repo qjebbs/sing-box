@@ -427,23 +427,24 @@ func TestLeastKeepIsCappedByTheBand(t *testing.T) {
 
 func TestLeastLoadKeep(t *testing.T) {
 	t.Parallel()
-	// steady scores by the mean distance to the median: 40ms with 10 samples, so the
-	// band of 8ms plus the noise of two such estimates keeps a node up to roughly 55ms.
+	// steady scores by the mean distance to the median: 40ms with 10 samples. The band
+	// is the 10ms tolerance plus the margin of a 20ms jitter, about 28ms, and the noise
+	// of two such estimates is capped at it, so a node up to roughly 68ms is kept.
 	best := &selection.Node{
 		Status: selection.StatusQualified,
-		Stats:  healthcheck.Stats{All: 10, MeanDeviation: 40},
+		Stats:  healthcheck.Stats{All: 10, MeanDeviation: 40, Jitter: 20},
 	}
 	objective := selection.NewSteadyObjective(option.LoadBalancePickOptions{})
 	close := &selection.Node{
 		Status: selection.StatusQualified,
-		Stats:  healthcheck.Stats{All: 10, MeanDeviation: 52},
+		Stats:  healthcheck.Stats{All: 10, MeanDeviation: 52, Jitter: 26},
 	}
 	if !objective.Keep(close, best) {
 		t.Fatalf("a node within the noise of the spread was dropped, score %v", objective.Score(close))
 	}
 	far := &selection.Node{
 		Status: selection.StatusQualified,
-		Stats:  healthcheck.Stats{All: 10, MeanDeviation: 300},
+		Stats:  healthcheck.Stats{All: 10, MeanDeviation: 300, Jitter: 26},
 	}
 	if objective.Keep(far, best) {
 		t.Fatalf("a node with 7 times the spread was kept")

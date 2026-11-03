@@ -86,6 +86,10 @@ a difference that is not worth the switch keeps the connections where they are.
 The maximum **absolute** difference to the best node, default is `10ms`, i.e. a node whose jitter
 is at most 10ms above the best one still counts as equally good.
 
+The band also carries a **resolution margin** that shrinks with the sample count and grows with the
+jitter of the best node, so it is never narrower than this value, see
+[Node Rating](/configuration/shared/node-rating/#tolerance).
+
 #### interrupt_exist_connections
 
 Interrupt existing connections when the selected outbound has changed.

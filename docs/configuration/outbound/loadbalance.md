@@ -160,6 +160,10 @@ most 20% worse than the best one are selected with it.
 The maximum **absolute** difference to the steadiest node, default is `10ms`, i.e. nodes whose
 jitter is at most 10ms above the best one are selected with it.
 
+The band also carries a **resolution margin** that shrinks with the sample count and grows with the
+jitter of the steadiest node, so it is never narrower than this value, see
+[Node Rating](/configuration/shared/node-rating/#tolerance).
+
 #### min_nodes
 
 > Available only for `least*` objectives
@@ -198,6 +202,6 @@ Interrupt existing connections when the selected outbound has changed.
 
 Only inbound connections are affected by this setting, internal connections will always be interrupted.
 
-For `least*` objectives the connections are kept while the node that left the selection is still within the noise of the health check statistics, so the connections are not closed by a measurement that could go either way. New connections always keep to the selection. The allowance is at most the band itself, so a node never survives more than twice its tolerance away from the best.
+For `quick` and `steady` objectives the connections are kept while the node that left the selection is still within the noise of the health check statistics, so the connections are not closed by a measurement that could go either way. New connections always keep to the selection. The allowance is at most the band itself, so a node never survives more than twice its band away from the best. The `alive` and `qualified` objectives have no band, so a node stops being retained as soon as it leaves the selection. See [Node Rating](/configuration/shared/node-rating/#retention).
 
 The retention applies to the inbound connections only, and only when this option is enabled: internal connections are interrupted either way.
