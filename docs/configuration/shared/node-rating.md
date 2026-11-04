@@ -96,6 +96,9 @@ band = tolerance + 2√2 × JIT_best / √n
 cut  = score_best + band
 ```
 
+The implementation adds the resolution margin only when at least two checks succeeded; otherwise
+`band = tolerance`.
+
 `tolerance` describes the **true** difference, while the comparison only sees **observed** values.
 The more samples, the smaller the noise and the closer the band to the configured value — but it is
 **never narrower than it**.
@@ -111,12 +114,13 @@ The scale of the noise is `JIT_best`, and that choice says two things:
   single spike must count in full ("a node that stalls is not a steady node"). The margin needs
   "how far this reading can be off", and only the median-based `JIT` is not moved by one slow
   check.
-- **Not the standard error `SE` of the score either**: `SE` is the exact resolution, but it is a
+- **Not the standard error `SE` of the score either**: a full error estimate can be widened by a
   sum of squares, so one slow check inflates it just the same, and the band decides who counts as
   equally good — inflating it lets a clearly worse node in (see [Noise](#noise)). The price is that
-  the margin is a **floor**: the standard error of a score is about 2.8 times it when measured, so
-  the band guarantees "never narrower than the tolerance", not a 95% resolution — `tolerance`
-  should be sized with that in mind.
+  the margin is a **heuristic**, not a mathematical lower bound on the actual noise or a 95%
+  resolution guarantee. On measured windows, the score error divided by `JIT_best/√n` had a median
+  of about 2.8; that ratio depends on the data and is not universal. `tolerance` should be sized
+  with this limitation in mind.
 
 ### Retention
 
@@ -129,18 +133,19 @@ by a measurement that is not representative:
 allowance = band + min(band, 2 × √(SE_node² + SE_best²))
 ```
 
-The `2 ×` is the usual 95% confidence: an excess within that is not distinguishable from noise.
+The multiplier `2` is an engineering heuristic, not a 95% confidence guarantee: the noise values
+are estimates, and the selection band uses a robust proxy rather than the full score error.
 The allowance is capped at the band itself, so a node never survives more than **twice the band**
 away from the best node — hysteresis is there to ride out noise, not to keep a node that is
 clearly worse.
 
-The two objectives differ in practice by the size of their noise, which is the standard error of a
-score, see [Noise](#noise).
+The two objectives differ in practice by the size of their estimated score noise, see
+[Noise](#noise).
 
 - `quick` defaults to 50ms, while its noise is usually some tens of milliseconds at a `sampling`
   of 10 (`sd(x)` and `sd(deviation)` each contribute a term), so the allowance is essentially
-  "band plus two standard errors" and the cap sometimes binds.
-- `steady` defaults to 10ms, while `sd(|xᵢ − MED|)/√n` reaches tens of milliseconds at a
+  "band plus a noise allowance" and the cap sometimes binds.
+- `steady` defaults to 10ms, while its estimated spread term `sd(|xᵢ − MED|)/√n` reaches tens of milliseconds at a
   `sampling` of 10, so the cap often binds and the allowance falls back to `2 × band`. The noise
   here is the spread of the samples rather than `JIT`, because retention asks "is it worth
   breaking": one slow check makes the spread larger and keeps the connections longer, which is the
@@ -164,71 +169,90 @@ the difference between two. The selection and the retention use the same model, 
 nodes substituted into it.
 
 **The noise of one score.** A score is computed from `n` samples; how much it would move if the
-checks ran again is its standard error, the spread of the statistic it is made of over `√n`:
+checks ran again is its standard error. For a sample mean of independent observations, the
+standard error is estimated by the sample spread divided by `√n`; for medians and statistics
+around an estimated center, it depends on the distribution and the statistic. The formulas below
+are the implementation's noise proxies and rely on the approximations stated with them:
 
 ```
-SE = sd(statistic) / √n
+SE(mean) = sd(observations) / √n
 ```
 
-`√n` is "what is left after averaging `n` times": the more samples, the closer the score is to the
-truth. The two objectives are made of different statistics, so their `sd` differs.
+Under a stable IID model, `1/√n` often describes how estimation error shrinks as samples are added;
+it does not make the error scale or coefficient the same for every statistic or node.
+When fewer than two checks succeeded, the implementation uses the base score as its noise proxy
+instead of applying the formulas below.
 
 `steady` scores by `DEV`, the average distance to the median, so its spread is the one of **those
 distances**:
 
 ```
-SE(DEV) = sd(|xᵢ − MED|) / √n
+SE_proxy(DEV) ≈ sd(d) / √n, where dᵢ = |xᵢ − MED|
 ```
 
-`quick` scores by a sum of two terms, each an estimate with its own error, combined by their
-variance. The median of `n` samples has a standard error of `1.2533σ/√n` (an asymptotic result: the
-variance of a median is `1/(4n·f(m)²)`, which is `(1.2533σ)²/n` for a normal sample — it uses only
-the rank of the samples, a quarter worse than the mean). The jitter is a **median of the
-deviations** scaled by `1.4826`, so its standard error is `1.4826 × 1.2533` times the one of a
-single deviation:
+This is an asymptotic plug-in estimate under approximately independent, identically distributed
+samples, not an exact finite-sample standard error: all `dᵢ` share the sample median. With only two
+successful checks the two absolute deviations are equal, so `sd(d)` is zero even though `DEV` would
+vary across repeated samples. Trends and changing sample distributions can also invalidate the
+approximation.
+
+`quick` scores by a sum of two estimates. The median of `n` samples has asymptotic standard error
+`1/(2f(m)√n)`, where `f(m)` is the density at the population median; `1.2533σ/√n` is its
+normal-distribution approximation. The jitter is a **median of absolute deviations** scaled by
+`1.4826`. The implementation uses the following noise proxy:
 
 ```
-SE(MED) = 1.2533 · sd(x) / √n
-SE(JIT) = 1.858 · sd(|xᵢ − MED|) / √n
-SE      = √( SE(MED)² + SE(JIT)² )
+SE_proxy(MED) = 1.2533 · sd(x) / √n
+SE_proxy(JIT) = 1.858 · sd(d) / √n
+SE_proxy      = √( SE_proxy(MED)² + SE_proxy(JIT)² )
 ```
 
-**The noise of the difference of two scores.** `SE_node` and `SE_best` are how much each score
-would move, and they are fixed numbers once computed; what moves is the score, so
-`score_node − score_best` moves as well. The two nodes are measured separately, their errors are
-independent, and so their **variances add**:
+The `1.858` factor is an implementation heuristic that applies a normal-median coefficient to
+`d`; however, even for normal `x`, absolute deviations are half-normal, not normal. It should not be
+read as a rigorously derived standard error. For a symmetric distribution, if `q` is the median of
+`|X−m|` and `g(q)` its density, the known-center asymptotic standard error of its median is
+`1/(2g(q)√n)`; estimating the center and non-normal shapes require corresponding adjustments.
+The two score terms are asymptotically independent under a symmetric IID model, but that is not an
+exact identity for arbitrary distributions or finite windows.
+
+**The noise of the difference of two scores.** If the two nodes' measurement errors are independent,
+their estimated variances add:
 
 ```
-SD(score_node − score_best) = √(SE_node² + SE_best²)
+SD(score_node − score_best) ≈ √(SE_proxy_node² + SE_proxy_best²)
 ```
 
-Squared first and then taken back to milliseconds, not the two `SE` added or subtracted: independent
-errors cancel each other out in part, and this says exactly how much.
+If the checks share a target or network conditions, their errors may be correlated. The difference
+variance then also contains `−2·Cov(score_node, score_best)`; the implementation ignores this term.
+With independent errors, variances are added before taking the square root.
 
-**Why another 2.** Under a normal distribution `1.96σ` covers 95% of the probability, rounded up to
-2 for the engineering version: "beyond this, it no longer looks like noise".
+**Why another 2.** The multiplier 2 is a convenient engineering choice. Because the score errors
+are approximated and may not be normally distributed, it does not by itself imply 95% coverage.
 
 **The same model substituted two ways, in the selection and in the retention:**
 
 | | compared with | margin | why |
 | --- | --- | --- | --- |
-| Selection: the band | the best vs an **unknown candidate** | `2√2 × JIT_best/√n` | the cut applies to every candidate, so it can only assume the candidate is measured as well as the best; using each node's own `SE` would give a noisier node a wider margin, the wrong direction. The robust `JIT` is used here on purpose instead of `SE`, see below |
-| Retention: the allowance | the best vs **this one node** | `2 × √(SE_node² + SE_best²)` | the node is known, so its own real `SE` is used; and the allowance is capped at the band, so a noisy node cannot stay forever |
+| Selection: the band | the best vs an **unknown candidate** | `2√2 × JIT_best/√n` | the cut applies to every candidate, so it can only assume the candidate is measured as well as the best; using each node's own noise estimate would give a noisier node a wider margin, the wrong direction. The robust `JIT` is used here on purpose instead of the full score-noise proxy, see below |
+| Retention: the allowance | the best vs **this one node** | `2 × √(SE_proxy_node² + SE_proxy_best²)` | the node is known, so its own noise proxy is used; and the allowance is capped at the band, so a noisy node cannot stay forever |
 
-Both `SE` already carry the `1/√n`, there is nothing else to divide by: more samples shrink both
-automatically. The selection is written as `2√2 × JIT_best/√n` because that is what the "two
-equally measured estimates" substitution gives, `2√2` folding the 2 and the `√2` into one constant.
+Both score-noise proxies already carry the `1/√n`, there is nothing else to divide by: more samples
+shrink them under the stated approximation. The selection is written as `2√2 × JIT_best/√n`
+because that is the policy's "two equally measured estimates" substitution, with 2 and `√2`
+folded into one constant; it does not make the proxy an exact standard error.
 
-**Why the selection does not use `SE` directly.** The band decides who counts as equally good; if
-its margin followed the full error of the score, one slow check would widen the band and let a
+**Why the selection does not use the full score-noise proxy directly.** The band decides who counts
+as equally good; if its margin followed that proxy, one slow check could widen the band and let a
 clearly worse node in — the opposite of "a single probe must not decide the selection" (see
-[Tolerance](#tolerance)). The price is a margin narrower than `SE`: the measured standard error of
-a score is **2.8 times** `JIT_best/√n` on median, so this margin is a **floor**, not a 95%
-resolution. The retention has no such problem — it only acts on nodes that were already selected,
-where a wider allowance just breaks fewer connections, so it uses the real `SE`.
+[Tolerance](#tolerance)). On measured windows, the score-noise estimate divided by
+`JIT_best/√n` had a median of about **2.8**; that ratio depends on the data and is not universal.
+The selection margin is therefore a heuristic, not a mathematical lower bound on actual noise or
+a 95% resolution. Retention uses each known node's own noise proxy, and caps the allowance at the
+band so a noisy node cannot stay indefinitely.
 
-**The relative noise is `1/√n`, the same for every node, and it depends only on the sample
-count** — but it is relative to the node's own scale, not to `DEV`.
+For a fixed statistic and a stable IID distribution, its standard error typically decreases on the
+order of `1/√n`. The scale and coefficient depend on the node's distribution and the statistic; the
+relative noise is not necessarily the same across nodes.
 
 The band is a configured value that does not shrink with the sample count, and the margin only
 widens it, so there is no regime where too few samples turn the band into noise-chasing. But the
@@ -237,11 +261,11 @@ ends of one knob**.
 
 !!! note ""
 
-    One intuition worth correcting: **the noise cannot be subtracted away.** In the scale of each
-    node, the relative noise is `1/√n` for every node, so removing it from each score multiplies
-    them all by the same factor — the ranking and the selection are unchanged. Noise is not
-    a bias that can be subtracted, it is a spread around the true value that cannot be. The only
-    place it can be accounted for is the band, which is the resolution term above.
+    One intuition worth correcting: **the noise cannot be subtracted away.** Noise is not a bias
+    that can be subtracted; it is variation around the underlying value.
+    Since the relative noise can differ across nodes, subtracting an estimated amount from each
+    score would not generally preserve the ranking. The band is a policy for tolerating that
+    uncertainty, not a way to remove it.
 
 ### Why Not the Standard Deviation
 
