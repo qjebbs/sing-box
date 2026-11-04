@@ -234,10 +234,6 @@ func (g *Group) healthChecksUpdated() {
 		return
 	}
 	g.Invalidate()
-	if g.HealthCheck.IsActive(g.Tag()) {
-		// An idle group is not in use, and its statistics only describe the past.
-		g.LogNodes()
-	}
 	available := g.AvailableNodes()
 	var retained []string
 	if g.interruptExternalConnections {

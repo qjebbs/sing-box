@@ -4,14 +4,11 @@
 package selection
 
 import (
+	"strconv"
+
 	"github.com/sagernet/sing-box/adapter"
 	"github.com/sagernet/sing/common"
 )
-
-// Logger is the log a selection describes the nodes of its group to.
-type Logger interface {
-	Info(args ...any)
-}
 
 // Selection is how a group turns the health of its nodes into the node that serves a
 // connection. It is the only thing a group has to decide for itself, the balancer owns
@@ -29,10 +26,10 @@ type Selection interface {
 	// Pick returns the node that serves the connection, from the nodes Select returned.
 	// It is called for every connection, so it must be cheap.
 	Pick(all, selected []*Node, metadata *adapter.InboundContext) *Node
-	// LogNodes writes the statistics of the nodes to the log of the group. all is every
-	// node of the group, selected the ones Select returned, so a selection lays out what
-	// it picks among the way that reads best for it.
-	LogNodes(logger Logger, all, selected []*Node)
+	// Summary describes the selection on one line: what it picks with, how many nodes it
+	// picked, and the band it decided with. ranked is the ranking of every node of the
+	// group, as Objective returns it.
+	Summary(ranked, selected []*Node) string
 	// String describes the selection, for the log.
 	String() string
 }
@@ -60,44 +57,22 @@ func (s *Balancing) Pick(all, selected []*Node, metadata *adapter.InboundContext
 	return s.strategy.Pick(all, selected, metadata)
 }
 
-// LogNodes lists the nodes the group picks among first, the rest after them: a balancing
-// group takes every connection from the former, so the latter only matter as the reason
-// a node is not one of them.
-func (s *Balancing) LogNodes(logger Logger, all, selected []*Node) {
-	ranked := s.objective.Rank(all)
-	var best *Node
-	if len(ranked) > 0 {
-		best = ranked[0]
-	}
-	logger.Info(s.String(), ", ", len(selected), " of ", len(all), " nodes available",
-		clusterDescription(s.objective, best))
-	selectedTags := make(map[string]bool, len(selected))
-	for _, node := range selected {
-		selectedTags[node.Tag()] = true
-	}
-	available := make([]*Node, 0, len(selected))
-	unavailable := make([]*Node, 0, len(ranked)-len(selected))
-	for _, node := range ranked {
-		if selectedTags[node.Tag()] {
-			available = append(available, node)
-		} else {
-			unavailable = append(unavailable, node)
-		}
-	}
-	logger.Info("=== nodes available ===")
-	for _, node := range available {
-		logger.Info(nodeLine(s.objective, node))
-	}
-	if len(unavailable) > 0 {
-		logger.Info("=== nodes unavailable ===")
-		for _, node := range unavailable {
-			logger.Info(nodeLine(s.objective, node))
-		}
-	}
+// Summary implements Selection.
+func (s *Balancing) Summary(ranked, selected []*Node) string {
+	return s.String() + ", " + strconv.Itoa(len(selected)) + " of " + strconv.Itoa(len(ranked)) +
+		" nodes available" + clusterDescription(s.objective, bestOf(ranked))
 }
 
 func (s *Balancing) String() string {
 	return s.objective.Name() + "/" + s.strategy.Name()
+}
+
+// bestOf returns the head of a ranking, nil when there is none.
+func bestOf(ranked []*Node) *Node {
+	if len(ranked) == 0 {
+		return nil
+	}
+	return ranked[0]
 }
 
 // Single is the selection of a group that uses one node at a time, like the url test
@@ -153,27 +128,10 @@ func (s *Single) Pick(_, selected []*Node, _ *adapter.InboundContext) *Node {
 	return selected[0]
 }
 
-// LogNodes lists every node in the order of the ranking and marks the one in use. There
-// is no group to tell apart from another: every connection goes to that node, and the
-// order says how far the others are from it, which is what the tolerance decides.
-func (s *Single) LogNodes(logger Logger, all, selected []*Node) {
-	ranked := s.objective.Rank(all)
-	var best *Node
-	if len(ranked) > 0 {
-		best = ranked[0]
-	}
-	logger.Info(s.String(), ", ", len(all), " nodes", clusterDescription(s.objective, best))
-	var inUse *Node
-	if len(selected) > 0 {
-		inUse = selected[0]
-	}
-	for _, node := range ranked {
-		line := nodeLine(s.objective, node)
-		if inUse != nil && node.Tag() == inUse.Tag() {
-			line += " SELECTED"
-		}
-		logger.Info(line)
-	}
+// Summary implements Selection. Every node is picked among, so the count of the selection
+// is not part of it: a single selection serves from one node whatever its band takes.
+func (s *Single) Summary(ranked, _ []*Node) string {
+	return s.String() + ", " + strconv.Itoa(len(ranked)) + " nodes" + clusterDescription(s.objective, bestOf(ranked))
 }
 
 func (s *Single) String() string {

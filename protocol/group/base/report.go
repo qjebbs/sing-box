@@ -58,6 +58,27 @@ func (g *Group) HealthReport() adapter.HealthReport {
 	return report
 }
 
+// HealthText reports the health of the group as text: the line that states the selection,
+// and one line per node, in the order of the ranking.
+//
+// It is not a second form of HealthReport: what that report states as fields, this one
+// states as the sentence built from them, so a group can be read without a log and
+// without parsing a tree of numbers.
+func (g *Group) HealthText() (summary string, nodes []string) {
+	if g.pick == nil || g.HealthCheck == nil {
+		// the group is not started yet, there is nothing it has measured
+		return "", nil
+	}
+	all, selected, _ := g.selection(N.NetworkTCP)
+	if len(all) == 0 {
+		// No node serves the network the selection is made for: describe what the group
+		// has, with nothing selected.
+		all = g.Nodes("")
+	}
+	ranked := g.pick.Objective().Rank(all)
+	return g.pick.Summary(ranked, selected), selection.NodeLines(g.pick.Objective(), ranked, selected)
+}
+
 // limitOf returns the score up to which another node still counts as equally good as
 // best, nil for an objective whose band is not bounded and for a node that has none.
 func (g *Group) limitOf(best *selection.Node) *uint16 {

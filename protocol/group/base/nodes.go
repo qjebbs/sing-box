@@ -129,16 +129,6 @@ func (g *Group) AvailableNodes() []string {
 	))
 }
 
-// LogNodes logs the statistics of every node of the group, the way the selection lays
-// them out.
-func (g *Group) LogNodes() {
-	all, selected, _ := g.selection(N.NetworkTCP)
-	if len(all) == 0 {
-		return
-	}
-	g.pick.LogNodes(g.logger, all, selected)
-}
-
 // RetainedNodes returns the tags to keep alive: the selected nodes, plus the nodes
 // in use that just left the selection because of the measurement noise. The extra
 // ones only serve the connections they already have, new connections keep to the

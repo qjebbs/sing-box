@@ -96,8 +96,8 @@ func (n *Node) String() string {
 	)
 }
 
-// nodeLine returns the log line of a node: its statistics and, when the objective scores
-// the nodes, its score.
+// nodeLine returns the line of a node: its statistics and, when the objective scores the
+// nodes, its score.
 func nodeLine(objective Objective, node *Node) string {
 	line := node.String()
 	scorer, isScorer := objective.(Scorer)
@@ -110,6 +110,28 @@ func nodeLine(objective Objective, node *Node) string {
 	// healthcheck.Failed means there is no score to show, printing 0ms would read as the
 	// best possible result.
 	return line + " SCORE=None"
+}
+
+// selectedMark is appended to the line of a node the selection returned.
+const selectedMark = " SELECTED"
+
+// NodeLines returns one line per node of ranked, in that order, with the nodes selected
+// marked: the lines are a flat list, so the mark is what says which of them are in use.
+// It is the text form of a ranking, and the only form the groups state it in.
+func NodeLines(objective Objective, ranked, selected []*Node) []string {
+	selectedTags := make(map[string]bool, len(selected))
+	for _, node := range selected {
+		selectedTags[node.Tag()] = true
+	}
+	lines := make([]string, 0, len(ranked))
+	for _, node := range ranked {
+		line := nodeLine(objective, node)
+		if selectedTags[node.Tag()] {
+			line += selectedMark
+		}
+		lines = append(lines, line)
+	}
+	return lines
 }
 
 // jitterString returns the jitter to show. A node that never worked has no stability

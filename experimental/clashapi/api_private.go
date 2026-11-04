@@ -3,10 +3,7 @@ package clashapi
 import (
 	"net/http"
 
-	"github.com/sagernet/sing-box/adapter"
-
 	"github.com/go-chi/chi/v5"
-	"github.com/go-chi/render"
 )
 
 // privateRouter serves the endpoints of this fork, which are not part of the Clash API:
@@ -19,33 +16,12 @@ func privateRouter(server *Server) http.Handler {
 		r.Use(parseProxyName, findProxyByName(server))
 		r.Get("/", getGroupHealth(server))
 	})
+	// The same two readings as text, for a human rather than for a parser: the report
+	// above states the numbers, this one states the sentence built from them.
+	r.Get("/health.txt", getAllHealthText(server))
+	r.Route("/health.txt/{name}", func(r chi.Router) {
+		r.Use(parseProxyName, findProxyByName(server))
+		r.Get("/", getGroupHealthText(server))
+	})
 	return r
-}
-
-func getAllHealth(server *Server) func(w http.ResponseWriter, r *http.Request) {
-	return func(w http.ResponseWriter, r *http.Request) {
-		reports := make([]adapter.HealthReport, 0)
-		for _, outbound := range server.outbound.Outbounds() {
-			reporter, isReporter := outbound.(adapter.HealthReporter)
-			if !isReporter {
-				continue
-			}
-			reports = append(reports, reporter.HealthReport())
-		}
-		render.JSON(w, r, render.M{
-			"groups": reports,
-		})
-	}
-}
-
-func getGroupHealth(server *Server) func(w http.ResponseWriter, r *http.Request) {
-	return func(w http.ResponseWriter, r *http.Request) {
-		reporter, isReporter := r.Context().Value(CtxKeyProxy).(adapter.HealthReporter)
-		if !isReporter {
-			render.Status(r, http.StatusNotFound)
-			render.JSON(w, r, ErrNotFound)
-			return
-		}
-		render.JSON(w, r, reporter.HealthReport())
-	}
 }
