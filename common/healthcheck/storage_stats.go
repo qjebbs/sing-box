@@ -13,6 +13,12 @@ import (
 // see Stats.failureCost, and the upper bound of any cost.
 var failureDelay = RTTOf(C.TCPTimeout)
 
+// Timeout returns the delay a failed check waited for, the longest a check can take. No
+// statistic of the successful checks can exceed it, so it is the cap of every score.
+func Timeout() RTT {
+	return failureDelay
+}
+
 // Stats is the statistics of RTTs
 type Stats struct {
 	All  int // total number of health checks
@@ -29,11 +35,16 @@ type Stats struct {
 	// well, but they are not the sum of squares a standard error is computed from.
 	Spread          RTT
 	DeviationSpread RTT
-	Average         RTT // average RTT of all health checks
-	Median          RTT // median RTT of all health checks
-	Max             RTT // maximum RTT of all health checks
-	Min             RTT // minimum RTT of all health checks
-	Latest          RTT // latest RTT of all health checks
+	// Standing is how much longer the node waits now than it does at its best: the
+	// median of the window minus the baseline of the node, see baseline. It is the
+	// statistic the idle objective ranks by, because it is the part of the delay that
+	// queueing adds, and queueing is what a congested line does to every connection.
+	Standing RTT
+	Average  RTT // average RTT of all health checks
+	Median   RTT // median RTT of all health checks
+	Max      RTT // maximum RTT of all health checks
+	Min      RTT // minimum RTT of all health checks
+	Latest   RTT // latest RTT of all health checks
 
 	Expires time.Time // time of the statistics expires
 }
@@ -86,7 +97,30 @@ func (s *Storage) refreshStats(now time.Time) {
 		}
 	}
 	stats := newStats(len(delays)+fail, fail, latest.Delay, expiresAt, delays)
+	if len(delays) >= 2 {
+		// The baseline is the fastest the node has been, so what goes into it is the
+		// fastest check of the round, not the median of the round: a minimum of medians
+		// says nothing about what the node can do, and in a quiet period every node is at
+		// its own median, which made every score zero and left nothing to rank.
+		//
+		// The round is written before it is read, because a minimum over real delays
+		// cannot make a score of zero: the baseline can never be above the median of the
+		// round that just set it.
+		s.baseline.Put(now, stats.Min)
+		if base, loaded := s.baseline.RTT(now); loaded {
+			stats.Standing = excess(stats.Median, base)
+		}
+	}
 	s.stats = stats
+}
+
+// excess returns how much larger value is than reference, zero when it is not larger: a
+// node that got faster than its own baseline is not queueing, it is early.
+func excess(value RTT, reference RTT) RTT {
+	if value <= reference {
+		return 0
+	}
+	return value - reference
 }
 
 // newStats returns the statistics of the values, all of the checks they are a part of,
@@ -123,6 +157,7 @@ func newStats(all int, fail int, latest RTT, expires time.Time, values []RTT) St
 		// measured.
 		stats.Jitter = stats.Average / 2
 		stats.MeanDeviation = stats.Average / 2
+		stats.Standing = stats.Average / 2
 		return stats
 	}
 	stats.Spread = standardDeviationOf(values)
@@ -220,12 +255,14 @@ func (s Stats) Succeeded() int {
 	return s.All - s.Fail
 }
 
-// Cost returns what an attempt costs on average, which is what the groups rank their
-// nodes by: base plus the spread added to it, mixed with the failures.
+// Cost returns what an attempt costs on average, which is what a group that ranks a time
+// ranks its nodes by: base plus the spread added to it, mixed with the failures.
 //
-// The caller chooses the terms: the median delay of the checks that succeeded plus their
-// jitter is what a node typically costs, and the mean distance to their median is how much
-// it hurts in total. See Stats.Jitter and Stats.MeanDeviation.
+// It is for a base that is a time the node costs. A base that is a distance from a
+// reference of the node itself cannot be mixed this way: a failure costs a timeout, and a
+// distance can be close to zero, so the mixed value would price a failure below the
+// queueing it should outweigh. The idle objective leaves the failures to max_fail
+// instead. See Stats.Jitter and Stats.Standing.
 func (s Stats) Cost(base RTT, spread RTT) RTT {
 	if s.All == 0 {
 		return Failed

@@ -21,9 +21,9 @@ const (
 	// Its score is a delay of hundreds of milliseconds, so a difference worth switching
 	// for is a share of a second: 50ms of a 500ms node.
 	DefaultQuickTolerance = 50 * healthcheck.Millisecond
-	// DefaultSteadyTolerance is the default tolerance of steady, around the steadiest
-	// node. Its score approaches zero for a steady node, so the band is much narrower.
-	DefaultSteadyTolerance = 10 * healthcheck.Millisecond
+	// DefaultIdleTolerance is the default tolerance of idle, around the node at its
+	// best. Its score approaches zero for such a node, so the band is much narrower.
+	DefaultIdleTolerance = 10 * healthcheck.Millisecond
 	// resolutionSigma is how many standard errors of the best score it takes to tell two
 	// nodes apart: the difference of two estimates carries the error of both, √2 each,
 	// and the comparison is taken at two standard errors.
@@ -44,7 +44,7 @@ const (
 )
 
 // ScoreObjective is the objective of a group that ranks its nodes by a score: quick and
-// steady are both one. They only differ in the statistic the score is made of, which is
+// idle are both one. They only differ in the statistic the score is made of, which is
 // also what their default tolerance is sized for.
 type ScoreObjective struct {
 	*QualifiedObjective
@@ -59,6 +59,10 @@ type ScoreObjective struct {
 	// jitterFunc is added to the score as a penalty, it is nil when the base already is a
 	// spread, since adding another one would rank the same thing twice.
 	jitterFunc func(node *Node) healthcheck.RTT
+	// noiseFunc is the scale of one round of the baseFunc: how much a single check moves
+	// it. The band is sized by it, so it is a typical deviation rather than the deviation
+	// summed over the window, see band.
+	noiseFunc func(node *Node) healthcheck.RTT
 }
 
 // Name implements Objective.
@@ -78,14 +82,55 @@ func medianRTT(node *Node) healthcheck.RTT {
 	return node.ScaleRTT(node.Median)
 }
 
-// NewSteadyObjective returns a new ScoreObjective. It ranks the nodes by how much
-// they stray from their own median, whatever that median is: a node of 500ms that stays
-// there is steadier than a node of 100ms that swings, and the distance of the node is not
-// part of the question. Bounding the distance is what max_rtt is for.
-func NewSteadyObjective(options option.LoadBalancePickOptions) *ScoreObjective {
-	objective := newScoreObjective(options, DefaultSteadyTolerance)
-	objective.name = ObjectiveSteady
-	objective.baseFunc = meanDeviationRTT
+// measurement returns the statistic of a node that needs more than one check to exist,
+// absent when there is only one: a single check has no variation to report, and the value
+// the implementation stores for it is a placeholder, not a measurement.
+func measurement(node *Node, statistic func(*Node) healthcheck.RTT) healthcheck.RTT {
+	if node.Succeeded() < 2 {
+		return healthcheck.Failed
+	}
+	return statistic(node)
+}
+
+// spreadRTT is how far the checks are from their average: the scale the error of the
+// score is measured in, and what the band of the objective is sized by.
+func spreadRTT(node *Node) healthcheck.RTT {
+	return measurement(node, func(node *Node) healthcheck.RTT { return node.ScaleRTT(node.Spread) })
+}
+
+// deviationSpreadRTT is how far the distances to the median are from their average: an
+// uneven variation is a node that changed within the window rather than one that moves.
+func deviationSpreadRTT(node *Node) healthcheck.RTT {
+	return measurement(node, func(node *Node) healthcheck.RTT { return node.ScaleRTT(node.DeviationSpread) })
+}
+
+// standingRTT is the part of the delay that queueing adds, see healthcheck.Stats.Standing.
+func standingRTT(node *Node) healthcheck.RTT {
+	return measurement(node, func(node *Node) healthcheck.RTT { return node.ScaleRTT(node.Standing) })
+}
+
+// medianJitterRTT is the typical deviation scaled to the error of a median: the standard
+// error of a median is medianToError times σ over √n, and the jitter estimates σ from the
+// typical deviation rather than from the sum of squares. The band is sized by it, so one
+// slow check cannot widen it, see band.
+func medianJitterRTT(node *Node) healthcheck.RTT {
+	return node.ScaleRTT(healthcheck.RTT(medianToError * float64(node.Jitter)))
+}
+
+// NewIdleObjective returns a new ScoreObjective. It ranks the nodes by the part of the
+// delay that queueing adds: how much longer the node waits now than it does when it is at
+// its best, see healthcheck.Stats.Standing. A node of 500ms that is always 500ms adds
+// nothing, and a node of 100ms that queues up to 600ms adds 500: the distance of the node
+// is not part of the question, bounding it is what max_rtt is for.
+//
+// The failures are not priced in, because the score is not a time the node costs: it is a
+// distance from the node's own best, and can be close to zero. A failure is kept out by
+// max_fail instead.
+func NewIdleObjective(options option.LoadBalancePickOptions) *ScoreObjective {
+	objective := newScoreObjective(options, DefaultIdleTolerance)
+	objective.name = ObjectiveIdle
+	objective.baseFunc = standingRTT
+	objective.noiseFunc = medianJitterRTT
 	return objective
 }
 
@@ -99,6 +144,7 @@ func NewQuickObjective(options option.LoadBalancePickOptions) *ScoreObjective {
 	objective.name = ObjectiveQuick
 	objective.baseFunc = medianRTT
 	objective.jitterFunc = jitterRTT
+	objective.noiseFunc = jitterRTT
 	return objective
 }
 
@@ -122,17 +168,34 @@ func toleranceOption(value badoption.Duration, defaultValue healthcheck.RTT) hea
 
 // Score returns the cost of using the node, lower is better:
 //
-//	quick  = MED + JIT       what a node typically costs
-//	steady = MeanDeviation   how much it strays from its own typical delay
+//	quick  = MED + JIT       what a node typically costs, failures priced in
+//	idle = Standing          how much longer it waits than at its best
 //
 // The jitter term is absent when the objective has no jitterFunc, which is the case for
-// steady: its base is a spread already. See healthcheck.Stats.Cost for what an attempt
-// costs on average, including the failures.
+// idle: its base is the excess over the baseline already, and a node at its best has an
+// excess of zero. See healthcheck.Stats.Cost for how a time is mixed with the failures,
+// which is what quick does.
 func (o *ScoreObjective) Score(node *Node) healthcheck.RTT {
+	if node.Stats.All == 0 {
+		// nothing was measured, there is no score to report
+		return healthcheck.Failed
+	}
+	if node.Stats.Succeeded() == 0 {
+		// nothing worked, the timeout is all that is known about the node
+		return healthcheck.Timeout()
+	}
 	base := o.baseFunc(node)
 	if o.jitterFunc == nil {
-		// steady: the base is the spread itself
-		return node.Stats.Cost(base, 0)
+		// idle: a distance from the node's own best, so the failures are not mixed in,
+		// see NewIdleObjective. It is capped like any other score, and a node at its
+		// best has an excess of zero, which RTT reserves for a missing value.
+		if base > healthcheck.Timeout() {
+			return healthcheck.Timeout()
+		}
+		if base == healthcheck.Failed {
+			return healthcheck.Millisecond
+		}
+		return base
 	}
 	// quick: the typical delay plus the jitter it typically adds
 	return node.Stats.Cost(base, o.jitterFunc(node))
@@ -153,7 +216,12 @@ func (o *ScoreObjective) scoreOf(node *Node) float64 {
 // sum of squares is taken over; reading it off the jitter or the mean deviation instead
 // assumes normal samples and a robust centre as accurate as σ, and no real window is. On
 // live windows that assumption understated the standard error of a quick score by about
-// three times, and of a steady score by half again.
+// three times, and of an idle score by half again.
+//
+// idle keeps the spread here even though its band is sized by the jitter: the band is a
+// decision threshold that has to stay narrow enough to tell the nodes apart, this is how
+// wrong the score of a known node may be. The two are then far apart, so the allowance of
+// Keep is capped at the band and a node is kept within twice it, see Keep.
 func (o *ScoreObjective) scoreStandardError(node *Node) float64 {
 	n := float64(node.Stats.Succeeded())
 	if n < 2 {
@@ -161,9 +229,10 @@ func (o *ScoreObjective) scoreStandardError(node *Node) float64 {
 		return float64(o.baseFunc(node))
 	}
 	if o.jitterFunc == nil {
-		// steady: the score is the average distance to the median, and the standard error
-		// of an average is the spread of the values it averages over √n
-		return float64(node.ScaleRTT(node.Stats.DeviationSpread)) / math.Sqrt(n)
+		// idle: the score is the median minus a constant, and the baseline is one: the
+		// error of the score is the error of the median, which is medianToError times the
+		// spread of the samples over √n
+		return medianToError * float64(node.ScaleRTT(node.Stats.Spread)) / math.Sqrt(n)
 	}
 	// quick: the score is the median plus the jitter, two estimates of the same samples,
 	// each with its own error, combined by their variance
@@ -258,7 +327,15 @@ func SelectCluster(
 	return nodes[:count]
 }
 
-// SortByLeast sorts nodes by least value from rttFunc and more.
+// SortByLeast sorts the nodes by the least value from rttFunc, and by the rest of what is
+// known about them when two values are equal.
+//
+// The equal case is not a detail of sorting: a group in a quiet period has most of its
+// nodes at their own best, so equal values are the rule, and the order among them decides
+// which node is read as the best one — the band of the group is sized by that node. The
+// statistics therefore come next, each of them something that makes a node a better
+// reference than another: the spread first, because the band is sized by it, then the
+// variation the node shows, then its queueing, then how much evidence there is.
 func SortByLeast(nodes []*Node, rttFunc func(*Node) healthcheck.RTT) {
 	sort.Slice(nodes, func(i, j int) bool {
 		left := nodes[i]
@@ -266,24 +343,23 @@ func SortByLeast(nodes []*Node, rttFunc func(*Node) healthcheck.RTT) {
 		if left.Status != right.Status {
 			return left.Status > right.Status
 		}
-		leftRTT, rightRTT := rttFunc(left), rttFunc(right)
-		if leftRTT != rightRTT {
-			// 0, 100
-			if leftRTT == healthcheck.Failed {
-				return false
+		if less, decided := lessRTT(rttFunc(left), rttFunc(right)); decided {
+			return less
+		}
+		// A statistic that needs two checks to exist is absent with one, so a node of a
+		// single check is decided on at the end of the list rather than on a zero its
+		// measurement never produced.
+		for _, statistic := range tieBreakers {
+			if less, decided := lessRTT(statistic(left), statistic(right)); decided {
+				return less
 			}
-			// 100, 0
-			if rightRTT == healthcheck.Failed {
-				return true
-			}
-			// 100, 200
-			return leftRTT < rightRTT
 		}
 		if left.Fail != right.Fail {
 			return left.Fail < right.Fail
 		}
-		if left.All != right.All {
-			return left.All < right.All
+		if leftSucceeded, rightSucceeded := left.Succeeded(), right.Succeeded(); leftSucceeded != rightSucceeded {
+			// the same estimate from more checks is the better founded one
+			return leftSucceeded > rightSucceeded
 		}
 		// order by random to avoid always selecting
 		// the same nodes when all nodes are equal
@@ -291,26 +367,60 @@ func SortByLeast(nodes []*Node, rttFunc func(*Node) healthcheck.RTT) {
 	})
 }
 
+// tieBreakers are the statistics that order two nodes of equal value, in the order they
+// are read: the smaller value wins for each of them.
+var tieBreakers = []func(*Node) healthcheck.RTT{
+	// the spread, which the band of the objective is sized by: an unpredictable node as
+	// the reference widens the band for every candidate
+	spreadRTT,
+	// the typical variation, robust against a few spikes
+	func(node *Node) healthcheck.RTT { return measurement(node, jitterRTT) },
+	// the variation the node cost in total
+	func(node *Node) healthcheck.RTT { return measurement(node, meanDeviationRTT) },
+	// the part of the delay that queueing adds, which a node can lose on its own
+	standingRTT,
+	// how evenly the variation is spread over the checks
+	deviationSpreadRTT,
+}
+
+// lessRTT orders two delays and reports whether the order is decided: equal values leave
+// it to the next statistic. A statistic of a node with fewer than two successful checks is
+// not a measurement, and is compared as absent rather than as zero.
+func lessRTT(left, right healthcheck.RTT) (less bool, decided bool) {
+	if left == right {
+		return false, false
+	}
+	if left == healthcheck.Failed {
+		return false, true
+	}
+	if right == healthcheck.Failed {
+		return true, true
+	}
+	return left < right, true
+}
+
 // band returns the width of the tolerance around the best node, the range in which another
 // node counts as equally good: the tolerance of the objective plus a resolution margin.
 //
 // The margin is always added, because the tolerance describes the true difference while the
-// comparison only sees observed values. Its scale is the jitter of the best node, not the
-// standard error of its score: the margin decides who counts as equally good, and a margin
-// that followed the full error of the score would be widened by a single slow check, letting
-// one probe decide that a clearly worse node is equally good. The jitter is a median, so it
-// describes the node while the margin stays put.
+// comparison only sees observed values. Its scale is a typical deviation of the best node,
+// not the standard error of its score: the margin decides who counts as equally good, and a
+// margin that followed the full error of the score would be widened by a single slow check,
+// letting one probe decide that a clearly worse node is equally good. A typical deviation is
+// a median, so it describes the node while the margin stays put, see noiseFunc.
 //
-// The price is that the margin is narrower than the error of the score: measured on live
-// windows, the standard error of a quick score is about 2.8 times the jitter over √n. The
-// band is therefore a floor on the resolution, not a 95% one, and the tolerance is sized
-// knowing that.
+// The price is that the margin is narrower than the error of the score. On live windows the
+// standard error of a quick score was about three times the jitter over √n, and of an idle
+// score far more, since one slow check moves the spread of a node and not its jitter. A band
+// sized by the spread then counts most of the qualified nodes as equally good and the group
+// has no ranking left. The band is therefore a floor on the resolution, not a 95% one, and
+// the tolerance is sized knowing that.
 func (o *ScoreObjective) band(best *Node) float64 {
 	band := float64(o.tolerance)
 	if succeeded := float64(best.Stats.Succeeded()); succeeded >= 2 {
-		// the typical spread of the node, the scale the reading of its score can be off by
-		spread := float64(best.ScaleRTT(best.Jitter))
-		band += resolutionSigma * spread / math.Sqrt(succeeded)
+		// the scale the reading of the score can be off by, see noiseFunc
+		noise := float64(o.noiseFunc(best))
+		band += resolutionSigma * noise / math.Sqrt(succeeded)
 	}
 	return band
 }

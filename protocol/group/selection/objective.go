@@ -40,7 +40,7 @@ func Filter(objective Objective, all []*Node) []*Node {
 type ObjectiveOptions struct {
 	// Tolerance is the band around the best node, in absolute milliseconds: a node whose
 	// score is at most this far above the best one counts as equally good. 0 for the
-	// default of the objective, 10ms for steady and 50ms for quick.
+	// default of the objective, 10ms for idle and 50ms for quick.
 	Tolerance time.Duration
 	// MinNodes is the fewest nodes the cluster is extended to, MaxNodes the most it is
 	// limited to, 0 for no limit.
@@ -60,8 +60,8 @@ func NewObjective(name string, options ObjectiveOptions) (Objective, error) {
 		return NewAliveObjective(), nil
 	case ObjectiveQualified:
 		return NewQualifiedObjective(), nil
-	case ObjectiveSteady:
-		return NewSteadyObjective(pick), nil
+	case ObjectiveIdle:
+		return NewIdleObjective(pick), nil
 	case ObjectiveQuick:
 		return NewQuickObjective(pick), nil
 	default:

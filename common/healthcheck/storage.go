@@ -8,6 +8,9 @@ import (
 type Storage struct {
 	validity time.Duration
 	history  *ring[History]
+	// baseline is the fastest the node has been, kept per time of day. It outlives the
+	// window: a window describes the node now, the baseline describes what it can be.
+	baseline baseline
 	stats    Stats
 }
 

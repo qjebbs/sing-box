@@ -56,10 +56,10 @@ Required. There is no implicit default health check.
 
 The objective of the choice. Default is `quick`.
 
-| Objective | Description                                        |
-| --------- | -------------------------------------------------- |
-| `quick`   | the node that usually costs the least              |
-| `steady`  | the node that varies the least, whatever its delay |
+| Objective | Description                                     |
+| --------- | ----------------------------------------------- |
+| `quick`   | the node that usually costs the least           |
+| `idle`    | the node that queues the least |
 
 The objectives rank the nodes the same way as the
 [load balance `objective`](/configuration/outbound/loadbalance/#objective) field, without
@@ -71,14 +71,13 @@ The reasoning behind the statistics, the scores and the tolerance is on the
 #### tolerance
 
 The maximum **absolute** difference to the best node, default is `50ms` for `quick` and `10ms` for
-`steady`, i.e. a node whose score is at most this far above the best one still counts as equally
+`idle`, i.e. a node whose score is at most this far above the best one still counts as equally
 good. The two scores are of different magnitudes, which is why the defaults differ.
 
 The node in use keeps its place while its score is within this band of the best one, so a
 difference that is not worth the switch keeps the connections where they are. The band also carries
 a **resolution margin** that shrinks with the sample count and grows with the jitter of the best
-node, so it is never narrower than this value, see
-[Node Rating](/configuration/shared/node-rating/#tolerance).
+node, so it is never narrower than this value.
 
 #### interrupt_exist_connections
 

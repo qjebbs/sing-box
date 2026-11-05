@@ -32,9 +32,9 @@ var (
 )
 
 // urlTestObjectives are the objectives this group accepts. It uses one node at a time,
-// which only quick and steady rank: alive and qualified hand every node of their class to
+// which only quick and idle rank: alive and qualified hand every node of their class to
 // the selection, which would then have to break the tie itself.
-var urlTestObjectives = []string{selection.ObjectiveQuick, selection.ObjectiveSteady}
+var urlTestObjectives = []string{selection.ObjectiveQuick, selection.ObjectiveIdle}
 
 // urlTestObjective validates the configured objective and returns it, defaulting to quick.
 func urlTestObjective(options option.ProviderURLTestOptions) (string, error) {

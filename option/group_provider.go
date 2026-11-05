@@ -13,13 +13,13 @@ type ProviderSelectorOptions struct {
 type ProviderURLTestOptions struct {
 	ProviderGroupCommonOption
 	HealthCheck *HealthCheckOptions `json:"health_check,omitempty"`
-	// objective ranks the nodes, it is quick or steady. Default is quick, the median delay
+	// objective ranks the nodes, it is quick or idle. Default is quick, the median delay
 	// plus the jitter and the failures.
 	Objective string `json:"objective,omitempty"`
 	// tolerance is the absolute band of the best node: the node in use keeps its place
 	// while its score is at most this far above the best one, and the same band decides
 	// whether a node that was just replaced keeps the connections it already carries.
-	// Default is 10ms for steady and 50ms for quick.
+	// Default is 10ms for idle and 50ms for quick.
 	Tolerance                 badoption.Duration `json:"tolerance,omitempty"`
 	InterruptExistConnections bool               `json:"interrupt_exist_connections,omitempty"`
 }

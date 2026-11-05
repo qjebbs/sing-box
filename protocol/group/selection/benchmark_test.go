@@ -20,7 +20,7 @@ import (
 var (
 	benchmarkPickOptions            = option.LoadBalancePickOptions{}
 	benchmarkAliveObjective         = selection.NewAliveObjective()
-	benchmarkSteadyObjective        = selection.NewSteadyObjective(benchmarkPickOptions)
+	benchmarkIdleObjective          = selection.NewIdleObjective(benchmarkPickOptions)
 	benchmarkRandomStrategy         = selection.NewRandomStrategy()
 	benchmarkRoundRobinStrategy     = selection.NewRoundRobinStrategy()
 	benchmarkConsistentHashStrategy = selection.NewConsistentHashStrategy()
@@ -34,12 +34,12 @@ func BenchmarkAliveRandom128(b *testing.B) {
 	benchmarkBalancer(b, benchmarkAliveObjective, benchmarkRandomStrategy, 128)
 }
 
-func BenchmarkSteadyRandom32(b *testing.B) {
-	benchmarkBalancer(b, benchmarkSteadyObjective, benchmarkRandomStrategy, 32)
+func BenchmarkIdleRandom32(b *testing.B) {
+	benchmarkBalancer(b, benchmarkIdleObjective, benchmarkRandomStrategy, 32)
 }
 
-func BenchmarkSteadyRandom128(b *testing.B) {
-	benchmarkBalancer(b, benchmarkSteadyObjective, benchmarkRandomStrategy, 128)
+func BenchmarkIdleRandom128(b *testing.B) {
+	benchmarkBalancer(b, benchmarkIdleObjective, benchmarkRandomStrategy, 128)
 }
 
 func BenchmarkAliveRoundRobin32(b *testing.B) {
@@ -50,12 +50,12 @@ func BenchmarkAliveRoundRobin128(b *testing.B) {
 	benchmarkBalancer(b, benchmarkAliveObjective, benchmarkRoundRobinStrategy, 128)
 }
 
-func BenchmarkSteadyRoundRobin32(b *testing.B) {
-	benchmarkBalancer(b, benchmarkSteadyObjective, benchmarkRoundRobinStrategy, 32)
+func BenchmarkIdleRoundRobin32(b *testing.B) {
+	benchmarkBalancer(b, benchmarkIdleObjective, benchmarkRoundRobinStrategy, 32)
 }
 
-func BenchmarkSteadyRoundRobin128(b *testing.B) {
-	benchmarkBalancer(b, benchmarkSteadyObjective, benchmarkRoundRobinStrategy, 128)
+func BenchmarkIdleRoundRobin128(b *testing.B) {
+	benchmarkBalancer(b, benchmarkIdleObjective, benchmarkRoundRobinStrategy, 128)
 }
 
 func BenchmarkAliveConsistentHash32(b *testing.B) {
@@ -66,12 +66,12 @@ func BenchmarkAliveConsistentHash128(b *testing.B) {
 	benchmarkBalancer(b, benchmarkAliveObjective, benchmarkConsistentHashStrategy, 128)
 }
 
-func BenchmarkSteadyConsistentHash32(b *testing.B) {
-	benchmarkBalancer(b, benchmarkSteadyObjective, benchmarkConsistentHashStrategy, 32)
+func BenchmarkIdleConsistentHash32(b *testing.B) {
+	benchmarkBalancer(b, benchmarkIdleObjective, benchmarkConsistentHashStrategy, 32)
 }
 
-func BenchmarkSteadyConsistentHash128(b *testing.B) {
-	benchmarkBalancer(b, benchmarkSteadyObjective, benchmarkConsistentHashStrategy, 128)
+func BenchmarkIdleConsistentHash128(b *testing.B) {
+	benchmarkBalancer(b, benchmarkIdleObjective, benchmarkConsistentHashStrategy, 128)
 }
 
 func benchmarkBalancer(b *testing.B, f selection.Objective, s selection.Strategy, count int) {

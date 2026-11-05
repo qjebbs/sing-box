@@ -15,11 +15,11 @@ func BenchmarkAlive128(b *testing.B) {
 }
 
 func BenchmarkLeastLoad32(b *testing.B) {
-	benchmarkObjective(b, benchmarkSteadyObjective, 32)
+	benchmarkObjective(b, benchmarkIdleObjective, 32)
 }
 
 func BenchmarkLeastLoad128(b *testing.B) {
-	benchmarkObjective(b, benchmarkSteadyObjective, 128)
+	benchmarkObjective(b, benchmarkIdleObjective, 128)
 }
 
 func benchmarkObjective(b *testing.B, f selection.Objective, count int) {

@@ -18,7 +18,7 @@ func TestURLTestObjective(t *testing.T) {
 	}{
 		{name: "default", options: option.ProviderURLTestOptions{}, want: "quick"},
 		{name: "quick", options: option.ProviderURLTestOptions{Objective: "quick"}, want: "quick"},
-		{name: "steady", options: option.ProviderURLTestOptions{Objective: "steady"}, want: "steady"},
+		{name: "idle", options: option.ProviderURLTestOptions{Objective: "idle"}, want: "idle"},
 		// only the least* objectives limit the pick to max_nodes, the others would use
 		// a different node per connection
 		{name: "alive", options: option.ProviderURLTestOptions{Objective: "alive"}, wantErr: true},
@@ -40,12 +40,12 @@ func TestURLTestObjective(t *testing.T) {
 			want: "quick",
 		},
 		{
-			name: "tolerance on steady",
+			name: "tolerance on idle",
 			options: option.ProviderURLTestOptions{
-				Objective: "steady",
+				Objective: "idle",
 				Tolerance: badoption.Duration(10 * time.Millisecond),
 			},
-			want: "steady",
+			want: "idle",
 		},
 	}
 	for _, testCase := range testCases {

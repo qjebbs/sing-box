@@ -96,12 +96,12 @@ func TestSelectCluster(t *testing.T) {
 
 func TestSelectClusterSortsFirst(t *testing.T) {
 	t.Parallel()
-	objective := selection.NewSteadyObjective(option.LoadBalancePickOptions{})
+	objective := selection.NewIdleObjective(option.LoadBalancePickOptions{})
 	nodes := []*selection.Node{
-		{Index: 0, Status: selection.StatusQualified, Stats: healthcheck.Stats{MeanDeviation: 120, All: 10}},
-		{Index: 1, Status: selection.StatusQualified, Stats: healthcheck.Stats{MeanDeviation: 15, All: 10}},
-		{Index: 2, Status: selection.StatusQualified, Stats: healthcheck.Stats{MeanDeviation: 18, All: 10}},
-		{Index: 3, Status: selection.StatusQualified, Stats: healthcheck.Stats{MeanDeviation: 191, All: 10}},
+		{Index: 0, Status: selection.StatusQualified, Stats: healthcheck.Stats{Standing: 120, All: 10}},
+		{Index: 1, Status: selection.StatusQualified, Stats: healthcheck.Stats{Standing: 15, All: 10}},
+		{Index: 2, Status: selection.StatusQualified, Stats: healthcheck.Stats{Standing: 18, All: 10}},
+		{Index: 3, Status: selection.StatusQualified, Stats: healthcheck.Stats{Standing: 191, All: 10}},
 	}
 	selected := selection.Filter(objective, nodes)
 	if len(selected) != 2 {
@@ -228,20 +228,22 @@ func TestLeastPingScore(t *testing.T) {
 
 func TestLeastLoadScore(t *testing.T) {
 	t.Parallel()
-	// steady scores by how much the node strays from its own median, whatever that
-	// median is: the distance of the node is not part of the question.
-	objective := selection.NewSteadyObjective(option.LoadBalancePickOptions{})
+	// idle scores by how much the node waits now over its own best, whatever that best
+	// is: the distance of the node is not part of the question.
+	objective := selection.NewIdleObjective(option.LoadBalancePickOptions{})
 	testCases := []struct {
 		name  string
 		stats healthcheck.Stats
 		want  healthcheck.RTT
 	}{
-		// the mean distance to the median, the jitter is not used
-		{name: "clear", stats: healthcheck.Stats{Median: 160, Jitter: 90, MeanDeviation: 40, All: 10}, want: 40},
-		// 4s of median and 40ms of mean deviation is as steady as 160ms and 40ms
-		{name: "far but steady", stats: healthcheck.Stats{Median: 4000, Jitter: 90, MeanDeviation: 40, All: 10}, want: 40},
-		// (8*40 + 2*120) / 10, the failures are still mixed in
-		{name: "failures", stats: healthcheck.Stats{MeanDeviation: 40, All: 10, Fail: 2}, want: 56},
+		// the excess over the baseline, the jitter and the mean deviation are not used
+		{name: "clear", stats: healthcheck.Stats{Median: 160, Jitter: 90, MeanDeviation: 40, Standing: 40, All: 10}, want: 40},
+		// 4s of median and 40ms of queueing is as idle as 160ms and 40ms
+		{name: "far but idle", stats: healthcheck.Stats{Median: 4000, Jitter: 90, MeanDeviation: 40, Standing: 40, All: 10}, want: 40},
+		// the failures are not priced in: queueing and a timeout are not on one scale, a
+		// node that fails is kept out by max_fail instead
+		{name: "failures", stats: healthcheck.Stats{Standing: 40, All: 10, Fail: 2}, want: 40},
+		{name: "at its best", stats: healthcheck.Stats{Median: 160, Standing: 0, All: 10}, want: healthcheck.Millisecond},
 		{name: "never succeeded", stats: healthcheck.Stats{All: 10, Fail: 10}, want: 15000},
 		{name: "never checked", stats: healthcheck.Stats{}, want: 0},
 	}
@@ -262,7 +264,7 @@ func TestLeastPingScoreDoesNotUseMeanDeviation(t *testing.T) {
 	t.Parallel()
 	// A node that stalled once has a large mean deviation and a small jitter. quick
 	// ranks what the node typically costs, so the stall does not turn it into a slow
-	// node; that is what steady is for.
+	// node; that is what idle is for.
 	objective := selection.NewQuickObjective(option.LoadBalancePickOptions{})
 	node := &selection.Node{Status: selection.StatusQualified, Stats: healthcheck.Stats{
 		Median: 160, Jitter: 10, MeanDeviation: 457, All: 10,
@@ -274,9 +276,9 @@ func TestLeastPingScoreDoesNotUseMeanDeviation(t *testing.T) {
 
 func TestLeastLoadScoreDoesNotUseJitter(t *testing.T) {
 	t.Parallel()
-	// A node with one stall and a node without any rank the same by steady when their
+	// A node with one stall and a node without any rank the same by idle when their
 	// mean deviations match: the jitter is the typical one, and it ignores the stall.
-	objective := selection.NewSteadyObjective(option.LoadBalancePickOptions{})
+	objective := selection.NewIdleObjective(option.LoadBalancePickOptions{})
 	stalled := &selection.Node{Status: selection.StatusQualified, Stats: healthcheck.Stats{
 		Median: 160, Jitter: 13, MeanDeviation: 457, All: 10,
 	}}
@@ -431,46 +433,61 @@ func TestLeastKeepIsCappedByTheBand(t *testing.T) {
 
 func TestLeastLoadKeep(t *testing.T) {
 	t.Parallel()
-	// steady scores by the mean distance to the median: 40ms with 10 samples. The band
-	// is the 10ms tolerance plus the margin of a 20ms jitter, about 28ms, and the noise
-	// of two such estimates is capped at it, so a node up to roughly 68ms is kept.
+	// idle scores by the excess over the baseline: 40ms with 10 samples. The band is the
+	// 10ms tolerance plus the margin of a typical deviation of 8ms, about 19ms, and the
+	// noise of two such estimates is larger, so the allowance is capped at the band and a
+	// node up to 78ms is kept.
 	best := &selection.Node{
 		Status: selection.StatusQualified,
-		Stats:  healthcheck.Stats{All: 10, MeanDeviation: 40, Jitter: 20},
+		Stats:  healthcheck.Stats{All: 10, Standing: 40, Jitter: 8, Spread: 20},
 	}
-	objective := selection.NewSteadyObjective(option.LoadBalancePickOptions{})
+	objective := selection.NewIdleObjective(option.LoadBalancePickOptions{})
 	close := &selection.Node{
 		Status: selection.StatusQualified,
-		Stats:  healthcheck.Stats{All: 10, MeanDeviation: 52, Jitter: 26},
+		Stats:  healthcheck.Stats{All: 10, Standing: 52, Jitter: 10, Spread: 26},
 	}
 	if !objective.Keep(close, best) {
-		t.Fatalf("a node within the noise of the spread was dropped, score %v", objective.Score(close))
+		t.Fatalf("a node within the noise of the typical deviation was dropped, score %v", objective.Score(close))
 	}
 	far := &selection.Node{
 		Status: selection.StatusQualified,
-		Stats:  healthcheck.Stats{All: 10, MeanDeviation: 300, Jitter: 26},
+		Stats:  healthcheck.Stats{All: 10, Standing: 300, Jitter: 10, Spread: 26},
 	}
 	if objective.Keep(far, best) {
 		t.Fatalf("a node with 7 times the spread was kept")
 	}
+	// A node whose spread was moved by one slow check and whose typical delay did not
+	// move: the band is sized by the latter, so the node 40ms behind is not equally good.
+	// Sized by the spread of 122ms, the band would be 202ms and it would be.
+	spiky := &selection.Node{
+		Status: selection.StatusQualified,
+		Stats:  healthcheck.Stats{All: 5, Standing: 2, Jitter: 3, Spread: 122},
+	}
+	behind := &selection.Node{
+		Status: selection.StatusQualified,
+		Stats:  healthcheck.Stats{All: 5, Standing: 42, Jitter: 10, Spread: 30},
+	}
+	if objective.Keep(behind, spiky) {
+		t.Fatalf("a node 40ms behind was kept, the band of %v took in the spread instead of the typical deviation", objective.Limit(spiky))
+	}
 }
 
-func TestLeastLoadRanksSteadyFirst(t *testing.T) {
+func TestLeastLoadRanksIdleFirst(t *testing.T) {
 	t.Parallel()
-	// A node whose spread is exactly zero has a cost of zero, which must not read as
-	// a missing score: steady would rank the steadiest node behind every other one.
-	steady := &selection.Node{Status: selection.StatusQualified, Stats: healthcheck.Stats{
-		All: 10, Median: 100, MeanDeviation: 0, Latest: 100,
+	// A node at its best has no queueing at all, a score of zero, which must not read as
+	// a missing score: idle would rank the node at its best behind every other one.
+	idle := &selection.Node{Status: selection.StatusQualified, Stats: healthcheck.Stats{
+		All: 10, Median: 100, Standing: 0, Latest: 100,
 	}}
 	unstable := &selection.Node{Status: selection.StatusQualified, Stats: healthcheck.Stats{
-		All: 10, Median: 100, MeanDeviation: 50, Latest: 100,
+		All: 10, Median: 100, Standing: 50, Latest: 100,
 	}}
-	objective := selection.NewSteadyObjective(option.LoadBalancePickOptions{MinNodes: 1, MaxNodes: 1})
-	ranked := objective.Rank([]*selection.Node{unstable, steady})
-	if ranked[0] != steady {
-		t.Fatalf("want the steady node first, got %v to %v", objective.Score(ranked[0]), objective.Score(ranked[1]))
+	objective := selection.NewIdleObjective(option.LoadBalancePickOptions{MinNodes: 1, MaxNodes: 1})
+	ranked := objective.Rank([]*selection.Node{unstable, idle})
+	if ranked[0] != idle {
+		t.Fatalf("want the idle node first, got %v to %v", objective.Score(ranked[0]), objective.Score(ranked[1]))
 	}
-	if selected := selection.Filter(objective, []*selection.Node{unstable, steady}); len(selected) != 1 || selected[0] != steady {
-		t.Fatalf("want only the steady node selected, got %d", len(selected))
+	if selected := selection.Filter(objective, []*selection.Node{unstable, idle}); len(selected) != 1 || selected[0] != idle {
+		t.Fatalf("want only the idle node selected, got %d", len(selected))
 	}
 }

@@ -82,7 +82,7 @@ The objective of load balancing. Default is `alive`.
 | `alive`     | prefer alive nodes                                         |
 | `qualified` | prefer qualified nodes (`max_rtt`, `max_fail`)             |
 | `quick`     | the nodes that typically cost the least: delay plus jitter |
-| `steady`    | the steadiest nodes, whatever their distance               |
+| `idle`      | the nodes that queue the least         |
 
 Load balancing divides nodes into three classes:
 
@@ -90,25 +90,26 @@ Load balancing divides nodes into three classes:
 2. Alive Nodes, that pass the health check
 3. Qualified Nodes, that are alive and meet the constraints (`max_rtt`, `max_fail`)
 
-It tries to pick from the class that the objective is targeting (see the table above). If there is no node for current class, it falls back to the next class. For example, the behavior of `steady` could be:
+It tries to pick from the class that the objective is targeting (see the table above). If there is no node for current class, it falls back to the next class. For example, the behavior of `idle` could be:
 
-- Pick steady nodes from qualified ones
-- Pick steady nodes from alives ones
-- Pick steady nodes from failed ones (could be temporarily failed)
+- Apply `idle` to the qualified nodes
+- Apply `idle` to the alive nodes
+- Apply `idle` to the failed nodes (could be temporarily failed)
 
-Generally speaking, use `steady`, `quick` for better network quality; use `alive` for more quantity of outbound nodes.
+Generally speaking, use `idle`, `quick` for better network quality; use `alive` for more quantity of outbound nodes.
 
-Both `steady` and `quick` rank the nodes by a score, lower is better:
+Both `idle` and `quick` rank the nodes by a score, lower is better:
 
 ```
 MED     = median(x₁ … xₙ)
 JIT     = 1.4826 * median(|xᵢ − MED|)
 DEV     = (1/n) * Σ|xᵢ − MED|
-cost    = DEV              # steady
 cost    = MED + JIT        # quick
 failure = min(TIMEOUT, 3 * cost)
+standing= MED - BASELINE   # idle: over the node's own best
 
-score   = (ALL - FAIL) / ALL * cost + FAIL / ALL * failure
+score   = (ALL - FAIL) / ALL * cost + FAIL / ALL * failure   # quick
+score   = min(TIMEOUT, standing)                             # idle
 ```
 
 `MED`, `JIT` and `DEV` describe the **successful** checks only, so the successes and the
@@ -145,23 +146,26 @@ The maximum round-trip time of health check that is acceptable for qulified node
 
 The maximum number of health check failures for qulified nodes, default is `0`, i.e. no failures allowed.
 
+The `idle` objective cannot reflect a failure in its score, so you may want to use this setting to
+remove the nodes that failed during the check window.
+
 #### tolerance
 
-> Only used by the `quick` and `steady` objectives: `alive` and `qualified` have no score, so
+> Only used by the `quick` and `idle` objectives: `alive` and `qualified` have no score, so
 > setting it has no effect
 
 The maximum **absolute** difference to the best node, default is `50ms` for `quick` and `10ms` for
-`steady`, i.e. nodes whose score is at most this far above the best one are selected with it. The
+`idle`, i.e. nodes whose score is at most this far above the best one are selected with it. The
 two scores are of different magnitudes, which is why the defaults differ: the score of `quick` is a
-delay of hundreds of milliseconds, the one of `steady` a spread of a few.
+delay of hundreds of milliseconds, the one of `idle` the queueing it adds on top of its own
+best, which is of the same order.
 
 The band also carries a **resolution margin** that shrinks with the sample count and grows with the
-jitter of the best node, so it is never narrower than this value, see
-[Node Rating](/configuration/shared/node-rating/#tolerance).
+jitter of the best node, so it is never narrower than this value.
 
 #### min_nodes
 
-> Available only for the `quick` and `steady` objectives
+> Available only for the `quick` and `idle` objectives
 
 The minimum number of nodes to select, default is `1`.
 
@@ -169,7 +173,7 @@ This only affects the case when the nodes within the tolerance are fewer than `m
 
 #### max_nodes
 
-> Available only for the `quick` and `steady` objectives
+> Available only for the `quick` and `idle` objectives
 
 The maximum number of nodes to select, default is `0`, which means unlimited.
 
@@ -197,6 +201,6 @@ Interrupt existing connections when the selected outbound has changed.
 
 Only inbound connections are affected by this setting, internal connections will always be interrupted.
 
-For `quick` and `steady` objectives the connections are kept while the node that left the selection is still within the noise of the health check statistics, so the connections are not closed by a measurement that could go either way. New connections always keep to the selection. The allowance is at most the band itself, so a node never survives more than twice its band away from the best. The `alive` and `qualified` objectives have no band, so a node stops being retained as soon as it leaves the selection. See [Node Rating](/configuration/shared/node-rating/#retention).
+For `quick` and `idle` objectives the connections are kept while the node that left the selection is still within the noise of the health check statistics, so the connections are not closed by a measurement that could go either way. New connections always keep to the selection. The allowance is at most the band itself, so a node never survives more than twice its band away from the best. The `alive` and `qualified` objectives have no band, so a node stops being retained as soon as it leaves the selection.
 
 The retention applies to the inbound connections only, and only when this option is enabled: internal connections are interrupted either way.

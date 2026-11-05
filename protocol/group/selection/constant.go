@@ -12,5 +12,5 @@ const (
 	ObjectiveAlive     string = "alive"
 	ObjectiveQualified string = "qualified"
 	ObjectiveQuick     string = "quick"
-	ObjectiveSteady    string = "steady"
+	ObjectiveIdle      string = "idle"
 )

@@ -98,6 +98,9 @@ type HealthNode struct {
 	Max           *uint16 `json:"max,omitempty"`
 	Jitter        *uint16 `json:"jitter,omitempty"`
 	MeanDeviation *uint16 `json:"mean_deviation,omitempty"`
+	// Standing is how much longer the node waits now than it does at its best, the
+	// statistic the idle objective ranks by, absent until there is a baseline.
+	Standing *uint16 `json:"standing,omitempty"`
 	// Spread and DeviationSpread are the sample spreads of the checks and of their
 	// distances to the median, which the standard error of a score is computed from.
 	Spread          *uint16 `json:"spread,omitempty"`

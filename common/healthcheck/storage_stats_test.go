@@ -20,6 +20,8 @@ func TestStorageStats(t *testing.T) {
 	// MeanDeviation: every distance is 40, so their mean is 40 as well.
 	// Spread: the sample standard deviation of {60, 60, 140, 140} is 46, and the distances
 	// are all 40, so their own spread is 0.
+	// Standing: the baseline is the fastest check the node has been, 60ms, and the median
+	// of the window is 40ms above it.
 	want := healthcheck.Stats{
 		All:             4,
 		Fail:            0,
@@ -27,6 +29,7 @@ func TestStorageStats(t *testing.T) {
 		MeanDeviation:   40,
 		Spread:          46,
 		DeviationSpread: 0,
+		Standing:        40,
 		Average:         100,
 		Median:          100,
 		Max:             140,
@@ -37,6 +40,8 @@ func TestStorageStats(t *testing.T) {
 
 	// The delay statistics describe the checks that succeeded: a failure says nothing
 	// about the delay the node has when it works, it is reported by Fail and Latest.
+	// Standing is still 40: the baseline is the fastest check the node has been, 60ms, and
+	// the median of the window stays 100ms above it.
 	s.Put(healthcheck.Failed)
 	s.Put(healthcheck.Failed)
 	want = healthcheck.Stats{
@@ -46,6 +51,7 @@ func TestStorageStats(t *testing.T) {
 		MeanDeviation:   40,
 		Spread:          57,
 		DeviationSpread: 0,
+		Standing:        40,
 		Average:         100,
 		Median:          100,
 		Max:             140,
@@ -123,6 +129,7 @@ func TestStorageStatsIgnoreOutdated(t *testing.T) {
 		MeanDeviation:   40,
 		Spread:          57,
 		DeviationSpread: 0,
+		Standing:        40,
 		Average:         100,
 		Median:          100,
 		Max:             140,
@@ -147,13 +154,14 @@ func TestStorageStatsIgnoreOutdated(t *testing.T) {
 	assertStats(t, "Stats() - All Outdated", want, s.Stats())
 
 	s.Put(60)
-	// one sample says nothing about how much the node varies, so both spreads are
-	// assumed to be half of its delay
+	// one sample says nothing about how much the node varies, so the spreads and the
+	// standing are assumed to be half of its delay
 	want = healthcheck.Stats{
 		All:           1,
 		Fail:          0,
 		Jitter:        30,
 		MeanDeviation: 30,
+		Standing:      30,
 		Average:       60,
 		Median:        60,
 		Max:           60,
@@ -256,8 +264,8 @@ func assertStats(t *testing.T, name string, want, got healthcheck.Stats) {
 
 func TestStatsCostZeroIsNotFailed(t *testing.T) {
 	t.Parallel()
-	// steady costs a node by its jitter, and a steady node has none. Zero is
-	// reserved for a missing value, so the cost must stay measurable.
+	// quick costs a node by its median plus jitter, and a node with no jitter has
+	// none. Zero is reserved for a missing value, so the cost must stay measurable.
 	stats := healthcheck.Stats{All: 10, Median: 100, Jitter: 0, Latest: 100}
 	if cost := stats.Cost(0, 0); cost != healthcheck.Millisecond {
 		t.Fatalf("want the smallest delay, got %v", cost)
