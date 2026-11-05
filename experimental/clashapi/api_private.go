@@ -15,6 +15,10 @@ func privateRouter(server *Server) http.Handler {
 	r.Route("/health/{name}", func(r chi.Router) {
 		r.Use(parseProxyName, findProxyByName(server))
 		r.Get("/", getGroupHealth(server))
+		// The same ranking over a shorter history, measured against the checks that
+		// follow it: the window is priced by the objective rather than by a second copy
+		// of it, so this answers where the numbers above come from, not what they are.
+		r.Get("/windows", getGroupHealthWindows(server))
 	})
 	// The same two readings as text, for a human rather than for a parser: the report
 	// above states the numbers, this one states the sentence built from them.

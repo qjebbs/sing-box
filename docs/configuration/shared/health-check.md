@@ -110,3 +110,56 @@ The check chain will be: `the checked node of Entry Group` -> `Hop` -> `Exit`
 
 If not, it would be almost impossible to detect such nodes, which are fine to use directly, but not when they're used as an upstream, due to audit rules and other reasons.
 Configuring this item can also avoid the server from hijacking the test request, and improve the accuracy of the health check.
+
+### Recommended configuration
+
+The `quick` and `idle` objectives rank the nodes by the most recent `sampling` checks, over a
+window of `interval × sampling`. Recommended:
+
+| Case | `interval` | `sampling` | Span |
+| --- | --- | --- | --- |
+| Few nodes, cheap checks | `1m` | `15` | 15 minutes |
+| Everyday load balancing (recommended) | `2m` | `10` | 20 minutes |
+| Many nodes, steadier | `2m` | `15` | 30 minutes |
+| The defaults, limited checks (span beyond the recommendation) | `5m` | `10` | 50 minutes |
+
+At least 10 samples, and no more than 30 minutes of span.
+
+`urltest` uses a single node, so sample more: `1m × 15` or `2m × 12–15`, with `tolerance` left
+at its default.
+
+To check this table against your own lines and load, ask the API (a non-ASCII group name has to
+be URL encoded):
+
+```bash
+curl -s 'http://127.0.0.1:9090/private/health/Name/windows?ahead=2&configs=1:5,1:10,2:5'
+```
+
+Every window is priced by the same score that ranks the group, so a `rho` close to 1 means the
+window orders the nodes the way they behave afterwards. The interval is read from the checks,
+not from the configuration. Right after a restart, when there are too few checks to hold a
+window, `configs` is empty and `note` says what is missing.
+
+Parameters
+
+| Parameter | Default | Meaning |
+| --- | --- | --- |
+| `ahead` | `8` | how many checks after the window it is asked to predict |
+| `configs` | the default grid | `stride:samples` pairs, e.g. `1:15,2:10`. `stride` is how many checks are skipped between samples, `samples` how many the window holds |
+
+Fields
+
+| Field | Meaning |
+| --- | --- |
+| `sampling` | the actual interval between the checks (median), not the configured one |
+| `nodes` | how many nodes were measured |
+| `checks` | how many checks the longest history holds |
+| `ahead` | how many checks each window was asked to predict |
+| `stride` | how many checks are skipped between samples, `1` for consecutive |
+| `samples` | how many checks the window holds; its span is `sampling × stride × samples` |
+| `span` | the actual width of the window |
+| `windows` | how many positions of the history the window was measured at; the other fields are the average over them |
+| `rho` | rank correlation between the order the window produces and the order the checks after it produce: `1` identical, `0` as good as guessing |
+| `delta` | the standard error of `rho`; it collapses to `0` when `windows` is small, which means no precision rather than precision |
+| `pool` | how many nodes the band lets in, on average, for that window |
+| `note` | what was missing, when not one window could be measured |

@@ -281,3 +281,48 @@ func TestStatsCostZeroIsNotFailed(t *testing.T) {
 		t.Fatalf("want no cost, got %v", cost)
 	}
 }
+
+func TestStatsOfMatchesStorage(t *testing.T) {
+	t.Parallel()
+	// The statistics of a window cut out of the history must be the statistics the
+	// storage computes for that same window: the evaluation of a window is only worth
+	// reading if it prices the checks the way the group priced them.
+	rtts := []healthcheck.RTT{60, 140, 60, 0, 80, 60, 140, 60, 200, 60}
+	s := healthcheck.NewStorage(uint(len(rtts)), time.Hour)
+	for _, rtt := range rtts {
+		s.Put(rtt)
+	}
+	stats := s.Stats()
+
+	checks := s.All()
+	floor := stats.Floor
+	got := healthcheck.StatsOf(checks, floor, stats.Expires)
+	assertStats(t, "StatsOf() - whole history", stats, got)
+
+	// A window of the most recent checks, measured against the same baseline: every
+	// statistic has to come from that window and nothing else.
+	window := checks[:4]
+	got = healthcheck.StatsOf(window, floor, stats.Expires)
+	if got.All != 4 {
+		t.Fatalf("want 4 checks in the window, got %d", got.All)
+	}
+	wantMedian := healthcheck.RTT(100) // {60, 200, 60, 140} sorted: 60, 60, 140, 200
+	if got.Median != wantMedian {
+		t.Fatalf("want median %v, got %v", wantMedian, got.Median)
+	}
+	if got.Floor != floor {
+		t.Fatalf("want the baseline passed in, %v, got %v", floor, got.Floor)
+	}
+
+	// Without a baseline the frequency term has nothing to measure against, so it stays
+	// zero rather than counting every check as bad.
+	got = healthcheck.StatsOf(checks, 0, stats.Expires)
+	if got.Bad != 0 || got.Floor != 0 {
+		t.Fatalf("want no baseline and no bad checks, got floor %v and %d bad", got.Floor, got.Bad)
+	}
+
+	// An empty window has nothing to say, not a zero measurement.
+	if !reflect.DeepEqual(healthcheck.StatsOf(nil, floor, stats.Expires), healthcheck.Stats{}) {
+		t.Fatalf("want empty statistics, got %v", healthcheck.StatsOf(nil, floor, stats.Expires))
+	}
+}

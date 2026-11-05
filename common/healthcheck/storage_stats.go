@@ -99,11 +99,7 @@ func (s *Storage) refreshStats(now time.Time) {
 			delays = append(delays, history.Delay)
 		}
 	}
-	var (
-		floor    RTT
-		hasFloor bool
-		bad      int
-	)
+	var floor RTT
 	if len(delays) >= 2 {
 		// The baseline is the fastest the node has been, so what goes into it is the
 		// fastest check of the round, not the median of the round: a minimum of medians
@@ -114,16 +110,45 @@ func (s *Storage) refreshStats(now time.Time) {
 		// cannot make a score of zero: the baseline can never be above the median of the
 		// round that just set it.
 		s.baseline.Put(now, minOf(delays))
-		floor, hasFloor = s.baseline.RTT(now)
-		if hasFloor {
-			// Counted before newStats, which replaces the delays with their distances to
-			// the median, see deviationOf.
-			bad = countAbove(delays, floor*badCheckMultiple)
+		floor, _ = s.baseline.RTT(now)
+	}
+	s.stats = statsOf(len(delays)+fail, fail, latest.Delay, expiresAt, delays, floor)
+}
+
+// StatsOf returns the statistics of the given checks, most recent first, as of expires:
+// the computation Storage.Stats does over its window, so a window of the history can be
+// priced exactly the way the group priced it.
+//
+// The baseline is the one input of the statistics the storage keeps outside the window, so
+// it is passed in. A floor of zero means the node has none yet, and Bad stays zero, which
+// is what the storage does for a window too short to set one.
+func StatsOf(checks []*History, floor RTT, expires time.Time) Stats {
+	if len(checks) == 0 {
+		return Stats{}
+	}
+	delays := make([]RTT, 0, len(checks))
+	fail := 0
+	for _, check := range checks {
+		if check.Delay == Failed {
+			fail++
+		} else {
+			delays = append(delays, check.Delay)
 		}
 	}
-	stats := newStats(len(delays)+fail, fail, latest.Delay, expiresAt, delays)
+	return statsOf(len(checks), fail, checks[0].Delay, expires, delays, floor)
+}
+
+// statsOf builds the statistics of a window of checks from the delays that succeeded.
+func statsOf(all int, fail int, latest RTT, expires time.Time, delays []RTT, floor RTT) Stats {
+	var bad int
+	if floor > 0 {
+		// Counted before newStats, which replaces the delays with their distances to the
+		// median, see deviationOf.
+		bad = countAbove(delays, floor*badCheckMultiple)
+	}
+	stats := newStats(all, fail, latest, expires, delays)
 	stats.Floor, stats.Bad = floor, bad
-	s.stats = stats
+	return stats
 }
 
 // badCheckMultiple is how much slower than the floor a check has to be to count as bad: at

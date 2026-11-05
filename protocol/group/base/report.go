@@ -58,6 +58,68 @@ func (g *Group) HealthReport() adapter.HealthReport {
 	return report
 }
 
+// HealthWindows implements adapter.HealthWindowsReporter. It measures the window the group
+// ranks over against the checks that follow it, using the objective that ranks the group,
+// so the answer describes the ranking rather than a copy of it.
+//
+// The checks of a node are cut down to the ones its statistics were computed from, so a
+// window measured here is one the group could have measured: the storage keeps a check
+// past its validity until the ring overwrites it.
+func (g *Group) HealthWindows(options adapter.HealthWindowsOptions) adapter.HealthWindowsReport {
+	report := adapter.HealthWindowsReport{Tag: g.Tag()}
+	if g.pick == nil || g.HealthCheck == nil {
+		// the group is not started yet, there is nothing it has measured
+		return report
+	}
+	evaluator, isEvaluator := g.pick.Objective().(selection.WindowEvaluator)
+	if !isEvaluator {
+		// an objective that ranks no score has no window to measure
+		return report
+	}
+	report.Objective = g.pick.Objective().Name()
+	all := g.Nodes(N.NetworkTCP)
+	if len(all) == 0 {
+		all = g.Nodes("")
+	}
+	series := make([]selection.WindowSeries, 0, len(all))
+	for _, node := range all {
+		checks := g.HealthCheck.Storage.All(node.Tag())
+		if valid := min(len(checks), node.Stats.All); valid >= 2 {
+			series = append(series, selection.WindowSeries{Node: node, Checks: checks[:valid]})
+		}
+	}
+	evaluation := evaluator.EvaluateWindows(series, selection.WindowOptions{
+		Ahead: options.Ahead,
+		Sizes: windowSizesOf(options.Configs),
+	})
+	report.Sampling = evaluation.Sampling.String()
+	report.Nodes = evaluation.Nodes
+	report.Checks = evaluation.Checks
+	report.Ahead = evaluation.Ahead
+	report.Note = evaluation.Note
+	report.Configs = make([]adapter.HealthWindowResult, 0, len(evaluation.Sizes))
+	for _, size := range evaluation.Sizes {
+		report.Configs = append(report.Configs, adapter.HealthWindowResult{
+			Stride:  size.Stride,
+			Samples: size.Samples,
+			Span:    size.Span.String(),
+			Windows: size.Windows,
+			Rho:     size.Rho,
+			Delta:   size.Delta,
+			Pool:    size.Pool,
+		})
+	}
+	return report
+}
+
+func windowSizesOf(configs []adapter.HealthWindowConfig) []selection.WindowSize {
+	sizes := make([]selection.WindowSize, 0, len(configs))
+	for _, config := range configs {
+		sizes = append(sizes, selection.WindowSize{Stride: config.Stride, Samples: config.Samples})
+	}
+	return sizes
+}
+
 // HealthText reports the health of the group as text: the line that states the selection,
 // and one line per node, in the order of the ranking.
 //
