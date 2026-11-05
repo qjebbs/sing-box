@@ -146,9 +146,6 @@ The maximum round-trip time of health check that is acceptable for qulified node
 
 The maximum number of health check failures for qulified nodes, default is `0`, i.e. no failures allowed.
 
-The `idle` objective cannot reflect a failure in its score, so you may want to use this setting to
-remove the nodes that failed during the check window.
-
 #### tolerance
 
 > Only used by the `quick` and `idle` objectives: `alive` and `qualified` have no score, so

@@ -98,10 +98,10 @@ func TestSelectClusterSortsFirst(t *testing.T) {
 	t.Parallel()
 	objective := selection.NewIdleObjective(option.LoadBalancePickOptions{})
 	nodes := []*selection.Node{
-		{Index: 0, Status: selection.StatusQualified, Stats: healthcheck.Stats{Standing: 120, All: 10}},
-		{Index: 1, Status: selection.StatusQualified, Stats: healthcheck.Stats{Standing: 15, All: 10}},
-		{Index: 2, Status: selection.StatusQualified, Stats: healthcheck.Stats{Standing: 18, All: 10}},
-		{Index: 3, Status: selection.StatusQualified, Stats: healthcheck.Stats{Standing: 191, All: 10}},
+		{Index: 0, Status: selection.StatusQualified, Stats: healthcheck.Stats{Floor: 100, Median: 220, All: 10}},
+		{Index: 1, Status: selection.StatusQualified, Stats: healthcheck.Stats{Floor: 100, Median: 115, All: 10}},
+		{Index: 2, Status: selection.StatusQualified, Stats: healthcheck.Stats{Floor: 100, Median: 118, All: 10}},
+		{Index: 3, Status: selection.StatusQualified, Stats: healthcheck.Stats{Floor: 100, Median: 291, All: 10}},
 	}
 	selected := selection.Filter(objective, nodes)
 	if len(selected) != 2 {
@@ -228,22 +228,29 @@ func TestLeastPingScore(t *testing.T) {
 
 func TestLeastLoadScore(t *testing.T) {
 	t.Parallel()
-	// idle scores by how much the node waits now over its own best, whatever that best
-	// is: the distance of the node is not part of the question.
+	// idle scores by how far the node is above its own floor, as a share of that floor,
+	// and how often it falls twice below it: the distance of the node is not part of the
+	// question, so two nodes at the same share score the same.
 	objective := selection.NewIdleObjective(option.LoadBalancePickOptions{})
 	testCases := []struct {
 		name  string
 		stats healthcheck.Stats
 		want  healthcheck.RTT
 	}{
-		// the excess over the baseline, the jitter and the mean deviation are not used
-		{name: "clear", stats: healthcheck.Stats{Median: 160, Jitter: 90, MeanDeviation: 40, Standing: 40, All: 10}, want: 40},
-		// 4s of median and 40ms of queueing is as idle as 160ms and 40ms
-		{name: "far but idle", stats: healthcheck.Stats{Median: 4000, Jitter: 90, MeanDeviation: 40, Standing: 40, All: 10}, want: 40},
-		// the failures are not priced in: queueing and a timeout are not on one scale, a
-		// node that fails is kept out by max_fail instead
-		{name: "failures", stats: healthcheck.Stats{Standing: 40, All: 10, Fail: 2}, want: 40},
-		{name: "at its best", stats: healthcheck.Stats{Median: 160, Standing: 0, All: 10}, want: healthcheck.Millisecond},
+		// 60% over a floor of 100ms, no bad check: 0.6 of the 1000ms scale
+		{name: "clear", stats: healthcheck.Stats{Floor: 100, Median: 160, Jitter: 90, MeanDeviation: 40, All: 10}, want: 600},
+		// the same share over a floor of 2500ms: 4000ms of median costs as much as 160ms,
+		// because both are 60% over what the node can do
+		{name: "far but the same share", stats: healthcheck.Stats{Floor: 2500, Median: 4000, Jitter: 90, All: 10}, want: 600},
+		// 60% over, and four of the ten checks fell to twice the floor: 600 + 0.5 × 400
+		{name: "bad checks", stats: healthcheck.Stats{Floor: 100, Median: 160, Bad: 4, All: 10}, want: 800},
+		// two failures of ten attempts: each counts as one bad check, so the frequency term
+		// gains 0.5 × 2/10 = 0.1 of the scale, and the depth is untouched
+		{name: "failures", stats: healthcheck.Stats{Floor: 100, Median: 160, All: 10, Fail: 2}, want: 700},
+		// the failures cannot enter the depth: a node that answers slowly but always is
+		// scored by its median, however many attempts failed
+		{name: "failures do not deepen", stats: healthcheck.Stats{Floor: 100, Median: 160, All: 10, Fail: 5}, want: 850},
+		{name: "at its floor", stats: healthcheck.Stats{Floor: 160, Median: 160, All: 10}, want: healthcheck.Millisecond},
 		{name: "never succeeded", stats: healthcheck.Stats{All: 10, Fail: 10}, want: 15000},
 		{name: "never checked", stats: healthcheck.Stats{}, want: 0},
 	}
@@ -274,16 +281,50 @@ func TestLeastPingScoreDoesNotUseMeanDeviation(t *testing.T) {
 	}
 }
 
+func TestLeastLoadScoreOneSample(t *testing.T) {
+	t.Parallel()
+	// A window with one successful check has no floor of its own and no variation to
+	// measure, so both shares of idle are zero and every node would tie at the smallest
+	// score there is. It ranks by the delay until a second check arrives: a node whose one
+	// check came out low must not look like the steadiest node there is.
+	objective := selection.NewIdleObjective(option.LoadBalancePickOptions{})
+	fast := &selection.Node{Status: selection.StatusQualified, Stats: healthcheck.Stats{
+		All: 1, Median: 100,
+	}}
+	slow := &selection.Node{Status: selection.StatusQualified, Stats: healthcheck.Stats{
+		All: 1, Median: 900,
+	}}
+	if objective.Score(fast) >= objective.Score(slow) {
+		t.Fatalf("one sample did not rank by the delay: %v for 100ms, %v for 900ms",
+			objective.Score(fast), objective.Score(slow))
+	}
+	// quick reads the same window in the same order, since its jitter is half the delay
+	// when there is one check: the two objectives must not disagree before there is enough
+	// to tell queueing from distance.
+	if quick := selection.NewQuickObjective(option.LoadBalancePickOptions{}); quick.Score(fast) >= quick.Score(slow) {
+		t.Fatalf("quick did not rank the same window by the delay either")
+	}
+	// A second check ends the fallback: the score is the share over the floor again, which
+	// for a node at its floor is the smallest score there is whatever the distance.
+	atFloor := &selection.Node{Status: selection.StatusQualified, Stats: healthcheck.Stats{
+		All: 2, Floor: 900, Median: 900,
+	}}
+	if got := objective.Score(atFloor); got != healthcheck.Millisecond {
+		t.Fatalf("two samples still read the distance: got %v for a node at its floor", got)
+	}
+}
+
 func TestLeastLoadScoreDoesNotUseJitter(t *testing.T) {
 	t.Parallel()
-	// A node with one stall and a node without any rank the same by idle when their
-	// mean deviations match: the jitter is the typical one, and it ignores the stall.
+	// A node with one stall and a node without any rank the same by idle when their floor,
+	// median and count of bad checks match: the jitter is a description of the spread, and
+	// the score is built from the shares instead.
 	objective := selection.NewIdleObjective(option.LoadBalancePickOptions{})
 	stalled := &selection.Node{Status: selection.StatusQualified, Stats: healthcheck.Stats{
-		Median: 160, Jitter: 13, MeanDeviation: 457, All: 10,
+		Floor: 100, Median: 160, Jitter: 13, MeanDeviation: 457, All: 10,
 	}}
 	swinging := &selection.Node{Status: selection.StatusQualified, Stats: healthcheck.Stats{
-		Median: 160, Jitter: 300, MeanDeviation: 457, All: 10,
+		Floor: 100, Median: 160, Jitter: 300, MeanDeviation: 457, All: 10,
 	}}
 	if a, b := objective.Score(stalled), objective.Score(swinging); a != b {
 		t.Fatalf("want the same score, got %v and %v", a, b)
@@ -431,56 +472,85 @@ func TestLeastKeepIsCappedByTheBand(t *testing.T) {
 	}
 }
 
+// The frequency enters the score, but not the band: an uncertain share must not buy a node
+// a place next to the best one. Sizing the band by it made the band depend on whether the
+// best node happened to catch one bad check in the window, which on a ten-check window is
+// most rounds of a node that is not even falling behind.
+func TestLeastLoadBandIgnoresBadShare(t *testing.T) {
+	t.Parallel()
+	clean := &selection.Node{
+		Status: selection.StatusQualified,
+		Stats:  healthcheck.Stats{All: 10, Floor: 100, Median: 130, Jitter: 8},
+	}
+	stalled := &selection.Node{
+		Status: selection.StatusQualified,
+		Stats:  healthcheck.Stats{All: 10, Floor: 100, Median: 130, Jitter: 8, Bad: 4},
+	}
+	objective := selection.NewIdleObjective(option.LoadBalancePickOptions{})
+	band := func(node *selection.Node) healthcheck.RTT {
+		return objective.Limit(node) - objective.Score(node)
+	}
+	if band(clean) != band(stalled) {
+		t.Fatalf("the bad checks widened the band: %v for a clean best, %v for one that stalled",
+			band(clean), band(stalled))
+	}
+	if objective.Score(stalled) <= objective.Score(clean) {
+		t.Fatalf("the bad checks did not count in the score: %v against %v",
+			objective.Score(stalled), objective.Score(clean))
+	}
+}
+
 func TestLeastLoadKeep(t *testing.T) {
 	t.Parallel()
-	// idle scores by the excess over the baseline: 40ms with 10 samples. The band is the
-	// 10ms tolerance plus the margin of a typical deviation of 8ms, about 19ms, and the
-	// noise of two such estimates is larger, so the allowance is capped at the band and a
-	// node up to 78ms is kept.
+	// idle scores by the share of the queueing: a floor of 100ms and a median of 130ms is
+	// 30% over, 300 of the 1000ms scale. The band is the 50ms tolerance plus the margin of
+	// an 8ms typical deviation, about 140ms, and the noise of two such estimates is capped
+	// at it, so a node up to about 528 is kept.
 	best := &selection.Node{
 		Status: selection.StatusQualified,
-		Stats:  healthcheck.Stats{All: 10, Standing: 40, Jitter: 8, Spread: 20},
+		Stats:  healthcheck.Stats{All: 10, Floor: 100, Median: 130, Jitter: 8},
 	}
 	objective := selection.NewIdleObjective(option.LoadBalancePickOptions{})
 	close := &selection.Node{
 		Status: selection.StatusQualified,
-		Stats:  healthcheck.Stats{All: 10, Standing: 52, Jitter: 10, Spread: 26},
+		Stats:  healthcheck.Stats{All: 10, Floor: 100, Median: 140, Jitter: 10},
 	}
 	if !objective.Keep(close, best) {
 		t.Fatalf("a node within the noise of the typical deviation was dropped, score %v", objective.Score(close))
 	}
 	far := &selection.Node{
 		Status: selection.StatusQualified,
-		Stats:  healthcheck.Stats{All: 10, Standing: 300, Jitter: 10, Spread: 26},
+		Stats:  healthcheck.Stats{All: 10, Floor: 100, Median: 300, Jitter: 10},
 	}
 	if objective.Keep(far, best) {
-		t.Fatalf("a node with 7 times the spread was kept")
+		t.Fatalf("a node at three times the floor was kept")
 	}
-	// A node whose spread was moved by one slow check and whose typical delay did not
-	// move: the band is sized by the latter, so the node 40ms behind is not equally good.
-	// Sized by the spread of 122ms, the band would be 202ms and it would be.
+	// A node whose jitter was moved by one slow check and whose floor and median did not
+	// move: the band is sized by the jitter, so a node 20% further over is not equally
+	// good. Sized by the spread of 122ms instead, the band would be far wider and it would
+	// be.
 	spiky := &selection.Node{
 		Status: selection.StatusQualified,
-		Stats:  healthcheck.Stats{All: 5, Standing: 2, Jitter: 3, Spread: 122},
+		Stats:  healthcheck.Stats{All: 5, Floor: 500, Median: 510, Jitter: 3, Spread: 122},
 	}
 	behind := &selection.Node{
 		Status: selection.StatusQualified,
-		Stats:  healthcheck.Stats{All: 5, Standing: 42, Jitter: 10, Spread: 30},
+		Stats:  healthcheck.Stats{All: 5, Floor: 500, Median: 600, Jitter: 10, Spread: 30},
 	}
 	if objective.Keep(behind, spiky) {
-		t.Fatalf("a node 40ms behind was kept, the band of %v took in the spread instead of the typical deviation", objective.Limit(spiky))
+		t.Fatalf("a node at a fifth more over its floor was kept, the band of %v took in the spread instead of the typical deviation", objective.Limit(spiky))
 	}
 }
 
 func TestLeastLoadRanksIdleFirst(t *testing.T) {
 	t.Parallel()
-	// A node at its best has no queueing at all, a score of zero, which must not read as
+	// A node at its floor has no queueing at all, a score of zero, which must not read as
 	// a missing score: idle would rank the node at its best behind every other one.
 	idle := &selection.Node{Status: selection.StatusQualified, Stats: healthcheck.Stats{
-		All: 10, Median: 100, Standing: 0, Latest: 100,
+		All: 10, Floor: 100, Median: 100, Latest: 100,
 	}}
 	unstable := &selection.Node{Status: selection.StatusQualified, Stats: healthcheck.Stats{
-		All: 10, Median: 100, Standing: 50, Latest: 100,
+		All: 10, Floor: 50, Median: 100, Latest: 100,
 	}}
 	objective := selection.NewIdleObjective(option.LoadBalancePickOptions{MinNodes: 1, MaxNodes: 1})
 	ranked := objective.Rank([]*selection.Node{unstable, idle})

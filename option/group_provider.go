@@ -19,7 +19,7 @@ type ProviderURLTestOptions struct {
 	// tolerance is the absolute band of the best node: the node in use keeps its place
 	// while its score is at most this far above the best one, and the same band decides
 	// whether a node that was just replaced keeps the connections it already carries.
-	// Default is 10ms for idle and 50ms for quick.
+	// Default is 50ms for both, which is 5% of the 1000ms scale idle reads its share on.
 	Tolerance                 badoption.Duration `json:"tolerance,omitempty"`
 	InterruptExistConnections bool               `json:"interrupt_exist_connections,omitempty"`
 }

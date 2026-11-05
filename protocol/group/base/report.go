@@ -137,7 +137,11 @@ func (g *Group) nodeReport(node *selection.Node, selected bool) adapter.HealthNo
 		report.Max = optionalRTT(node.Max)
 		report.Jitter = optionalRTT(node.Jitter)
 		report.MeanDeviation = optionalRTT(node.MeanDeviation)
-		report.Standing = optionalRTT(node.Standing)
+		report.Floor = optionalRTT(node.Floor)
+		report.Bad = &node.Bad
+		pressure, badShare := selection.IdleTerms(node)
+		report.Pressure = &pressure
+		report.BadShare = &badShare
 		report.Spread = optionalRTT(node.Spread)
 		report.DeviationSpread = optionalRTT(node.DeviationSpread)
 	}

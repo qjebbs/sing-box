@@ -141,8 +141,6 @@ score   = min(TIMEOUT, standing)                              # idle
 
 合格节点健康检查最大失败次。默认为 `0`，即不允许任何失败。
 
-`idle` 目标无法在评分中反映失败，你可能需要配合此项，移除在检查窗口内有失败记录的节点。
-
 #### tolerance
 
 > 仅用于 `quick` 与 `idle` 目标：`alive` 与 `qualified` 没有分数，设置它不会有任何效果

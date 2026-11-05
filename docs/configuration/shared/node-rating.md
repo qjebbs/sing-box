@@ -1,118 +1,53 @@
 # Node Rating
 
-How a group turns the results of its [health checks](/configuration/shared/health-check/) into
-the order it picks by, and why each part of it is shaped the way it is.
+This page explains how groups rank nodes using [health check](/configuration/shared/health-check/) results, and why the rules are designed this way.
 
-This page is about the reasoning, not the fields: see
-[load balance](/configuration/outbound/loadbalance/) and
-[url test](/configuration/outbound/urltest/) for what can be configured.
+### Goals: Absolute Speed and Relative Quality
 
-### The Two Questions
+First decide what the group should optimize. It chooses one goal instead of combining two different goals into a single score:
 
-A node can be bad in two independent ways, and a group has to answer one of them:
+- `quick`: **How fast is the node usually?** A 170ms node is usually slower than a 40ms node. This is an absolute measurement in milliseconds.
+- `idle`: **How much worse is the node than it can be at its best?** A node that usually takes 200ms but stays at 600ms every evening may not seem slow, yet it is running at four times its best and slows down all traffic at that time.
 
-- `quick`: **how fast is the node usually?** A node of 170ms delays everything it carries more
-  than a node of 40ms.
-- `idle`: **how much longer does the node wait now than it does at its best?** A node that
-  answers in 200ms off-peak and sits at 600ms every evening delays every connection of that
-  evening.
+These goals answer different questions and use **different units**. `quick` compares actual delay; `idle` compares how much the node has degraded from its own best. Using actual delay to measure degradation would naturally penalize more distant nodes, comparing distance rather than condition. So `idle` uses ratios throughout, which do not depend on distance. See [Design Choice: Why Both Parts Are Ratios](#design-choice-why-both-parts-are-ratios).
 
-They are not one score with a weight between them, because they are not the same quantity:
-`quick` ranks the level of the delay, `idle` ranks the part of it that **queueing** adds. No
-weight is better than any other without a model of what a stalled connection costs, and a weight
-that has to be guessed is a number no measurement supports.
+### Statistics: Successful Checks Only
 
-### The Statistics
+Delay statistics use only **successful** checks. A failed check usually waits until the timeout, so it does not show how fast the node is when it works. Failures and the total number of checks are recorded separately. They are used to decide whether a node qualifies and to calculate the failure penalty for `quick`.
 
-Every delay statistic is computed from the checks that **succeeded**. A failed check waited for
-the timeout, so its delay says nothing about the delay the node has when it works: the failures
-are carried separately, for the qualification of the node and for the failures that `quick`
-prices in.
-
-With `x₁ … xₙ` the delays of the successful checks of the current window, `n` their count, and
-`dᵢ = |xᵢ − MED|` the distance of each check to the median:
+Let `x₁ … xₙ` be the delays of successful checks in the current window, `n` their count, and `dᵢ = |xᵢ − MED|` the absolute difference between each check and the median:
 
 ```
-MED     = median(x₁ … xₙ)      # the median delay of this window
-JIT     = 1.4826 × median(dᵢ)  # the typical deviation
-DEV     = (1/n) × Σdᵢ          # the average deviation
+MED     = median(x₁ … xₙ)      # median delay in this window
+JIT     = 1.4826 × median(dᵢ)  # typical deviation
+DEV     = (1/n) × Σdᵢ          # average deviation
 ```
 
-`MED`, `JIT` and `DEV` are computed from the window, and are replaced when the window moves on.
-One more reference outlives the window:
+`MED`, `JIT`, and `DEV` are calculated from the current window and updated when the window moves on. Another reference carries over between rounds:
 
 ```
-SLOT     = 30 minutes a slot, 48 slots, covering 24 hours     # a constant of the implementation
-slot[k]  = the fastest check seen within slot k
-BASELINE = min(of the slots within the last 24 hours)
-STANDING = MED − BASELINE           # standing queue: how much longer the typical delay is than its best
+SLOT     = 30 minutes per slot, 48 slots covering 24 hours
+SLOT[k]  = fastest delay seen in slot k
+FLOOR    = min(values from slots in the last 24 hours) # the node's best observed delay
+PRES     = max(0, MED − FLOOR) / FLOOR                # how much longer the typical delay is than its own best, as a ratio
+BAD      = (#{xᵢ > 2 × FLOOR} + FAIL) / ALL           # share of attempts that missed the node's limit
 ```
 
-The slots are aligned to the wall clock: `k` is which 30 minutes of the day the current time
-falls in, so a slot always covers the same part of the day. Entering a slot resets it to the
-fastest check of the round, and the smallest value within the slot is kept from then on; 24 hours
-later the slot is overwritten by the next measurement of the same slot, so it expires by itself.
-See [Why the Baseline Is a Ring of Slots](#why-the-baseline-is-a-ring-of-slots).
+These formulas apply when there are at least two successful checks. With only one, there is not enough data to estimate variation, so `JIT` and `DEV` are both taken as half of that delay: too few samples should not be mistaken for no variation. Both ratios are undefined there as well — the floor is that one check itself — so `idle` ranks by the delay, see [Scores: Delay and Queueing](#scores-delay-and-queueing). With no successful checks, there are no delay statistics.
 
-So `BASELINE` records **how fast the node can be at each time of day**, not the lowest value
-since some event. It needs no expiry timer of its own: the ring is the expiry.
+- `SLOT` follows wall-clock time: `k` is the current 30-minute period of the day, so each slot always represents the same time of day. When a new slot starts, it is updated with the fastest delay in that round; later, only the minimum for that time period is kept. After 24 hours, the next reading for the same slot replaces the old one, so it expires naturally.
+- **`MED`** is the delay level. A median rather than an average reduces the effect of a single slow check.
+- **`JIT`** describes the **usual amount of variation**. A few spikes usually do not affect it much. Under a normal-distribution assumption, `1.4826` converts the median deviation to the scale of a standard deviation.
+- **`DEV`** describes the **overall cost of variation**. Every check counts: an occasional spike contributes a little, and repeated spikes add more. It is still shown in reports to help with diagnosis, but is no longer used for ranking.
+- **`FLOOR`** is the **fastest observed delay**, without smoothing. One lucky probe can lower it, making the node appear to have a little queueing from then on; in return, it reflects changes promptly.
+- **`PRES`** is queueing pressure: the **ratio** by which the current delay exceeds **the node's own best**. Dividing by the node's floor cancels out propagation delay, so this ratio does not depend on distance.
+- **`BAD`** is the **frequency** of queueing: the share of checks that took more than twice the node's best delay, plus the share of failed checks. It is compared with the floor, so distance does not affect it; one extreme delay also counts only once.
 
-The slot is written before the score is taken, so the observation of the round counts at once.
-That cannot make a score of zero: a slot holds a minimum, so after writing, `BASELINE ≤ MIN ≤ MED`
-and `STANDING` stays non-negative. The first round needs no case of its own either — the ring then
-holds this round's fastest check, so `STANDING` is exactly `MED − MIN`, the same formula as later.
+### Scores: Delay and Queueing
 
-`STANDING` therefore cannot be negative. When the node gets faster the baseline follows it down and
-the score falls on its own; when it gets slower the baseline stays and the score rises. The
-direction needs no extra handling.
+The two goals use different formulas because failures count differently for each.
 
-The formulas above describe at least two successful checks. With only one there is no spread to
-estimate, so `JIT`, `DEV` and `STANDING` are all set to half of that delay: not having enough
-samples is not the same as having no variation. With no successful check there is no delay
-statistic at all.
-
-`MIN` is the fastest check of the window. It is what the baseline takes its value from, and it
-approximates the delay with the pipe drained: the propagation delay plus the least processing.
-
-`MED` is the level of the delay. `JIT`, `DEV` and `STANDING` all describe variation, so none of
-them knows how far the node is, but for different reasons: `JIT` and `DEV` measure the distance
-to the median of this window, and move with it; `STANDING` measures the distance to **the best
-this node has ever been**. A node steady at 4s and a node steady at 100ms can have all three the
-same.
-
-- **`MED`** is the median rather than the average, so a single slow check does not move the
-  typical delay.
-- **`BASELINE`** is **the fastest check the node has ever been seen at**, with no smoothing. A
-  lucky probe lowers it, and the node carries a few milliseconds of false queueing from then on;
-  what that buys is a quantity that is not dull. Recorded from the median, every node in a quiet
-  period equals its own median, every `STANDING` is zero, and `idle` has nothing left to rank —
-  and a node that alternates between two bandwidth pools (two checks near 570ms and two near
-  1265ms, a median exactly between them at 919ms) reads as the steadiest of all.
-- **`STANDING`** is the delay that queueing adds for good. When a line is full, the datagrams
-  waiting in its buffers raise the delay, and this difference is that waiting. Subtracting the
-  node's own best cancels the propagation delay, so it does not drift with the distance.
-- **`JIT`** is the **typical** deviation, the median of them. A few spikes do not move it;
-  `1.4826` converts the median of the deviations to the scale of a standard deviation, see
-  [Derivations](#derivations).
-- **`DEV`** is the **total** deviation, the average of them. Every check counts by its own share,
-  so a rare spike adds one share and a repeated one adds more. It is still computed and reported,
-  for diagnosis; the ranking no longer uses it.
-
-The difference between the measures of variation is how they summarise the same checks:
-
-| | Question | Says |
-| --- | --- | --- |
-| `JIT` | how much does it usually vary? | a node that stalled once is still a close node |
-| `DEV` | how much did it cost in total? | a node that stalls is not a steady node |
-| `STANDING` | how much longer than its own best? | congestion stays on the clock until it really goes |
-
-### The Scores
-
-The two objectives have different formulas, because a failure sits in a different place in each.
-
-The score of `quick` is what the node typically costs, with the successes and the failures
-weighted by their shares. With `ALL` the number of checks, `FAIL` the failures, and `TIMEOUT` the
-timeout of a health check:
+The `quick` score represents the delay a node usually adds. Successful and failed checks are weighted by their share of all checks. Let `ALL` be the total number of checks, `FAIL` the number that failed, and `TIMEOUT` the health check timeout:
 
 ```
 base    = MED + JIT
@@ -121,510 +56,383 @@ failure = min(TIMEOUT, 3 × cost)
 score   = (ALL - FAIL) / ALL × cost + FAIL / ALL × failure
 ```
 
-A node with a lower typical delay and a smaller typical variation scores lower: the variation is
-added to the cost of the delay in milliseconds.
+Nodes with a lower typical delay and less usual variation get a lower score. Variation is added to the delay cost in milliseconds.
 
-`cost` is the base of the score under the successful checks, `failure` is what a failed check is
-worth. A failure counts as at most three times a success and is capped at `TIMEOUT`; that is a
-scoring policy, not a measurement of what a retry really costs. Scoring every failure as the whole
-timeout it waited for would let one failure outweigh every node that never failed.
+`cost` is the base score for a successful check; `failure` is the penalty for a failed one. A failure counts as at most three times the successful-check cost and is capped at `TIMEOUT`. This is a scoring rule, not an exact measurement of the time a real retry takes. If every failure counted as a full timeout, one failure could outweigh every node with no failures.
 
-The score of `idle` is the standing queue alone; the failures do not enter it:
+The `idle` score adds queueing depth to queueing frequency. Failures count only toward frequency:
 
 ```
-score = min(TIMEOUT, STANDING)
+score = 1000 × (PRES + 0.5 × BAD)
 ```
 
-Only the standing queue is compared, not the level of the delay: a node at 400ms and one at 100ms
-can both queue nothing over their own best, while a node of 100ms that queues up to 600ms cannot. A
-node at its best scores zero; tied scores are ordered by the smaller spread first.
+`0.5` is the weight for `BAD`; `1000` converts the dimensionless result to a millisecond scale. Neither value was fitted to data. See [Design Choice: Why the Threshold Is Two and the Weight Is 0.5](#design-choice-why-the-threshold-is-two-and-the-weight-is-05).
 
-Why can a failure not be priced in? `STANDING` can be close to zero, and three times it is close
-to zero too. In a measured window, a node that failed five of ten checks and otherwise sat at
-410ms had a standing queue of a few tens of milliseconds, which is still a few tens of
-milliseconds at three times; a node that never failed and queued up to 200ms ranked behind it.
-**The milliseconds of queueing and the cost of a failure are not on one scale, and no coefficient
-converts one into the other**: across a measured window the standing queue spanned 170 times, while
-what a failure costs is roughly constant in absolute time, so the ratio between them goes from tens
-to a fraction. `idle` therefore treats a failure as a question of qualification: `max_fail` is how
-many checks of the window may fail before the node stops being qualified. An `idle` group has to
-set `max_fail`; without it the limit does not apply and a failing node can still rank first.
+This score does not compare the delay itself. Nodes that usually take 400ms or 100ms may both have nine out of ten checks close to their own floor. A node that usually takes 100ms but exceeds twice its floor every third check does not. When scores tie, the node with the smaller `spread` comes first.
 
-If every check failed, the successful delay is unknown and both objectives score `TIMEOUT`; if no
-check has run yet, there is no score.
+**Why multiply by 1000?** `PRES` and `BAD` are ratios. Multiplying them by 1000 lets us show the score in milliseconds. Both goals then use the same unit and can share the `tolerance` setting and default:
 
-A score is an observation from a finite number of checks, not the constant "true value" of the node
-or of its line; comparing nodes means taking the noise of the estimates into account.
+| Goal | Score | Default `tolerance` | Meaning |
+| --- | --- | --- | --- |
+| `quick` | `MED + JIT` (absolute milliseconds) | `50ms` | A 50ms difference is not worth switching for. |
+| `idle` | `1000 × (PRES + 0.5 × BAD)` | `50ms` | A 5% relative degradation on a 1000ms scale is not worth switching for. |
 
-### Noise
+In both goals, `50ms` means a difference this small is not worth switching for. Logs and reports also show both scores in milliseconds, so users do not have to remember two units.
 
-A score is computed from a finite number of checks, so it is an estimate, not a property the node
-holds. Another batch of checks could move it, and with it the difference between two nodes. Here
-`n` is the number of successful checks, which is not the `ALL` the failure share is computed from.
+How do failures affect the score? They count only toward **frequency**: each failed check counts once in `BAD`. They cannot count toward **depth**: `PRES` is a ratio, and a failure has no delay to compare. If we used `TIMEOUT` as the delay for a failure, one failure in 30 checks would add 0.8 to `PRES` (about 800ms), outweighing normal queueing differences. This is the same problem as the former approach of pricing failures as `3 × DEV`: **queueing delay and the cost of a failure cannot be converted directly into one another**.
 
-#### The Noise of One Score
+There is a trade-off in this conversion: every 10% increase in `BAD` adds 50ms to the score. So **a 10% failure rate is roughly equal to having 5% more queueing all the time**. This is lighter than `quick`'s three-times penalty for a failure: `quick` scores a delay, so a failure has to be priced at the timeout to matter at all, while `idle` scores a share, where a failure and a slow check are the same kind of thing and counting it once is enough.
 
-The standard error is how much a score would move if the checks ran again. The standard error of a
-sample mean is estimated by the sample spread over `√n`; for medians and for statistics measured
-from an estimated centre, the shape of the distribution matters too. The implementation uses these
-proxies:
+`max_fail` is therefore no longer the only thing standing between a failing node and the selection, but it is still **needed as a backstop**. It talks about this window — not one failure allowed — while `BAD` talks about a rate: a node can pass a whole window without a failure and still drop out now and then, which ten checks will not show. Its default stays `0`: without configuring it, nodes with failures belong only to the `alive` category, and `idle` counts the failures in its score at the same time, so the two protections stack.
+
+Both ratios of `idle` need at least two successful checks. With only one, `FLOOR` is that check itself, so `PRES` and `BAD` are both zero and every node ties at the smallest score there is, leaving the group to pick among them at random. In that round `idle` ranks by the delay instead, on half of it, which is the order `quick` reads the same window in: a node whose one check came out low must not look like the steadiest node there is. The score returns to the ratios above as soon as a second check succeeds.
+
+If every check fails, the successful delay is unknown, so both goals score `TIMEOUT`. If no check has run yet, there is no score.
+
+A score comes from a finite number of checks; it is not the permanent "true value" of a node or line. Comparisons should account for measurement error.
+
+### Noise: Uncertainty in Scores
+
+A score is an estimate based on a limited number of checks. Another set of checks may change both the score and the gap between two nodes. Here, `n` is the number of successful checks; failure rates use `ALL`.
+
+#### Estimating Noise for One Node
+
+The standard error describes how much a score would usually change if we ran another set of checks. For a sample mean, it can be estimated by dividing the sample standard deviation by `√n`. Medians and measures based on an estimated centre also depend on the data distribution. The implementation uses these approximate noise estimates:
 
 ```
-SE_proxy(STANDING) ≈ 1.2533 · sd(x) / √n                            # idle
-SE_proxy(score)    ≈ √( (1.2533·sd(x)/√n)² + (1.858·sd(d)/√n)² )     # quick
+SE_proxy(score) ≈ √( (1.2533·sd(x)/√n)² + (1.858·sd(d)/√n)² )                  # quick
+SE_proxy(score) ≈ 1000 · √( (1.2533·JIT/(FLOOR·√n))² + 0.5²·BAD(1−BAD)/ALL )  # idle
 ```
 
-`SE_proxy` is the estimate the implementation uses, not an exact finite-sample standard error. It is
-used for [retention](#retention) only, i.e. to judge whether a node in use has fallen clearly behind;
-the [band](#tolerance) uses the same shape with `JIT` in place of `sd(x)` to estimate `σ`, because it
-answers a different question, see
-[Why the Margin of `idle` Is the Error of a Median](#why-the-margin-of-idle-is-the-error-of-a-median).
+`SE_proxy` is the approximate noise value used by the implementation, not an exact standard error for a finite sample. It is used only for [hysteresis](#keeping-existing-connections-hysteresis), to decide whether the current node has clearly fallen behind. The [tolerance band](#selecting-nodes-the-tolerance-band) answers a different question: can two nodes be told apart? So the two use different methods: the `quick` band uses `JIT`, while the `idle` band uses only the error in `PRES` and leaves out the error in `BAD`. See [Why the `idle` Margin Is Calculated This Way](#why-the-idle-margin-is-calculated-this-way).
 
-The first term is the same in both: a score contains `MED`, and a median is what that term is the error
-of. The noise of `STANDING` comes from `MED` alone, because the baseline is kept across windows and
-does not move with this one — which is why it is steadier than a spread of the window: the spread
-looks at two extremes, the baseline at a number that is already settled.
+The two `quick` terms are the errors in `MED` and `JIT`. The two `idle` terms come from different sources:
 
-On the first round after a start the baseline is the fastest check of that round, so
-`STANDING = MED − MIN`; `MIN` is an extreme and noisier than `MED`, so the margin understates the
-real variation of that round and the switch is a little more eager. From the second round the
-baseline is built from several rounds and that difference is small enough to ignore.
+- **The first term is the error in `PRES`.** `FLOOR` carries over between windows and does not change with the current one, so the error in `PRES` is the error in `MED` divided by `FLOOR`. `FLOOR` is the fastest delay seen in the past; its one-way bias is not averaged out by more samples, so it is not part of the standard error. See [Derivations](#derivations).
+- **The second term is the error in `BAD`.** `BAD` is the share of all attempts that did not meet the limit. Its standard error is estimated with the binomial formula, `√(BAD(1−BAD)/ALL)`. The denominator is **all attempts**, not just successful checks, because failures are included in this measure. This term and the first come from the same checks and may be related; treating them as independent is a simplification.
 
-These estimates rely on the checks being approximately independent and on a distribution that is
-roughly stable within the window; small samples or a clear trend can make them wrong, see
-[Derivations](#derivations). With fewer than two successful checks the implementation uses the base
-score as its noise estimate instead of these formulas.
+In the first round after startup, `FLOOR` is the fastest delay in that round, or `MIN`. Since `MIN` is an extreme value, it is noisier than `MED`; the margin will underestimate variation in that first round, making a switch slightly more likely. From the second round on, `FLOOR` combines several rounds, and this effect is small enough to ignore. It scales `PRES` but barely changes the ranking. See [Design Choice: Does an Immature Floor Change the Ranking?](#design-choice-does-an-immature-floor-change-the-ranking).
 
-#### The Noise of the Difference of Two Scores
+These estimates assume checks are roughly independent and the delay distribution stays fairly stable during the window. They may be especially inaccurate with few samples or a clear trend; see [Derivations](#derivations). With fewer than two successful checks, the implementation uses the base score as the noise estimate instead of these formulas.
 
-If the two nodes are measured independently, their variances add:
+#### Noise in the Difference Between Two Node Scores
+
+If the measurement errors of two nodes are independent, the variance of their difference is the sum of their variances:
 
 ```
 SD(score_node − score_best) ≈ √(SE_proxy_node² + SE_proxy_best²)
 ```
 
-If they share a probe target or the conditions of one line, the errors can be correlated, and the
-variance of the difference also has a `−2·Cov(score_node, score_best)` term. The formula treats the
-covariance as zero, which is a simplification. With independent errors the two are squared and
-added before the square root; this is neither adding the two errors nor a claim that the noise
-cancels. See [Derivations](#derivations).
+If the nodes share a probe target or line conditions, their errors may be related. The variance of the difference would then include `−2·Cov(score_node, score_best)`. The current formula treats the covariance as zero, which is a simplification. With independent errors, square them, add them, then take the square root. This is not the same as adding the errors directly, and it does not mean that noise disappears. See [Derivations](#derivations).
 
-#### Why the Noise Cannot Be Subtracted Away
+#### Why Noise Cannot Be "Subtracted" from a Score
 
-Noise is variation around the estimate, not a fixed bias, so no single number can be subtracted from
-a score. How it shrinks depends on the statistic as well: the part of a score that contains `MED`
-shrinks with `1/√n`, while a baseline that does not move with the window is a constant. The
-selection tolerates the uncertainty in a **band** rather than trying to subtract it from each score.
+Noise is variation in an estimate, not a fixed bias, so there is no general number to subtract from a score. Different measures also change in different ways: errors from `MED` and `BAD` shrink with `1/√n`, while `FLOOR` stays fixed within the current window. Selection uses a **tolerance band** to allow for uncertainty instead of subtracting noise from each score.
 
-### Tolerance
+### Selecting Nodes: The Tolerance Band
 
-A group does not switch for a difference it cannot trust. The band is the range around the best node
-within which the nodes count as equally good. `tolerance` is the configured part of it, and the
-defaults differ because the two scores are not the same quantity:
+When selecting nodes, candidates with scores close to the best are treated as "about as good." This avoids switching over small or uncertain differences. `tolerance` sets the size of this range. The two goals measure different things but use the same default:
 
-| Objective | Score       | Default |
-| --------- | ----------- | ------- |
-| `quick`   | `MED + JIT` | `50ms`  |
-| `idle`  | `STANDING`  | `10ms`  |
+| Goal | Score | Default |
+| --- | --- | --- |
+| `quick` | `MED + JIT` | `50ms` |
+| `idle` | `1000 × (PRES + 0.5 × BAD)` | `50ms` |
 
-The band also carries a **resolution margin**, so that measurement noise is not mistaken for a
-difference between nodes. Both scores are absolute milliseconds, so the shape of the margin is the
-same:
+Both scores are in milliseconds. For `quick`, a 50ms difference is an absolute delay difference; for `idle`, it is a 5% relative degradation on a 1000ms scale.
+
+The selection range also includes a **resolution margin** so measurement noise is not mistaken for a difference between nodes. Both scores use milliseconds, so the margin has the same form:
 
 ```
 band = tolerance + 2√2 × noise_best / √n
 cut  = score_best + band
 ```
 
-The noise of `quick` is `JIT_best`; the noise of `idle` is `1.2533 × JIT_best`, the extra factor
-because its score is a median. Both take the **typical deviation** (`JIT`) rather than the spread
-`sd(x)`: the job of the margin is to tell the nodes apart, and a margin inflated by one slow probe
-takes them all in, see the next section. The coefficient 2 is an engineering heuristic, not a 95%
-confidence guarantee.
+For `quick`, the noise is `JIT_best`. For `idle`, it is `1000 × 1.2533·JIT/FLOOR`, using only the `PRES` term; `BAD` affects the score but not the band. Both divide by the square root of the number of successful checks and use **typical deviation** (`JIT`) to estimate `σ`, not the overall spread `sd(x)`. The margin is meant to tell nodes apart; one slow probe should not make it so wide that every node falls inside. The factor 2 is an engineering rule of thumb, not a 95% confidence guarantee. See the next section.
 
-The margin is added only when at least two checks succeeded; with fewer, `band = tolerance`.
+The implementation adds a noise margin only when `n ≥ 2`. Otherwise, `band = tolerance`.
 
-A candidate whose score is at most `cut` is still in the running. More samples shrink the `1/√n`
-term of the margin, so the band approaches the configured value, but it is **never narrower than
-`tolerance`**.
+A candidate stays in range if its score is no higher than `cut`. More checks shrink the `1/√n` part of the margin, so the band gets closer to the configured value but **never becomes narrower than `tolerance`**.
 
-#### Why the Margin of `quick` Is `JIT_best`
+#### Why the `quick` Margin Uses `JIT_best`
 
-Before comparing, the candidate is unknown, so the implementation assumes it is measured as well as
-the best node; both sides use the jitter of the best node as the noise scale.
+Before comparing nodes, the candidate and the accuracy of its measurements are unknown. The implementation assumes the candidate is measured as well as the best node, so both use the best node's `JIT` as the noise scale:
 
 ```
 margin = 2 × √( (JIT_best/√n)² + (JIT_best/√n)² )
        = 2√2 × JIT_best/√n
 ```
 
-The scale is `JIT_best`:
+The noise scale is `JIT_best`:
 
-- **Not `DEV_best`**: `DEV` is the average deviation, so one spike enters it by its own share only,
-  and using it would read "stalls once in a while" as steadier than it is. `JIT` is the median of
-  the deviations and is not moved by a few outliers, which is what a noise scale needs.
-- **Not the full noise estimate of the score**: it contains squared deviations, so one slow probe
-  can inflate it, and a wider margin lets a clearly worse candidate in. This is a robust engineering
-  trade-off, not a mathematical lower bound on the real noise or a 95% resolution guarantee. In
-  measured windows the ratio of the score noise estimate to `JIT_best/√n` was about 2.8; the ratio
-  depends on the distribution and the window, and is not a constant.
+- **Not `DEV_best`**: `DEV` is the average deviation, so a single spike contributes only its share. Using it to estimate the margin would make a node that stalls once in a while look steadier than it is. `JIT` is the median of the deviations and is not much affected by a few outliers, which makes it a better noise scale.
+- **Not the full score-noise estimate**: it includes squared deviations, so one slow probe can make it much larger. The wider margin could then include clearly worse candidates. This is a robust engineering choice, not a mathematical lower bound on noise or a 95% resolution guarantee.
 
-#### Why the Margin of `idle` Is the Error of a Median
+#### Why the `idle` Margin Is Calculated This Way
 
-`STANDING` is `MED` minus the baseline. The baseline is a settled number: this round moves it only
-when it sets a new record, and it can only move it down, to this round's fastest check. The noise of
-the score is therefore the noise of `MED`, the standard error of a median:
+The `idle` score has two parts, but only the depth part determines the width of the band.
+
+**The error in `PRES`.** `PRES` is `MED` divided by `FLOOR`, minus one. `FLOOR` carries over between windows and is fixed for the current one. Dividing by a constant does not change the relative error, so:
 
 ```
-SE(MED) ≈ 1.2533 · σ / √n
+SE(PRES) ≈ SE(MED) / FLOOR ≈ 1.2533 · σ / (FLOOR · √n)
 ```
 
-What has to be estimated is `σ`, the variation of one check of the node. The margin takes `JIT`, the
-robust scale of the median deviation, rather than `sd(x)`:
+We need to estimate `σ`, the variation in one check of the node. The margin uses `JIT`, the robust scale based on the median deviation, rather than `sd(x)`: **the margin's job is to tell nodes apart**, and one slow probe can inflate `sd(x)` enough to make all nodes look "about as good."
 
-```
-margin = 2√2 × 1.2533 × JIT_best / √n
-```
+**`BAD` does not widen the band.** It still counts in the score, but the band is based only on the error in `PRES` plus `tolerance`. There are two reasons.
 
-The reason is that `sd(x)` is inflated by one slow probe, while **the job of the margin is to tell
-apart**. The score of `idle` is itself insensitive to a spike (see
-[Why `STANDING` Ignores a Single Spike](#why-standing-ignores-a-single-spike)), so if the margin is
-sensitive to one the two part ways: the score says the node is fine while the margin tells the group
-that nothing can be told apart, and `idle` has no ranking left. This is the same trade-off as the
-margin of `quick`, which takes `JIT_best` rather than the full noise estimate of the score.
+First, consider what the band is for. It asks whether a node might be as good as the best, so that a good node is not dropped because of measurement noise. The error in `PRES` comes from random sampling: one slow check does not necessarily mean the node is slow, so allowing for that makes sense. `BAD` answers a different question: **will the node fail?** The cost of the two mistakes is not equal. Allowing a node that may stall can mean real failed requests; excluding a good node only removes one option, while there are thirty others. For uncertain failure rates, we should ask for evidence rather than lower the bar. **Uncertainty should not make a node easier to select.**
 
-What is given up is that `sd(x)` describes better how much the median of the next window will jump —
-for a node with many spikes it does jump. A ranking that moves with the median is better than a margin
-wide enough that no ranking exists.
+Second, including the error in `BAD` makes the band behave oddly with small samples. `BAD` is a proportion with binomial standard error `√(BAD(1−BAD)/ALL)`, which is exactly zero when `BAD` is zero. If included, the width of the band would depend on **whether the best node happened to have a bad check in this window**, not on how accurately it was measured.
 
-The margin is **absolute**: it does not grow with the score. The resolution of `idle` is therefore
-the same for a node with 500ms of standing queue and for one with none. That is also what gives the
-default `tolerance` of `10ms` its meaning: the score is in milliseconds, the margin is on the order
-of tens of milliseconds, and the configured value is on the same scale as the band that is actually
-used.
+The error in `BAD` is not ignored completely. It is still used for [hysteresis](#keeping-existing-connections-hysteresis), where the question is whether to keep one known node through a temporary change. That is the opposite of choosing among candidates, so the two decisions use different estimates.
 
-More samples shrink the margin, as they do for `quick`. The uncertainty of the baseline itself is
-smaller than that of `MED`, because it is built from several windows.
+The margin is **absolute**: it does not change with the score. A node with 10% standing queueing and one with almost none use the same margin. This also makes the shared default `tolerance` of `50ms` useful: both scores are usually in the range of tens to hundreds of milliseconds, so the configured value is on the same scale as the actual band.
 
-### Retention
+More checks make the margin smaller, as they do for `quick`. The `FLOOR` itself is less uncertain than `MED` because it combines several windows.
 
-With `interrupt_exist_connections` enabled, when the node in use is replaced, its existing
-connections are not necessarily interrupted. A node that just left the selection is kept while its
-excess over the band is still within the noise of the two estimates:
+### Keeping Existing Connections: Hysteresis
+
+When the setting to interrupt existing connections is enabled and a node is replaced, its existing connections can stay open for a while. A node that has just left the selection range is not dropped right away if the part of its score beyond the band is still within the noise allowance:
 
 ```
 noise     = 2 × √(SE_proxy_node² + SE_proxy_best²)
 allowance = band + min(band, noise)
 ```
 
-This compares one known node with the best one, so each of them uses its own noise estimate. The two
-are combined as independent errors; a correlation from a shared target or line is still ignored.
-`min(band, noise)` caps the extra allowance at one band, so a node survives at most **twice the
-band** away from the best. Hysteresis is there to ride out measurement noise, not to keep a node
-that is clearly worse.
+This compares the node in use with the best node, so each uses its own noise estimate. It assumes their errors are independent; it does not account for a shared probe target or line. `min(band, noise)` caps the extra allowance at one band, so a node can stay up to **two bands** from the best. Hysteresis handles measurement noise; it is not meant to keep a clearly worse node for a long time.
 
-`idle` takes its `SE_proxy` from the full spread `sd(x)` while its band is sized by `1.2533 × JIT`,
-and the two can differ by an order of magnitude, so `min(band, noise)` takes the band and a node
-survives **twice the band** away. That is what the cap is for — the two numbers answer different
-questions, one is how narrow the band has to be to tell the nodes apart, the other is how wrong the
-score of a known node may be.
+For `idle`, `SE_proxy` uses the full spread `sd(x)` to estimate the error in `PRES`, while the band uses `JIT`. They can differ by an order of magnitude, so `min(band, noise)` reaches the band cap and the node can stay within **two bands**. That is why the extra allowance is capped: the band says how close nodes must be to count as equal, while the noise estimate says how far off the score of a known node might be.
 
-#### Why Retention Uses a Noise Estimate Too
+#### Why Connection Retention Also Uses a Noise Estimate
 
-Retention and the selection band both deal with "is the observed difference trustworthy", but they
-answer different questions: the band has to apply one robust margin to every unknown candidate,
-while retention faces one known node and can use the noise of that node and of the best one. The
-coefficient 2 is an engineering heuristic here as well, and does not imply a strict confidence.
+Connection retention and the selection band both ask whether an observed difference is trustworthy, but answer different questions. The band needs one robust margin for every unknown candidate. Retention deals with one known node and can use the noise estimates for that node and the best one. The factor 2 is an engineering rule of thumb here too, not a strict confidence level.
 
-#### How `quick` and `idle` Differ
+#### How `quick` and `idle` Behave
 
-- The noise of `quick` is decided by the spread of the delays and by the spread of the distances to
-  the median, and it becomes accurate with more samples.
-- The noise of `idle` comes from `MED` alone, one term fewer, and it shrinks sooner with more
-  samples. Its score does not fall back to zero when the window turns over: once a node starts to
-  queue, and while the baseline is still the level it had when it was idle, `STANDING` keeps it out
-  of the band until the queueing goes away or the baseline is re-learned.
+- The noise estimate for `quick` depends on the spread of delays and the spread of their distances from the median. More checks make it more reliable.
+- The noise estimate for `idle` combines the error in `PRES` (from `MED`) and the error in `BAD` (a binomial proportion). The band uses only the first, but retention needs both to estimate how far a known node's score might move. The second term goes to zero when `BAD` is zero, so a node with no failures gets its noise estimate from `PRES` alone. Its score does not return to zero just because the window moves on: once queueing starts, `PRES` and `BAD` keep it outside the selection range while `FLOOR` still reflects its idle state. It returns when queueing eases or the floor is relearned after expiry.
 
-#### The Single Node of `urltest`
+#### Single-Node Selection in `urltest`
 
-A `urltest` group uses one node at a time and has no second layer of retention. The hysteresis lives
-in the selection: the node in use keeps its place while its score stays within `Limit(best)` of the
-best one, which is a tolerance of **one** band.
+A `urltest` group uses one node at a time and does not have the load-balancing group's second layer of connection retention. Hysteresis is part of selection itself: the node in use stays selected while its score is no higher than `Limit(best)`, allowing a difference of at most **one band**.
 
-Retention and selection are two separate decisions: one decides whether the existing connections
-are worth breaking, the other which nodes new connections may use.
+Keeping existing connections and selecting a node are separate decisions: one decides whether to interrupt existing connections; the other decides which nodes new connections can use.
 
-### Why Not the Standard Deviation
+### Design Choice: Why Not Rank by Standard Deviation
 
-The sample standard deviation is the usual measure of spread, and it is the wrong one here, for
-three reasons that compound:
+The sample standard deviation is a common measure of variation, but it does not work well as the node's variation score for three reasons:
 
-1. **It is measured around the average, which the outlier moves.** One slow check of ten lifts the
-   average from 449ms to 897ms, and the other nine checks are then scored against a centre they have
-   nothing to do with: their deviation of 457ms becomes 751ms without any of them changing.
-2. **It is squared, so one sample can own the result.** In a window where a single check took
-   3.15s, 83% of the variance comes from that check, and the reported spread describes that one
-   probe rather than the node.
-3. **The square root does not restore the scale.** A spike of `X` in `n` samples contributes `X/n`
-   to the mean deviation, which is the share of connections it delays, but `X/√n` to the standard
-   deviation — 3.2× too much at `n = 10`, and worse as the window grows.
+1. **It is measured from the average, which an outlier can move.** Nine checks at 450ms and one at 3.15s pull the average from 450ms to 720ms. The other nine checks are then compared with a centre that does not represent them: their deviation goes from 0 to 270ms even though none of them changed.
+2. **It squares deviations, so one check can dominate.** Squaring makes the weight of a spike grow with its size squared: in the same example, that one check accounts for nine tenths of the variance. The result describes that probe, not the node's usual state.
+3. **Taking the square root does not fix the scale.** A spike of size `X` among `n` checks adds `X/n` to the average deviation, matching the share of connections it slows down. It adds `X/√n` to the standard deviation: 3.2 times as much when `n = 10`, and more as the window grows.
 
-`DEV` is the same idea without the two defects: linear, and measured from a centre the spike cannot
-move. A node that alternates between 200ms and 800ms still has a large `DEV`; it is not that `DEV`
-ignores instability, it is that the estimate stays a statement about the node.
+`DEV` still measures deviation from the median, but uses a linear average so a spike cannot move the centre. A node that alternates between 200ms and 800ms still has a large `DEV`; it does not ignore instability. It simply avoids letting one check decide the score. In the current design, `DEV` is shown in reports but is not used for ranking.
 
-`idle` now ranks by `STANDING`, which is linear too: a standing queue is a delay difference, not a
-square. The difference is that it does not measure "how much it swings within the window" but "how
-much longer it waits than at its own best". Both can show the same spread in a window and still
-mean different things: a node that alternates between 200ms and 800ms has a median of about 500
-while its baseline stays at 200, so `STANDING` is about 300; a node steady at 800ms has a baseline
-of 800 and a `STANDING` of zero — it was never faster, so the current slowness is not queueing.
-**`idle` picks the first one.** A steady slowness is a known cost that `max_rtt` can cap; a
-slowness that comes and goes cannot be anticipated at all.
+The two `idle` ratios are also linear or count-based, not squared:
 
-This does not mean the standard deviation is unused: `quick` still estimates its score noise with
-the sample standard deviation. The trade-off here is **not to rank nodes by it directly**.
+- `PRES` is a ratio, not a square.
+- `BAD` is the share of checks that crossed the limit; an extreme check counts once.
 
-### Why Not Trend
+They measure how much worse the node is than at its best, and how often that happens—not how much its delay swings during the window. Those can describe different problems. A node that alternates between 200ms and 800ms has a median near 500ms, a floor of 200ms, `PRES` near 1.5, and `BAD` near 50%. A node steady at 800ms has a floor of 800ms, so both ratios are zero: it has never been faster, so its current slowness is not queueing. **`idle` picks the latter.** A steady delay is a known cost that `max_rtt` can handle; a delay that comes and goes cannot be planned for.
 
-A window has an order, and none of the statistics above use it: shuffle the samples and `MED`,
-`STANDING`, `JIT` and `DEV` are unchanged. So a node that has been getting worse for ten minutes
-has the same reading as one that has been like that all along, as long as the level matches.
+This does not mean standard deviation is never used: `quick` still uses the sample standard deviation to estimate score noise. The choice here is **not to use it directly to rank nodes**.
 
-`STANDING` compensates for that in part, but not the way a trend does: it compares **now with the
-best**, not the beginning with the end. A node that goes from 200ms to 600ms has a `MED` of 600 at
-once and a baseline of 200, so `STANDING` is 400 at once, without waiting for a trend to accumulate.
-A node that goes from 600ms to 200ms pulls its baseline down to 200, so `STANDING` returns to near
-zero at once and is not held back by its bad past. **The direction therefore needs no extra
-handling: the baseline only moves down, so an improvement is credited at once and a deterioration
-is charged at once.**
+### Design Choice: Why Trends Are Not Part of the Score
 
-A half-window comparison (`median(second half) − median(first half)`) does add a layer, and cheaply:
-it can tell "just started to get worse" from "has been bad for a while". It is not part of the score
-because a score that contains a trend would rank differently when `interval` changes, and a ranking
-has to be a property of the node, not of the cadence it was sampled at. A trend belongs to the
-decision, next to the tolerance, not to the measurement.
+Checks in a window have an order, but the measures above do not use it: shuffle the checks and `MED`, `PRES`, `BAD`, `JIT`, and `DEV` stay the same. So a node that has been getting worse for ten minutes can have the same readings as one that has been in that state all along, as long as their delay distributions match.
 
-It also needs care: with a `sampling` of 10, two consecutive bad checks out of five in the second
-half do not move its median, so the trend only appears from the third one onward. That makes it a
-slower signal than the last check, which is already in the statistics.
+`PRES` and `BAD` partly address this, but not by looking for a trend. They compare **now with the best seen before**. If a node goes from 200ms to 600ms, `MED` immediately becomes 600, `FLOOR` stays at 200, and `PRES` becomes 2.0; there is no need to wait for a trend to build up. If it goes from 600ms to 200ms, `FLOOR` falls to 200 and `PRES` quickly returns close to zero, without holding the past against it. **There is no need to handle direction separately: `FLOOR` only moves down, so improvements count at once and deteriorations show up at once.**
 
-The window length has a trade-off of the same kind: with a roughly stable distribution a longer
-window gives a smoother estimate with less noise, but it also holds older samples, so the score
-follows a node that changes more slowly. A shorter window reflects a change sooner, and is more
-easily moved by chance. Lowering the noise and following a change are two ends of one knob.
+Comparing the medians of the first and second halves of a window (`median(second half) − median(first half)`) would add useful information at little cost. It could tell "just started getting worse" from "has been bad for a while." But putting a trend into the score would change the ranking when `interval` changes. The ranking should reflect the node itself, not how often it is checked. Trends belong in the decision, like tolerance, not in the measurement.
 
-### Why the Baseline Is a Ring of Slots
+It also needs care: with `sampling = 10`, two abnormal checks in a row among the five in the second half do not move its median. The trend appears only with a third. This signal is slower than the latest check, which is already included in the statistics.
 
-The baseline records "the best state of this node", and that puts it under two opposite demands: **it
-has to remember long enough**, because a line is only idle in the trough of the day, and a memory
-that is too short takes the congested level for the idle one; **it has to forget**, because a node
-with the same tag may have changed line or machine, and the old baseline is then simply wrong.
+Window length has a similar trade-off. When delays are fairly stable, a longer window usually gives a smoother estimate with less noise, but it also keeps older checks for longer and reacts more slowly to changes. A shorter window reacts sooner but is more affected by chance. Reducing noise and following changes are two ends of the same choice of window.
 
-A "when does it expire" timer satisfies neither well, because expiry is a single event: nothing
-changes until the moment, and then everything is dropped at once. A **ring of slots** turns both
-demands into something continuous:
+### Design Choice: Why the Baseline Is a Ring of Slots
+
+The baseline records "the best state of this node," so it has two competing needs: **remember long enough**, because a line may be idle only during a quiet time of day; and **forget old readings**, because a node with the same name may have moved to another line or machine, making its old baseline wrong.
+
+A timer that expires everything at once does not handle both needs well: nothing changes until expiry, then all the old readings disappear together. A **ring of slots** lets the baseline remember and forget a little at a time:
 
 ```
 48 slots × 30 minutes = 24 hours
-every 30 minutes one slot is reset, the other 47 stay as they are
+every 30 minutes one slot is reset; the other 47 stay as they are
 ```
 
-- **It remembers long enough**: the ring covers a whole day, every time of day has a record of its
-  own, so there is always a full day of evidence behind the baseline.
-- **It forgets smoothly**: there is no expiry event, only a slot overwritten by the next
-  measurement of the same slot. The baseline never becomes void in one instant, and never makes the
-  scores of a whole group fall to zero together.
+- **It remembers long enough**: the ring covers 24 hours, with a record for each time of day, so the baseline always has a full day's observations to refer to.
+- **It forgets gradually**: there is no single expiry event; only one slot is replaced by the next reading for that time. The baseline does not suddenly become invalid, and one reset does not make the scores for the whole group drop to zero.
 
-The slots are cut by the wall clock rather than by uptime, so slot 40 is always 20:00–20:30. That
-makes the memory more accurate: a slot records **how fast the node can be at this time of day**,
-not the lowest value of some arbitrary 24-hour window.
+Slots follow wall-clock time, not uptime, so slot 40 always represents 20:00–20:30. This makes the record more useful: each slot remembers **how fast the node can be at that time of day**, not its lowest delay in any arbitrary 24-hour period.
 
-The number of slots is the knob between a coarse memory and a reliable slot: fewer slots means a
-longer slot, and a change within a slot is flattened into its single minimum; more slots means fewer
-probes in each, and a record decided by one or two of them. 48 divides a day exactly and leaves
-several rounds per slot. Like `sampling` and `interval` it is a **constant of the implementation,
-not an option**: changing it has to be done together with the check interval, so it is not something
-to hand to a configuration.
+The number of slots sets the time span each record covers and how many checks it gets. With fewer slots, each covers a longer period, and changes within it are reduced to one minimum. With more slots, each gets fewer checks, so one or two probes may determine its value. 48 divides the day evenly and leaves several rounds of checks in each slot. Like `sampling` and `interval`, it is an **implementation constant, not a setting**. Changing it also requires considering the check frequency, so it should not be configurable on its own.
 
-**The price.** The baseline is the smallest of the smallest of each slot, so it is still a minimum,
-and it leans towards the most optimistic measurement. That matches its purpose (the idle level), but
-it means a lucky probe lowers the baseline slightly, see the comparison of estimators in
-[Derivations](#derivations).
+**The trade-off.** The baseline is the smallest value in each slot, then the smallest of those values. It therefore favors the most optimistic reading. That suits its purpose—recording the idle level—but a lucky probe can lower it slightly and make every node's `PRES` a little larger. See the comparison of estimates in [Derivations](#derivations). This bias is **shared** and does not change the ranking; it only changes how strict `tolerance` feels.
 
-#### Updating, Expiring and Starting
+#### Updating, Expiring, and Starting
 
-**Updating.** Each round writes its slot first, then takes its score, so the observation of the
-round counts at once:
+**Updating.** Each round updates its slot before calculating the score, so the new reading takes effect right away:
 
 ```
-slot[k]  = min(slot[k], MIN)                           # entering a slot resets it to MIN first
-BASELINE = min(of the slots within the last 24 hours)
-STANDING = MED − BASELINE
+slot[k]  = min(slot[k], MIN)                       # entering a new slot resets it to MIN first
+FLOOR    = min(values from slots in the last 24 hours)
+PRES     = max(0, MED − FLOOR) / FLOOR
+BAD      = (#{xᵢ > 2 × FLOOR} + FAIL) / ALL
 ```
 
-Writing first cannot make a score of zero: a slot holds a minimum, so afterwards
-`BASELINE ≤ MIN ≤ MED`. Taking the score first instead would mean a node that gets faster is only
-credited on the next round, which buys nothing.
+Updating first does not make the score zero: each slot holds a minimum, so afterwards `FLOOR ≤ MIN ≤ MED`. `PRES` remains a non-negative ratio and `BAD` remains a share. Calculating the score before the update would only delay the effect of a node getting faster until the next round.
 
-A round with fewer than two successful checks writes nothing: that single check may be luck, or a
-probe that has not warmed up, and it should not set the floor of a whole day. `STANDING` of such a
-round is half of that delay, see [The Statistics](#the-statistics).
+If fewer than two checks succeed, the slot is not updated. That single result may be luck or an unsettled probe, and should not set the floor for the whole day. In that round `idle` ranks by that one delay instead; see [Statistics: Successful Checks Only](#statistics-successful-checks-only).
 
-**Expiring.** There is no expiry step of its own: a slot is overwritten by the next measurement of
-the same slot 24 hours later, and drops out. The baseline therefore always comes from **a time of
-day that was really observed**, and never mistakes the current congestion for the best the node can
-do — which is what "reset to the current value when it expires" would do. If one time of day stays
-congested from then on, its record rises over time while the other slots still hold, unless it stays
-that way all day, and then the whole baseline rises: an admission that this is simply what the node
-is like.
+**Expiring.** There is no separate expiry step: after 24 hours, the next reading for the same slot replaces the old one. The baseline therefore always comes from **a time of day that was actually observed**. This avoids treating current congestion as the fastest level, as a rule like "reset to the current value at expiry" would. If one time of day stays congested, its record gradually rises while the other slots stay as they are. The whole baseline rises only if the node remains congested for a long time—in effect, accepting that this is now its usual state.
 
-**Steps.** While the node is stable or drifts slowly, the baseline moves by at most one slot of
-change per rotation, because only one slot is replaced every 30 minutes. Simulating a node that
-degrades by 144ms per day: the one-shot expiry produces a single 144ms step, the ring about 11ms
-each time, spread over 48 of them a day. **A step change — another line, another machine — still
-leaves one step**: a minimum has to jump to the next smallest value at the moment the last old slot
-is overwritten, and the size of that jump is the change itself. That is what forgetting is, not
-jitter that could be smoothed away.
+**Sudden changes.** If the node stays stable or changes slowly, the baseline moves by at most the change in one slot at a time, since only one slot is replaced every 30 minutes. For a node that gets 144ms slower each day, expiring everything at once would cause a 144ms jump. With slots, the change is spread across 48 updates during the day, about 11ms each. **A sudden change, such as a new line or machine, can still cause a jump**: when the last old reading is overwritten, the minimum has to move to the next-lowest value. The jump is the size of the change itself. That is the cost of forgetting old data, not noise that smoothing can remove.
 
-**Starting.** The first round writes its own fastest check, so `STANDING` starts out as `MED − MIN`
-with no separate branch. From there the baseline grows a slot at a time and covers a full day after
-a day. A restart follows the same path: the baseline is a record in memory and is grown again from
-scratch, and while it is young each slot covers fewer times of day, so the baseline is more easily
-pushed low — the price of forgetting, and not one that leaves the score meaningless.
+**Starting up.** The first round writes its fastest check, so `FLOOR` starts at `MIN` without a separate fallback. The ring then fills one slot at a time and takes 24 hours to cover the full day. After a restart it has to build up again because the baseline is kept in memory. While it is rebuilding, each slot covers fewer time periods and the floor may be too high. This is the cost of forgetting old data; the ranking still works. See [Design Choice: Does an Immature Floor Change the Ranking?](#design-choice-does-an-immature-floor-change-the-ranking).
 
-### Why `STANDING` Ignores a Single Spike
+### Design Choice: Why the Threshold Is Two and the Weight Is 0.5
 
-`STANDING` subtracts the median, and a median is decided by rank alone: one spike of three seconds
-among ten checks leaves the median at the typical value of the rest, and `STANDING` barely moves.
-Sustained congestion pushes the median; a single stall does not.
+`BAD` counts checks where the delay exceeded twice the node's best. The weight `0.5` means a node that is always twice as slow adds 500 to the scale. Neither value was fitted to data; each has a simple reason.
 
-That is at odds with "a stall of three seconds delays traffic", so here is the trade-off:
+**Why two?** Twice the delay means it has doubled. This is a common point for treating a line as starting to queue. Either side of it fails in its own way:
 
-- **A spike is short**. It affects the few connections that land on it, while the rise from
-  queueing affects **every** connection of the window. Ranking by spikes costs a whole ranking
-  decided by luck.
-- **A spike needs more samples to be trusted**. The single extreme is the least stable quantity of a
-  window; ranking by it would make the score swing with the window, the margin would have to grow
-  with it, and the resolution would be worse for it.
-- **A higher quantile is available when more sensitivity is wanted**. Taking the current level as
-  p90 instead of `MED`: in a measured window, a node with a median of 175ms containing one check of
-  655ms has a `MED − MIN` of 20ms and a `p90 − MIN` of 117ms. A higher quantile is more sensitive
-  and closer to the extreme, hence less stable. The implementation takes the median, because the
-  question it answers is "how long does this connection usually wait".
+- **Too low (say 1.5 times)** and normal variation and probe noise cross it as well, so every node carries some `BAD` and the nodes can no longer be told apart — the measure is there to separate "queues now and then" from "queues all the time", and a low threshold stops separating them.
+- **Too high (say 3 times)** and only a sustained long queue reaches it, nearly every node scores zero, and the measure stops existing: the score falls back to depth alone.
+
+Twice sits between the two: normal movement does not reach it, and real queueing always does.
+
+**Why 0.5?** It puts frequency on the same scale as depth: `PRES` is on the order of 0 to 1, and a node that is twice as slow on every check should be rated about as badly as a node that queues as badly as it can, i.e. add close to 1. A weight of 0.5 makes "twice as slow every time" slightly worse than "always 50% more queueing". That is a judgement about scale, not a fitted value.
+
+It is not a value to pick at random, but it is not one that needs fine tuning either: it sets the **exchange rate**, how many bad checks are worth one percent of queueing. Move the rate and the nodes at the edge of the band change — a wider rate takes in one or two merely worse nodes, a narrower one keeps only the cleanest. That makes it a policy question: how much should "stalls now and then" count as "always a little slower". The order of nodes that clearly differ does not depend on it; only the ones near the band do.
+
+The two parts **must stay separate**, because they catch different defects:
+
+| Node | `PRES` | `BAD` | Rank by depth only | Rank by frequency only |
+| --- | --- | --- | --- | --- |
+| Fast but often fails | very low | very high | First | Middle |
+| Slow but steady | medium | very low | Middle | First |
+| Slow and often fails | very high | very high | Last in both | Last in both |
+
+Using only one would miss the other kind of problem.
+
+### Design Choice: Why Both Parts Are Ratios
+
+`idle` asks how much worse a node is than it can be at its best. That can be written as a difference (`MED − FLOOR`) or a ratio (`(MED − FLOOR) / FLOOR`). A ratio is not just a preference; it is the way to remove distance from the comparison.
+
+**A difference brings distance back in.** A 400ms node with a floor of 380 takes 20ms longer than its best. A 900ms node with a floor of 860 takes 40ms longer. By the difference, the second is worse, but part of those 40ms comes from being farther away: at the same amount of queueing, a longer path adds more milliseconds. A difference cannot separate "I am queueing" from "I am simply far", because it carries the floor's unit.
+
+**A ratio cancels the floor.** `PRES` is the extra delay as a share of the node's own floor, so the same amount of queueing is the same number for a near node and a far one; `BAD` only compares against the floor and carries no distance either. Both are dimensionless, which is what "independent of distance" means here.
+
+**There is a trade-off.** A ratio makes the relative change look larger for a node with a lower floor. A node at 176ms with a 149ms floor that occasionally doubles has `PRES` of 0.18, so it can look worse than a 525ms node with `PRES` of 0.03. It is faster in absolute terms, but more overloaded compared with its own best. That is intentional in `idle`, not a side effect. `max_rtt` and `quick` handle absolute delay. One could try to account for both by selecting nodes from different delay ranges, but that would no longer be `idle` alone.
+
+### Design Choice: Does an Immature Floor Change the Ranking?
+
+`FLOOR` needs a full 24 hours to collect readings for every time of day. Just after startup, it is only the fastest check in the current window. Does that make the ranking unreliable?
+
+**No, because `FLOOR` is in the denominator.** If a node's floor is off, its `PRES` changes by the same proportion, and `BAD` is recalculated against that floor too. A difference behaves differently: an error of 10ms in a floor shifts the result by 10ms and can change the order. A ratio scales with the floor, so the ranking mostly stays the same.
+
+The ranking only moves when the floors of **different nodes** are off by different proportions, and neither source of floor error works that way. Taking the minimum biases every node in the same direction, and where a node's floor lands among its own samples depends on how narrow its distribution is — a narrow one settles on its true lower bound quickly. So an immature floor makes every score a little too optimistic and shifts how strict `tolerance` is by that much, but it does not reorder the nodes.
+
+**There is a limit.** The larger the floor error, the worse the ratio works: once the denominator is noisy enough, it performs about as poorly as a difference. So this design assumes the floor is not **far off for an individual node**. A new machine or line can make the old floor completely wrong; the 48-slot ring's 24-hour expiry is meant to handle that.
+
+There is one more connection: a node with more variation tends to have a lower floor, which raises `PRES`. Since variation is itself a problem, this is in the intended direction, but it means `PRES` partly overlaps with `BAD`. The overlap points the same way, so it cannot let a quiet node profit from looking variable.
 
 ### Derivations
 
-This section explains the formulas, constants and assumptions behind the noise estimates. First the
-notation:
+This section explains the formulas, constants, and assumptions behind the noise estimates. First, the notation:
 
-- `n` is the number of successful checks; `xᵢ` is the delay of the `i`-th successful check; `MED`
-  is the sample median of those delays.
-- `sd(…)` is the sample standard deviation, an estimate of how far a set of values usually sits from
-  its centre.
-- `Var(…)` is the variance, the square of the size of a fluctuation; `SE` (standard error) is how
-  much an estimate usually moves when it is sampled again, and is the square root of its variance.
-- `SE_proxy` is the noise estimate the implementation uses. It is an approximation, not an exact
-  standard error or a confidence interval.
+- `n` is the number of successful checks; `xᵢ` is the delay of the `i`-th successful check; `MED` is the median of those delays.
+- `sd(…)` is the sample standard deviation, used to estimate how far a set of values usually falls from its centre.
+- `Var(…)` is variance, or the square of the amount of variation. `SE` (standard error) is how much an estimate usually varies when sampled again; it is the square root of the variance.
+- `SE_proxy` is the noise estimate used by the implementation. It is an approximation, not an exact standard error or confidence interval.
 
-The derivations assume the checks are independent and come from a distribution that is stable within
-the sampling window. The analysis of `JIT` also assumes a symmetric distribution; real networks do
-not always satisfy these conditions.
+The derivations assume checks are roughly independent and come from a distribution that stays stable within a window. The analysis of `JIT` also assumes the distribution is symmetric; real networks do not always meet these conditions.
 
-#### `idle`: The Noise of `STANDING`
+#### `idle`: Estimating the Errors in the Two Ratios
 
-`idle` ranks by `STANDING = MED − BASELINE`. What we want to estimate is how much this difference
-usually moves when another batch of checks is taken.
+`idle` ranks by `score = 1000 × (PRES + 0.5 × BAD)`. We want to estimate how much this sum would usually change if we ran another set of checks.
 
-**Step one: the baseline is a constant within this sample.** `BASELINE` is built from past windows,
-and no choice of samples in this window changes it. Subtracting a constant does not change the
-variance:
+**Step one: `FLOOR` is constant within a round.** `FLOOR` is built from the minimum in each slot. Once the current round has updated its slot, `FLOOR` is a fixed value. Subtracting or dividing by a constant gives:
 
 ```
-Var(STANDING) = Var(MED − BASELINE) = Var(MED)
+Var(PRES) = Var(MED / FLOOR) = Var(MED) / FLOOR²
 ```
 
-This does not mean the baseline has no error, only that its error does not move from one sample to
-the next. The error of the baseline is **systematic**: a lucky probe can set it too low, and every
-later score of that node is too high. Such a bias is not averaged away by more samples, so it does
-not belong in a standard error; it can only be kept small by how the baseline is estimated, see step
-four.
+The current round can move `FLOOR` **down** if it finds a faster delay. `PRES` then uses this round's `MIN` as its reference, so it also picks up some of `MIN`'s noise. This happens only when a new record is set, and only in one direction; it is not variation that occurs in every round. The noise estimate therefore focuses on `MED`.
 
-**Step two: the variance of `MED`.** A median depends only on the rank of the samples, so its
-variance is decided by the density around the median, `f(m)`:
+The error in `FLOOR` itself is different: it is **systematic**. A minimum that is too low makes every `PRES` for that node too high, and more samples do not average that bias away. It is not part of the standard error; its direction must be understood instead. See step five.
+
+**Step two: the variance of `MED`.** A median depends on the rank of the samples, so its variance depends on the density near the median, `f(m)`:
 
 ```
 Var(MED) ≈ 1 / (4n·f(m)²)
 ```
 
-For a normal distribution `f(m) = 1/(σ√(2π))`, which gives `(π/2)·σ²/n`, and the square root is:
+Under a normal approximation, `f(m) = 1/(σ√(2π))`. Substituting gives `(π/2)·σ²/n`; taking the square root gives:
 
 ```
 SE(MED) ≈ 1.2533 · σ / √n
 ```
 
-`σ` is the variation of one check of the node. The implementation estimates it in two ways: `sd(x)`,
-the sample spread, which is what the definition of a standard error is written in, and `JIT`, the
-median deviation times `1.4826`, a robust estimate on the same scale that a single spike cannot move.
-They are used in two places: retention takes the first, the margin the second, see
-[Why the Margin of `idle` Is the Error of a Median](#why-the-margin-of-idle-is-the-error-of-a-median).
+`σ` is the variation in one check. The implementation estimates it in two ways: `sd(x)` is the sample standard deviation used in the basic standard-error formula; `JIT` is the median deviation multiplied by `1.4826`, a robust estimate on the same scale that a single spike cannot move. They are used for different purposes: retention uses the first, while the margin uses the second. See [Why the `idle` Margin Is Calculated This Way](#why-the-idle-margin-is-calculated-this-way). The origin of `1.2533 = √(π/2)` is explained in [`quick`: The Error in `MED`](#quick-the-error-in-med).
 
-The origin of `1.2533 = √(π/2)` is in [`quick`: The Error of `MED`](#quick-the-error-of-med); both
-objectives use the same quantity.
-
-**Step three: putting the two together**, which gives the estimate retention uses:
+**Step three: combining the two gives the error in `PRES`:**
 
 ```
-SE_proxy(STANDING) ≈ SE(MED) ≈ 1.2533 · sd(x) / √n
+SE(PRES) ≈ SE(MED) / FLOOR ≈ 1.2533 · sd(x) / (FLOOR · √n)
 ```
 
-The margin puts `JIT` in place of `sd(x)` and keeps the shape. Both are **absolute** errors, and do
-not grow with the score. A node with 500ms of standing queue and one with none have the same error
-scale, because the difference between them is only the constant that was subtracted.
+For the margin, `sd(x)` is replaced with `JIT`, with the same formula shape. This is an **absolute** error: it does not change with the score. A node with 10% standing queueing and one with almost none have the same error scale because their difference is in `MED`; the error depends on `σ`, `FLOOR`, and `n`.
 
-**Step four: the baseline is a minimum, so it leans optimistic.** The baseline has to answer "how
-fast can this node be", and the implementation takes the fastest check it has seen, with no
-smoothing. Simulating a day of 1440 checks at a true idle level of 200ms with `sd = 8`:
+**Step four: the error in `BAD`.** `BAD` is the share of all attempts that missed the limit, or the number of misses divided by `ALL`. It is a binomial proportion, with standard error:
 
-| Estimator | Baseline | Queueing read when idle |
+```
+SE(BAD) ≈ √( BAD(1 − BAD) / ALL )
+```
+
+This term differs from the first: it does not depend on `σ`, only on `BAD` and the number of attempts. When `BAD` is zero, its error is also zero. This is why it can be used for hysteresis but not for the band; see [Why the `idle` Margin Is Calculated This Way](#why-the-idle-margin-is-calculated-this-way).
+
+The denominator is all attempts, not just successful checks. Failures are already counted in the measure; using a smaller denominator would make the error look too small, especially for a node with many failures.
+
+Both terms come from the same window and may be related. The implementation treats them as independent and adds their variances:
+
+```
+SE_proxy(score) ≈ 1000 · √( SE(PRES)² + 0.5² · SE(BAD)² )
+```
+
+This is the noise estimate for **hysteresis**. The band uses only the third step, with `JIT` in place of `sd(x)`:
+
+```
+band margin = 2√2 · 1000 · 1.2533 · JIT / (FLOOR · √n)
+```
+
+**Step five: `FLOOR` uses a minimum, so it is optimistic.** `FLOOR` answers "how fast can this node be?" by using its fastest observed delay, without smoothing. A simulation with 1,440 checks in a day, an idle delay of 200ms, and `sd = 8` gave:
+
+| Estimate | `FLOOR` | `PRES` while idle |
 | --- | --- | --- |
-| **the smallest check (the implementation)** | **175** | **25** |
-| smallest of the medians of the windows | 191 | 9 |
-| 10th percentile of the day | 190 | 10 |
-| median of the day | 200 | 0 |
+| **Minimum (used by the implementation)** | **175** | **14%** |
+| Minimum of each window's median | 191 | 5% |
+| 10th percentile for the full day | 190 | 5% |
+| Median for the full day | 200 | 0% |
 
-A minimum is systematically low by about three standard deviations: a day offers 1440 chances, one
-of them is lucky. The price is a few to a few tens of milliseconds of false queueing on every node;
-what it buys is a quantity that is not dull.
+The minimum is systematically about three standard deviations too low: with 1,440 chances in a day, one check is likely to be lucky. The cost is that every node's `PRES` is a few percentage points higher; the benefit is that the measure **reacts quickly**.
 
-Recording the median of each window instead is much quieter (9ms of bias), but it answers a
-different question: "how fast is this node **usually**". In a quiet period every node equals its own
-median, every `STANDING` is zero, and `idle` has nothing to rank. Worse, it is fooled by a real
-kind of node: one whose delay alternates between two bandwidth pools. With two lows and two highs
-the median sits exactly between the peaks, a value it never reaches, and that midpoint is stable
-from round to round, so it reads as the steadiest of all (`MED = 919`, `MIN = 556`: zero from the
-median, 363 from the minimum). A minimum is not fooled by that shape.
+Recording each window's median is steadier, with only a few percent of error, but answers a different question: "How fast is this node **usually**?" During a steady period each node's median equals its own, so `PRES` is zero for all nodes and `idle` has nothing to rank. It can also fail on a real pattern: a node whose delay alternates between two bandwidth pools may have two low and two high checks. Its median lands between the two levels, at a value it never reached, and stays there. It then appears to be the steadiest node (`MED = 919`, `MIN = 556`; a median floor gives 0, while a minimum floor gives 65%). The minimum does not get fooled by this pattern.
 
-The bias is **common**, so it does not change the order: two nodes are both a few milliseconds
-optimistic, and their difference in `STANDING` is still the difference of their real queueing. It
-moves the absolute zero point, which is what the configured `tolerance` is measured against.
+This bias is **shared**, so it does not change the ranking: if two nodes are both optimistic by the same proportion, their `PRES` difference still reflects their actual difference. It only moves the zero point, and therefore changes how strict `tolerance` feels.
 
-#### `quick`: The Error of `MED`
+#### `quick`: The Error in `MED`
 
-The score of `quick` is `MED + JIT`. Take `MED` first: another batch of checks moves the median as
-well. Its error depends on how crowded the neighbourhood of the median is: when the samples are
-concentrated around it the median does not move much, and when they are sparse a small change in the
-samples can move it further.
+The `quick` score is `MED + JIT`. First consider `MED`: a new set of checks can move the median too. Its error depends on how crowded the values are around it. If many checks are close to the median, it is harder to move; if few are nearby, a small change in the sample can move it farther.
 
-Let `f(m)` be the density of the distribution around the population median `m`, which can be read as
-"how dense the delays are around the median". With enough samples, the variance of the median is
-approximately:
+Let `f(m)` be the density around the population median `m`, or how closely delays cluster around the median. With enough samples, the variance of the median is approximately:
 
 ```
 Var(MED) ≈ 1 / (4n·f(m)²)
 ```
 
-For a normal distribution, `f(m) = 1/(σ√(2π))`, and substituting gives:
+For a normal distribution, `f(m) = 1/(σ√(2π))`. Substituting gives:
 
 ```
 Var(MED) ≈ (π/2)·σ²/n
@@ -632,24 +440,18 @@ SE(MED)  ≈ √(π/2)·σ/√n
           ≈ 1.2533·sd(x)/√n
 ```
 
-The sample `sd(x)` estimates the population `σ`. `1.2533 = √(π/2)` is therefore a coefficient of the
-**normal approximation**: under it the standard error of a median is about 25% larger than that of a
-mean. With a clearly skewed distribution of delays, or with very few samples, the coefficient is not
-necessarily appropriate.
+Here, sample `sd(x)` estimates the population standard deviation `σ`. So `1.2533 = √(π/2)` is a coefficient from the **normal approximation**: under that assumption, the standard error of a median is about 25% larger than that of a mean. It may not fit a strongly skewed delay distribution or a very small sample.
 
-#### `quick`: Why `JIT` is Multiplied by `1.4826`
+#### `quick`: Why `JIT` Is Multiplied by `1.4826`
 
-`JIT` takes the median of the absolute deviations as the "typical variation" and multiplies it by
-`1.4826` to put it on the scale of a standard deviation. The constant comes from the normal
-distribution:
+`JIT` represents typical variation with the median absolute deviation, then multiplies it by `1.4826` to put it on the standard-deviation scale. This constant comes from the normal distribution:
 
 ```
 q = median(|X − m|)
 P(|X − m| ≤ q) = 1/2
 ```
 
-In a symmetric normal distribution, "within `q` of `m`" holds half of the probability, so the
-probability from the mean up to `m+q` is a quarter, that is `Φ(q/σ) = 0.75`. Therefore:
+In a symmetric normal distribution, half the probability falls within `q` of `m`. So a quarter lies between the mean and `m+q`, which gives `Φ(q/σ) = 0.75`. Therefore:
 
 ```
 q = Φ⁻¹(0.75)·σ ≈ 0.6745·σ
@@ -657,84 +459,61 @@ q = Φ⁻¹(0.75)·σ ≈ 0.6745·σ
 1.4826 = 1 / Φ⁻¹(0.75)
 ```
 
-In other words, for normal data the median of the deviations is about `0.6745σ`, and after
-multiplying by `1.4826` the result estimates the scale of the standard deviation. It is a conversion
-constant for the normal distribution; it does not mean real delays follow one.
+For normal data, the median deviation is about `0.6745σ`; multiplying by `1.4826` lets `JIT` estimate the standard-deviation scale. This is a conversion for normally distributed data; it does not mean real delays follow a normal distribution.
 
-#### `quick`: The Error of `JIT`
+#### `quick`: Estimating the Error in `JIT`
 
-Even with the true centre `m` known, `JIT` varies with which batch of samples was drawn. Let `q` be
-the population median of `|X−m|` and `g(q)` the density of the absolute deviations around `q`. With
-the centre known, a symmetric distribution and enough samples:
+Even if the true centre `m` is known, `JIT` changes depending on which checks were sampled. Let `q` be the population median of `|X−m|`, and `g(q)` the density of absolute deviations near `q`. If the centre is known, the distribution is symmetric, and there are enough samples:
 
 ```
 SE(median(|X − m|)) ≈ 1 / (2g(q)√n)
 SE(JIT) ≈ 1.4826 / (2g(q)√n)
 ```
 
-Intuitively, the denser the absolute deviations around `q`, the harder it is to move their median and
-the smaller the error. If the centre has to be estimated from the same samples, or the distribution
-of the delays is asymmetric, the calculation needs those effects as well.
+The more tightly the absolute deviations cluster near `q`, the harder it is to move their median and the smaller the error. If the centre is estimated from the same samples, or delays are not symmetric, those effects also need to be considered.
 
-The implementation uses `1.858·sd(d)/√n` for this part, where `1.858 = 1.4826 × 1.2533`. The
-approximation applies the normal coefficient of a median to `d`; but even for normal `x` the absolute
-deviations `d` are half-normal, so `1.858` is not a rigorously derived standard error coefficient. It
-should be read as the estimate the implementation uses, not as a probability guarantee.
+The implementation uses `1.858·sd(d)/√n` as an approximate noise estimate for this part, where `1.858 = 1.4826 × 1.2533`. This applies the normal median coefficient to `d`. But even when `x` is normally distributed, absolute deviations `d` follow a half-normal distribution, so `1.858` is not an exact standard-error coefficient. It is the estimate used by the implementation, not a precise probability guarantee.
 
-#### `quick`: Combining the Errors of `MED` and `JIT`
+#### `quick`: Combining the Errors in `MED` and `JIT`
 
-If the errors of two quantities are independent, the variance of their sum is the sum of their
-variances; in general a covariance term has to be added:
+If two errors are independent, the variance of their sum is the sum of their variances. In general, a covariance term is needed:
 
 ```
 Var(MED + JIT) =
     Var(MED) + Var(JIT) + 2·Cov(MED, JIT)
 ```
 
-`MED` and `JIT` are computed from the same samples, so in principle they can be correlated. Under a
-symmetric IID distribution they are asymptotically independent, and the implementation neglects the
-covariance; with finite samples or another distribution that need not hold. The combined noise
-estimate is:
+`MED` and `JIT` use the same checks and may be related. For a symmetric IID distribution they become independent as the sample grows, so the implementation ignores covariance as an approximation. With few samples or another distribution, that may not hold. The combined noise estimate is:
 
 ```
 SE_proxy(score) ≈ √( SE_proxy(MED)² + SE_proxy(JIT)² )
 ```
 
-So the coefficients and the variance combination of `quick` rest on the distributional and sampling
-assumptions above; this `SE_proxy` is an engineering estimate, not a 95% interval.
+So the coefficients and variance calculation for `quick` depend on the distribution and sampling assumptions above. This `SE_proxy` is an engineering estimate, not a 95% confidence interval.
 
-#### Comparing Two Nodes: How Uncertain the Difference Is
+#### Comparing Two Nodes: How Uncertain Is the Difference?
 
-The question here is how much the difference between the score of a node and the score of the best
-node moves when the checks run again. Treat the two scores as random quantities:
+This asks how much the gap between a node's score and the best score could change if the checks were run again. Treat the two scores as random quantities:
 
 ```
-S_node   = the score of the node, as a random quantity
-S_best   = the score of the best node, as a random quantity
+S_node   = the node's score as a random quantity
+S_best   = the best node's score as a random quantity
 D        = S_node − S_best
 Var(D)   = Var(S_node) + Var(S_best)
            − 2·Cov(S_node, S_best)
 ```
 
-When the measurement errors of the two nodes are independent, the covariance is zero. When they share
-a probe target or are affected by the same line conditions, it may not be, and the implementation
-ignores it. Under independence, substituting the two noise estimates and taking the square root
-gives:
+If the nodes' measurement errors are independent, the covariance is zero. If they share a probe target or are affected by the same line conditions, it may not be; the implementation ignores it. Under the independence assumption, substituting the two noise estimates and taking the square root gives:
 
 ```
 Var(D) ≈ SE_proxy_node² + SE_proxy_best²
 SD(D)  ≈ √(SE_proxy_node² + SE_proxy_best²)
 ```
 
-`SD(D)` is how much the difference moves on a re-measurement; the `SE_proxy` in the formula is the
-estimate the implementation uses, not an exact value.
+`SD(D)` describes how much the score difference may change when measured again. `SE_proxy` is the implementation's estimate, not an exact value.
 
 #### How `SD` and `SE` Relate
 
-`SD` (standard deviation) describes the fluctuation of a random quantity; `SE` (standard error)
-describes how much an estimate moves when it is sampled again. A score is an estimate computed from
-samples, so its standard deviation is its standard error. Here `SE_proxy` is the implementation's
-approximation of that error.
+`SD` (standard deviation) describes how much a random value varies. `SE` (standard error) describes how much an estimate varies when sampled again. A score is estimated from samples, so its standard deviation is its standard error. Here, `SE_proxy` is the implementation's approximate estimate of that error.
 
-`score_node` and `score_best` are already observed values within the current window; calling them
-random quantities is a way of asking how much they could move if the window were measured again.
+`score_node` and `score_best` are fixed observed values in the current window. Calling them random quantities means asking how much they might change if measured again.

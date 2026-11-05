@@ -35,16 +35,19 @@ type Stats struct {
 	// well, but they are not the sum of squares a standard error is computed from.
 	Spread          RTT
 	DeviationSpread RTT
-	// Standing is how much longer the node waits now than it does at its best: the
-	// median of the window minus the baseline of the node, see baseline. It is the
-	// statistic the idle objective ranks by, because it is the part of the delay that
-	// queueing adds, and queueing is what a congested line does to every connection.
-	Standing RTT
-	Average  RTT // average RTT of all health checks
-	Median   RTT // median RTT of all health checks
-	Max      RTT // maximum RTT of all health checks
-	Min      RTT // minimum RTT of all health checks
-	Latest   RTT // latest RTT of all health checks
+	// Floor is the fastest the node has been, the baseline of the node, see baseline. It
+	// is the reference the idle objective measures against: what a node waits over its
+	// own best, rather than over other nodes.
+	Floor RTT
+	// Bad is how many of the successful checks came out slower than
+	// badCheckMultiple times the floor, the ones that are not merely noisy but queueing.
+	// Their share is the frequency the idle objective counts, next to the depth.
+	Bad     int
+	Average RTT // average RTT of all health checks
+	Median  RTT // median RTT of all health checks
+	Max     RTT // maximum RTT of all health checks
+	Min     RTT // minimum RTT of all health checks
+	Latest  RTT // latest RTT of all health checks
 
 	Expires time.Time // time of the statistics expires
 }
@@ -96,7 +99,11 @@ func (s *Storage) refreshStats(now time.Time) {
 			delays = append(delays, history.Delay)
 		}
 	}
-	stats := newStats(len(delays)+fail, fail, latest.Delay, expiresAt, delays)
+	var (
+		floor    RTT
+		hasFloor bool
+		bad      int
+	)
 	if len(delays) >= 2 {
 		// The baseline is the fastest the node has been, so what goes into it is the
 		// fastest check of the round, not the median of the round: a minimum of medians
@@ -106,21 +113,44 @@ func (s *Storage) refreshStats(now time.Time) {
 		// The round is written before it is read, because a minimum over real delays
 		// cannot make a score of zero: the baseline can never be above the median of the
 		// round that just set it.
-		s.baseline.Put(now, stats.Min)
-		if base, loaded := s.baseline.RTT(now); loaded {
-			stats.Standing = excess(stats.Median, base)
+		s.baseline.Put(now, minOf(delays))
+		floor, hasFloor = s.baseline.RTT(now)
+		if hasFloor {
+			// Counted before newStats, which replaces the delays with their distances to
+			// the median, see deviationOf.
+			bad = countAbove(delays, floor*badCheckMultiple)
 		}
 	}
+	stats := newStats(len(delays)+fail, fail, latest.Delay, expiresAt, delays)
+	stats.Floor, stats.Bad = floor, bad
 	s.stats = stats
 }
 
-// excess returns how much larger value is than reference, zero when it is not larger: a
-// node that got faster than its own baseline is not queueing, it is early.
-func excess(value RTT, reference RTT) RTT {
-	if value <= reference {
-		return 0
+// badCheckMultiple is how much slower than the floor a check has to be to count as bad: at
+// twice the fastest the node has been, the wait has not grown by a jitter, it has been
+// doubled.
+const badCheckMultiple = 2
+
+// minOf returns the smallest of the values.
+func minOf(values []RTT) RTT {
+	min := RTT(math.MaxUint16)
+	for _, value := range values {
+		if min > value {
+			min = value
+		}
 	}
-	return value - reference
+	return min
+}
+
+// countAbove returns how many of the values are greater than limit.
+func countAbove(values []RTT, limit RTT) int {
+	count := 0
+	for _, value := range values {
+		if value > limit {
+			count++
+		}
+	}
+	return count
 }
 
 // newStats returns the statistics of the values, all of the checks they are a part of,
@@ -157,7 +187,6 @@ func newStats(all int, fail int, latest RTT, expires time.Time, values []RTT) St
 		// measured.
 		stats.Jitter = stats.Average / 2
 		stats.MeanDeviation = stats.Average / 2
-		stats.Standing = stats.Average / 2
 		return stats
 	}
 	stats.Spread = standardDeviationOf(values)
@@ -231,8 +260,8 @@ const madToSigma = 1.482602218505602
 //     once, so a rare spike adds its own share instead of being ignored, and a spike that
 //     repeats adds more. It is not squared, and the median it is measured from does not
 //     move with the spike, so the number stays a statement about the node rather than
-//     about one probe. This is what a group ranks by when it wants to know how much the
-//     node hurts.
+//     about one probe. No score is ranked by it: a group breaks a tie with it, and a
+//     report shows it as the cost of the whole window.
 //
 // Neither value is 0 for a node that never varied: RTT reserves 0 for a missing value, so
 // a cost of 0 is handled where it is read, see Stats.mixed.
@@ -258,11 +287,10 @@ func (s Stats) Succeeded() int {
 // Cost returns what an attempt costs on average, which is what a group that ranks a time
 // ranks its nodes by: base plus the spread added to it, mixed with the failures.
 //
-// It is for a base that is a time the node costs. A base that is a distance from a
-// reference of the node itself cannot be mixed this way: a failure costs a timeout, and a
-// distance can be close to zero, so the mixed value would price a failure below the
-// queueing it should outweigh. The idle objective leaves the failures to max_fail
-// instead. See Stats.Jitter and Stats.Standing.
+// It is for a base that is a time the node costs. A score that is a share of the node's own
+// floor cannot be mixed this way: it is dimensionless, so a failure worth a timeout and a
+// value close to zero are not on its scale at all. The idle objective counts a failure as a
+// bad check instead. See Stats.Floor and Stats.Bad.
 func (s Stats) Cost(base RTT, spread RTT) RTT {
 	if s.All == 0 {
 		return Failed
@@ -286,8 +314,8 @@ func (s Stats) mixed(cost uint64) RTT {
 	result := RTT((successes*cost + failures*s.failureCost(cost)) / attempts)
 	if result == Failed && successes > 0 {
 		// A cost of zero is a cost like any other, but RTT reserves zero for a missing
-		// value: the jitter of a steady node is exactly that, and reporting it as
-		// missing would rank the steadiest node behind every measured one.
+		// value: the jitter of a node that does not vary is exactly that, and reporting it
+		// as missing would rank the steadiest node behind every measured one.
 		return Millisecond
 	}
 	return result

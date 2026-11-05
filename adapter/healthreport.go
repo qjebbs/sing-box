@@ -98,9 +98,17 @@ type HealthNode struct {
 	Max           *uint16 `json:"max,omitempty"`
 	Jitter        *uint16 `json:"jitter,omitempty"`
 	MeanDeviation *uint16 `json:"mean_deviation,omitempty"`
-	// Standing is how much longer the node waits now than it does at its best, the
-	// statistic the idle objective ranks by, absent until there is a baseline.
-	Standing *uint16 `json:"standing,omitempty"`
+	// Floor is the fastest the node has been, the reference the idle objective measures
+	// against, absent until there is a baseline.
+	Floor *uint16 `json:"floor,omitempty"`
+	// Bad is how many of the checks came out slower than twice the floor, the frequency
+	// the idle objective counts next to the depth.
+	Bad *int `json:"bad,omitempty"`
+	// Pressure is how much longer the node waits than at its floor, as a share of it, and
+	// BadShare the share of the checks that were bad: the two terms of the idle score,
+	// reported so that a score can be read back into what it was made of.
+	Pressure *float32 `json:"pressure,omitempty"`
+	BadShare *float32 `json:"bad_share,omitempty"`
 	// Spread and DeviationSpread are the sample spreads of the checks and of their
 	// distances to the median, which the standard error of a score is computed from.
 	Spread          *uint16 `json:"spread,omitempty"`

@@ -38,8 +38,10 @@ type baseline struct {
 }
 
 // RTT returns the baseline at now: the smallest value of the slots still within a day of
-// now, and whether there is one. It is read before the current round is written, so a
-// round never becomes the reference of its own score.
+// now, and whether there is one. The round is written before it is read, so a round is its
+// own reference as soon as it holds the fastest delay: a minimum over real delays can never
+// be above the median of the round that set it, and never makes a score of zero. See
+// Storage.refreshStats.
 func (b *baseline) RTT(now time.Time) (RTT, bool) {
 	var (
 		best  RTT

@@ -23,7 +23,7 @@ type Objective interface {
 	Rank(all []*Node) []*Node
 	// Select returns the nodes for new connections, a head of ranked in practice.
 	//
-	// Conventions：
+	// Conventions:
 	//  1. takes care of the fallback logic, it never returns an empty slice if
 	//     ranked is not empty.
 	//  2. only returns nodes of a single class, a selection never mixes a fallback
@@ -40,7 +40,7 @@ func Filter(objective Objective, all []*Node) []*Node {
 type ObjectiveOptions struct {
 	// Tolerance is the band around the best node, in absolute milliseconds: a node whose
 	// score is at most this far above the best one counts as equally good. 0 for the
-	// default of the objective, 10ms for idle and 50ms for quick.
+	// default of the objective, 50ms for both quick and idle.
 	Tolerance time.Duration
 	// MinNodes is the fewest nodes the cluster is extended to, MaxNodes the most it is
 	// limited to, 0 for no limit.

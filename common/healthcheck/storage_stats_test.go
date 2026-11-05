@@ -20,8 +20,8 @@ func TestStorageStats(t *testing.T) {
 	// MeanDeviation: every distance is 40, so their mean is 40 as well.
 	// Spread: the sample standard deviation of {60, 60, 140, 140} is 46, and the distances
 	// are all 40, so their own spread is 0.
-	// Standing: the baseline is the fastest check the node has been, 60ms, and the median
-	// of the window is 40ms above it.
+	// Floor: the fastest check the node has been, 60ms. Bad: the checks above twice that,
+	// 120ms, which is the two of 140ms among the window of {60, 60, 140, 140}.
 	want := healthcheck.Stats{
 		All:             4,
 		Fail:            0,
@@ -29,7 +29,8 @@ func TestStorageStats(t *testing.T) {
 		MeanDeviation:   40,
 		Spread:          46,
 		DeviationSpread: 0,
-		Standing:        40,
+		Floor:           60,
+		Bad:             2,
 		Average:         100,
 		Median:          100,
 		Max:             140,
@@ -40,8 +41,9 @@ func TestStorageStats(t *testing.T) {
 
 	// The delay statistics describe the checks that succeeded: a failure says nothing
 	// about the delay the node has when it works, it is reported by Fail and Latest.
-	// Standing is still 40: the baseline is the fastest check the node has been, 60ms, and
-	// the median of the window stays 100ms above it.
+	// The window keeps the last four checks, {Failed, Failed, 140, 60}, so the floor is
+	// still 60ms and of the two delays that succeeded only the 140ms is above twice it: a
+	// failure is not a delay, so it does not count as a bad one.
 	s.Put(healthcheck.Failed)
 	s.Put(healthcheck.Failed)
 	want = healthcheck.Stats{
@@ -51,7 +53,8 @@ func TestStorageStats(t *testing.T) {
 		MeanDeviation:   40,
 		Spread:          57,
 		DeviationSpread: 0,
-		Standing:        40,
+		Floor:           60,
+		Bad:             1,
 		Average:         100,
 		Median:          100,
 		Max:             140,
@@ -95,10 +98,13 @@ func TestStorageStatsMostlyFail(t *testing.T) {
 	}
 	s.Put(100)
 	s.Put(100)
+	// The floor is the fastest of the two that worked, 100ms, and neither of them is above
+	// twice that.
 	want := healthcheck.Stats{
 		All:     10,
 		Fail:    8,
 		Jitter:  0,
+		Floor:   100,
 		Average: 100,
 		Median:  100,
 		Max:     100,
@@ -129,7 +135,8 @@ func TestStorageStatsIgnoreOutdated(t *testing.T) {
 		MeanDeviation:   40,
 		Spread:          57,
 		DeviationSpread: 0,
-		Standing:        40,
+		Floor:           60,
+		Bad:             1,
 		Average:         100,
 		Median:          100,
 		Max:             140,
@@ -154,14 +161,13 @@ func TestStorageStatsIgnoreOutdated(t *testing.T) {
 	assertStats(t, "Stats() - All Outdated", want, s.Stats())
 
 	s.Put(60)
-	// one sample says nothing about how much the node varies, so the spreads and the
-	// standing are assumed to be half of its delay
+	// one sample says nothing about how much the node varies, so the spreads are assumed
+	// to be half of its delay
 	want = healthcheck.Stats{
 		All:           1,
 		Fail:          0,
 		Jitter:        30,
 		MeanDeviation: 30,
-		Standing:      30,
 		Average:       60,
 		Median:        60,
 		Max:           60,

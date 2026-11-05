@@ -89,9 +89,9 @@ func (n *Node) String() string {
 	// it strayed from it in total. LAST and MED come first because they are what was
 	// measured, the spreads are worked out from them.
 	return fmt.Sprintf(
-		"#%d %s [%s] LAST=%s MED=%s JIT=%s DEV=%s FAIL=%d/%d",
+		"#%d %s [%s] LAST=%s MED=%s FLOOR=%s JIT=%s DEV=%s FAIL=%d/%d",
 		n.Index, n.Status, tag,
-		n.latestString(), n.medianString(), n.jitterString(), n.meanDeviationString(),
+		n.latestString(), n.medianString(), n.floorString(), n.jitterString(), n.meanDeviationString(),
 		n.Fail, n.All,
 	)
 }
@@ -158,6 +158,15 @@ func (n *Node) medianString() string {
 		return "None"
 	}
 	return n.formatRTT(n.Median)
+}
+
+// floorString is the fastest the node has been, the reference idle measures against. It is
+// printed before the spreads because it is a measurement, not one worked out from them.
+func (n *Node) floorString() string {
+	if n.Stats.Floor == 0 {
+		return "None"
+	}
+	return n.formatRTT(n.Floor)
 }
 
 // latestString returns the latest delay to show. A failed check, and a check that

@@ -24,8 +24,9 @@ type LoadBalancePickOptions struct {
 	// tolerance is the maximum absolute difference to the best node, for the objectives
 	// that rank the nodes by a score: a node whose score is at most this far above the
 	// best one is selected with it, and a node that just left the selection is kept while
-	// the excess stays within the noise. A duration, e.g. 50ms. Default is 10ms for
-	// idle and 50ms for quick. Requires the objective to be set to quick or idle.
+	// the excess stays within the noise. A duration, e.g. 50ms. Default is 50ms for both
+	// quick and idle: idle's score is a share of the node's own floor read on a 1000ms
+	// scale, so 50ms is 5% of it. Requires the objective to be set to quick or idle.
 	Tolerance badoption.Duration `json:"tolerance,omitempty"`
 	// min_nodes is the minimum number of nodes to select. Default is 1.
 	MinNodes uint `json:"min_nodes,omitempty"`
