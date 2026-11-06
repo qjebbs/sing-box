@@ -116,7 +116,7 @@ func allNodes(outbounds []adapter.Outbound, s *healthcheck.Storages) []*selectio
 }
 
 func genStorage(count int) ([]adapter.Outbound, *healthcheck.Storages) {
-	store := healthcheck.NewStorages(uint(count), time.Hour)
+	store := healthcheck.NewStorages(healthcheck.StorageOptions{Sampling: uint(count), Validity: time.Hour})
 	outbounds := make([]adapter.Outbound, 0, count)
 	for i := 0; i < count; i++ {
 		outbounds = append(outbounds, genNode(store, i))

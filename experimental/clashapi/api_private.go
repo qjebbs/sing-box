@@ -19,6 +19,9 @@ func privateRouter(server *Server) http.Handler {
 		// follow it: the window is priced by the objective rather than by a second copy
 		// of it, so this answers where the numbers above come from, not what they are.
 		r.Get("/windows", getGroupHealthWindows(server))
+		// The history the window is measured against: the group keeps the window alone
+		// until it is asked to keep more, which is what this asks.
+		r.Put("/history", putGroupHealthHistory(server))
 	})
 	// The same two readings as text, for a human rather than for a parser: the report
 	// above states the numbers, this one states the sentence built from them.

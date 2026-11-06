@@ -76,17 +76,17 @@ func (s *Storage) Stats() Stats {
 
 func (s *Storage) refreshStats(now time.Time) {
 	latest, loaded := s.history.At(0)
-	if !loaded || now.Sub(latest.Time) > s.validity {
+	if !loaded || now.Sub(latest.Time) > s.options.Validity {
 		s.stats = Stats{}
 		return
 	}
 	delays := make([]RTT, 0, s.history.Length())
 	var expiresAt time.Time
 	fail := 0
-	for i := 0; i < s.history.Length(); i++ {
-		// from latest to oldest
+	for i := 0; i < s.history.Length() && uint(i) < s.options.Sampling; i++ {
+		// from latest to oldest, up to the sampling the statistics read
 		history, _ := s.history.At(i)
-		itemExpiresAt := history.Time.Add(s.validity)
+		itemExpiresAt := history.Time.Add(s.options.Validity)
 		if itemExpiresAt.Before(now) {
 			// the latter is invalid, so are the formers
 			break

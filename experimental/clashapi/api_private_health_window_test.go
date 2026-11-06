@@ -20,13 +20,23 @@ func (s *stubWindowsReporter) HealthWindows(options adapter.HealthWindowsOptions
 	return s.report
 }
 
-func serveWindows(t *testing.T, target string, proxy any) *httptest.ResponseRecorder {
+// servePrivate calls one of the group routes with a proxy in its context, the way the
+// router does after resolving the name.
+func servePrivate(
+	t *testing.T, method string, target string, proxy any,
+	route func(*Server) func(http.ResponseWriter, *http.Request),
+) *httptest.ResponseRecorder {
 	t.Helper()
-	request := httptest.NewRequest(http.MethodGet, target, nil)
+	request := httptest.NewRequest(method, target, nil)
 	request = request.WithContext(context.WithValue(request.Context(), CtxKeyProxy, proxy))
 	recorder := httptest.NewRecorder()
-	getGroupHealthWindows(nil)(recorder, request)
+	route(nil)(recorder, request)
 	return recorder
+}
+
+func serveWindows(t *testing.T, target string, proxy any) *httptest.ResponseRecorder {
+	t.Helper()
+	return servePrivate(t, http.MethodGet, target, proxy, getGroupHealthWindows)
 }
 
 func TestGroupHealthWindowsReadsTheGrid(t *testing.T) {

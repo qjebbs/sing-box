@@ -11,6 +11,27 @@ type HealthWindowsReporter interface {
 	HealthWindows(options HealthWindowsOptions) HealthWindowsReport
 }
 
+// HealthHistoryResizer is implemented by the groups whose health history can be resized at
+// runtime, so the sampling can be changed and measured without a restart and without losing
+// what was already collected.
+type HealthHistoryResizer interface {
+	// ResizeHealthHistory sets how many checks the ranking reads and how many extras are
+	// kept behind them, and reports what was applied. A sampling of zero keeps the one in
+	// use, an extra of zero keeps the sampling alone.
+	ResizeHealthHistory(sampling uint, extra uint) HealthHistory
+}
+
+// HealthHistory is how many checks a group keeps.
+type HealthHistory struct {
+	// Sampling is how many checks the ranking reads, Extra how many are kept behind them,
+	// and Retained the sum. The extra checks are read by the health report only.
+	Sampling uint `json:"sampling"`
+	Extra    uint `json:"extra"`
+	Retained uint `json:"retained"`
+	// Span is how far back the kept history reaches, at the interval of the checks.
+	Span string `json:"span"`
+}
+
 // HealthWindowsOptions is what to measure of the window.
 type HealthWindowsOptions struct {
 	// Ahead is how many checks a window is asked to predict, 0 for the default.
@@ -30,9 +51,10 @@ type HealthWindowConfig struct {
 type HealthWindowsReport struct {
 	Tag       string `json:"tag"`
 	Objective string `json:"objective"`
-	// Sampling is the interval between two checks, read from the timestamps of the
-	// history rather than from the configuration: a window is as wide as the checks in it.
-	Sampling string `json:"sampling"`
+	// Interval is the time between two checks, read from the timestamps of the history
+	// rather than from the configuration: a window is as wide as the checks in it, not as
+	// wide as the configuration says.
+	Interval string `json:"interval"`
 	// Nodes is how many nodes were measured, Checks the longest history among them, and
 	// Ahead how many checks each window was asked to predict. They are reported even when
 	// no window fits, so an empty report says what it was missing.

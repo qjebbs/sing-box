@@ -109,7 +109,7 @@ func (g *Group) Start(
 	if err != nil {
 		return err
 	}
-	nodes, err := selection.NewNodeBuilder(healthCheck.Storage.Cap(), nodeOptions)
+	nodes, err := selection.NewNodeBuilder(nodeOptions)
 	if err != nil {
 		return err
 	}

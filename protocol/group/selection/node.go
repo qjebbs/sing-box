@@ -1,7 +1,6 @@
 package selection
 
 import (
-	"errors"
 	"fmt"
 	"math"
 	"math/rand"
@@ -232,10 +231,14 @@ type NodeOptions struct {
 }
 
 // NodeBuilder builds the nodes of a group with the status their health gives them.
+//
+// It holds nothing that moves: the window the statistics are read over can be changed while
+// a ranking is being built, so it is passed with each node rather than kept here, and the
+// builder stays safe to read from anywhere.
 type NodeBuilder struct {
-	maxRTT      healthcheck.RTT
-	maxFailRate float32
-	biases      []bias
+	maxRTT  healthcheck.RTT
+	maxFail uint
+	biases  []bias
 }
 
 type bias struct {
@@ -243,15 +246,11 @@ type bias struct {
 	Regexp *regexp.Regexp
 }
 
-// NewNodeBuilder returns the builder of the nodes of a group. sampling is the number of
-// checks a node keeps, which the share of failures is relative to.
-func NewNodeBuilder(sampling int, options NodeOptions) (*NodeBuilder, error) {
-	if sampling <= 0 {
-		return nil, errors.New("sampling must be greater than 0")
-	}
+// NewNodeBuilder returns the builder of the nodes of a group.
+func NewNodeBuilder(options NodeOptions) (*NodeBuilder, error) {
 	builder := &NodeBuilder{
-		maxRTT:      options.MaxRTT,
-		maxFailRate: float32(options.MaxFail) / float32(sampling),
+		maxRTT:  options.MaxRTT,
+		maxFail: options.MaxFail,
 	}
 	for _, optionBias := range options.Biases {
 		var re *regexp.Regexp
@@ -270,11 +269,22 @@ func NewNodeBuilder(sampling int, options NodeOptions) (*NodeBuilder, error) {
 	return builder, nil
 }
 
-// NewNode returns the node of the outbound with the health it reports.
-func (b *NodeBuilder) NewNode(outbound adapter.Outbound, index int, stats healthcheck.Stats) *Node {
+// NewNode returns the node of the outbound with the health it reports. sampling is how many
+// checks the window holds now, which MaxFail is a number of: the limit is judged as a share,
+// so it moves with the window rather than being a second, unrelated count.
+func (b *NodeBuilder) NewNode(outbound adapter.Outbound, index int, sampling int, stats healthcheck.Stats) *Node {
 	scale := calcFactor(outbound.Tag(), b.biases)
-	status := calcStatus(&stats, b.maxRTT, b.maxFailRate)
+	status := calcStatus(&stats, b.maxRTT, failureRateOf(b.maxFail, sampling))
 	return NewNode(outbound, index, scale, stats, status)
+}
+
+// failureRateOf returns the share of the window a limit of maxFail checks is worth.
+func failureRateOf(maxFail uint, sampling int) float32 {
+	if sampling <= 0 {
+		// no window, so no share to allow: a failure is not tolerated
+		return 0
+	}
+	return float32(maxFail) / float32(sampling)
 }
 
 func calcFactor(tag string, biases []bias) float32 {

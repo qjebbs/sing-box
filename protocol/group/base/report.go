@@ -1,6 +1,8 @@
 package base
 
 import (
+	"time"
+
 	"github.com/sagernet/sing-box/adapter"
 	"github.com/sagernet/sing-box/common/healthcheck"
 	"github.com/sagernet/sing-box/protocol/group/selection"
@@ -84,15 +86,15 @@ func (g *Group) HealthWindows(options adapter.HealthWindowsOptions) adapter.Heal
 	series := make([]selection.WindowSeries, 0, len(all))
 	for _, node := range all {
 		checks := g.HealthCheck.Storage.All(node.Tag())
-		if valid := min(len(checks), node.Stats.All); valid >= 2 {
-			series = append(series, selection.WindowSeries{Node: node, Checks: checks[:valid]})
+		if len(checks) >= 2 {
+			series = append(series, selection.WindowSeries{Node: node, Checks: checks})
 		}
 	}
 	evaluation := evaluator.EvaluateWindows(series, selection.WindowOptions{
 		Ahead: options.Ahead,
 		Sizes: windowSizesOf(options.Configs),
 	})
-	report.Sampling = evaluation.Sampling.String()
+	report.Interval = evaluation.Interval.String()
 	report.Nodes = evaluation.Nodes
 	report.Checks = evaluation.Checks
 	report.Ahead = evaluation.Ahead
@@ -110,6 +112,28 @@ func (g *Group) HealthWindows(options adapter.HealthWindowsOptions) adapter.Heal
 		})
 	}
 	return report
+}
+
+// ResizeHealthHistory implements adapter.HealthHistoryResizer. The checks already collected
+// are kept: only the sizes of the history change.
+//
+// The sampling is what the ranking reads, so the nodes are rebuilt with it: the share of
+// failures a node may have is a number of checks, and it has to stay that number of checks
+// rather than turn into a different limit.
+func (g *Group) ResizeHealthHistory(sampling uint, extra uint) adapter.HealthHistory {
+	if g.HealthCheck == nil {
+		// the group is not started yet, there is no history to keep
+		return adapter.HealthHistory{}
+	}
+	options := g.HealthCheck.ConfigureHistory(sampling, extra)
+	// the ranking is stale as soon as the sampling it was built from moves
+	g.Invalidate()
+	return adapter.HealthHistory{
+		Sampling: options.Sampling,
+		Extra:    options.Retained - options.Sampling,
+		Retained: options.Retained,
+		Span:     (options.Interval * time.Duration(options.Retained)).String(),
+	}
 }
 
 func windowSizesOf(configs []adapter.HealthWindowConfig) []selection.WindowSize {

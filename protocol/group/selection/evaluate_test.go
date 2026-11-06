@@ -48,8 +48,8 @@ func TestEvaluateWindowsFollowsTheRanking(t *testing.T) {
 		evaluatedSeries(8, 24, 40, 10),
 		selection.WindowOptions{Ahead: 4, Sizes: []selection.WindowSize{{Stride: 1, Samples: 5}}},
 	)
-	if evaluation.Sampling != time.Minute {
-		t.Fatalf("want a sampling interval of a minute, got %v", evaluation.Sampling)
+	if evaluation.Interval != time.Minute {
+		t.Fatalf("want an interval of a minute, got %v", evaluation.Interval)
 	}
 	if evaluation.Checks != 24 {
 		t.Fatalf("want the whole history measured, got %d checks", evaluation.Checks)
@@ -129,8 +129,8 @@ func TestEvaluateWindowsNeedsHistory(t *testing.T) {
 		t.Fatalf("want the history it found, got %d nodes, %d checks, ahead %d",
 			evaluation.Nodes, evaluation.Checks, evaluation.Ahead)
 	}
-	if evaluation.Sampling != time.Minute {
-		t.Fatalf("want the sampling interval of the history, got %v", evaluation.Sampling)
+	if evaluation.Interval != time.Minute {
+		t.Fatalf("want the interval of the history, got %v", evaluation.Interval)
 	}
 	// An empty report has to say what it was short of: 4 checks and 4 ahead cannot hold
 	// even the smallest default window, which needs 5 checks and the 4 that follow.
@@ -154,5 +154,33 @@ func TestEvaluateWindowsNeedsHistory(t *testing.T) {
 		if size.Samples*size.Stride > 22 {
 			t.Fatalf("the window %d×%d does not fit in the history", size.Stride, size.Samples)
 		}
+	}
+}
+
+func TestNodeBuilderFollowsTheWindow(t *testing.T) {
+	t.Parallel()
+	// max_fail is a number of checks, so it is judged as a share of the window it is read
+	// against: a limit of two in ten must not stand for two in thirty, where one failure is
+	// already past it. The window comes from the caller, so nothing has to be told about a
+	// change to it.
+	builder, err := selection.NewNodeBuilder(selection.NodeOptions{MaxFail: 2})
+	if err != nil {
+		t.Fatal(err)
+	}
+	stats := healthcheck.Stats{All: 10, Fail: 1, Median: 100, Floor: 100}
+	node := func(sampling int) selection.Status {
+		return builder.NewNode(tagOutbound("node"), 0, sampling, stats).Status
+	}
+	if status := node(10); status != selection.StatusQualified {
+		t.Fatalf("one failure in ten is within two, got %v", status)
+	}
+	if status := node(3); status != selection.StatusQualified {
+		t.Fatalf("one failure is well within two in three, got %v", status)
+	}
+	if status := node(30); status == selection.StatusQualified {
+		t.Fatalf("one failure is past two in thirty, got %v", status)
+	}
+	if status := node(10); status != selection.StatusQualified {
+		t.Fatalf("the window came back and so should the limit, got %v", status)
 	}
 }

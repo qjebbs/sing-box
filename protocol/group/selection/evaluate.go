@@ -36,8 +36,9 @@ type WindowSeries struct {
 
 // WindowEvaluation is how well a window predicts the checks that follow it.
 type WindowEvaluation struct {
-	// Sampling is the interval between two checks, read from the timestamps.
-	Sampling time.Duration
+	// Interval is the time between two checks, read from the timestamps: the window is
+	// described by how many checks it holds, and this says how wide each of them is.
+	Interval time.Duration
 	// Nodes is how many nodes were measured, Checks the longest history among them, and
 	// Ahead how many checks each window was asked to predict. They are reported even when
 	// no window fits, so a report with no measurement says what it was missing.
@@ -95,7 +96,7 @@ func (o *ScoreObjective) EvaluateWindows(series []WindowSeries, options WindowOp
 		longest = max(longest, len(node.Checks))
 	}
 	evaluation := WindowEvaluation{
-		Sampling: samplingInterval(series),
+		Interval: checkInterval(series),
 		Nodes:    len(series),
 		Checks:   longest,
 		Ahead:    ahead,
@@ -114,7 +115,7 @@ func (o *ScoreObjective) EvaluateWindows(series []WindowSeries, options WindowOp
 		if size.Stride < 1 || size.Samples < 2 || size.Samples*size.Stride > longest-ahead {
 			continue
 		}
-		result, ok := o.evaluateSize(series, size, ahead, longest, evaluation.Sampling)
+		result, ok := o.evaluateSize(series, size, ahead, longest, evaluation.Interval)
 		if ok {
 			evaluation.Sizes = append(evaluation.Sizes, result)
 		}
@@ -148,7 +149,7 @@ func missingNote(evaluation WindowEvaluation, sizes []WindowSize) string {
 
 // evaluateSize averages one window size over every position it fits in.
 func (o *ScoreObjective) evaluateSize(
-	series []WindowSeries, size WindowSize, ahead int, longest int, sampling time.Duration,
+	series []WindowSeries, size WindowSize, ahead int, longest int, interval time.Duration,
 ) (WindowResult, bool) {
 	positions := longest - size.Samples*size.Stride - ahead + 1
 	if positions < 1 {
@@ -171,7 +172,7 @@ func (o *ScoreObjective) evaluateSize(
 	return WindowResult{
 		Stride:  size.Stride,
 		Samples: size.Samples,
-		Span:    sampling * time.Duration(size.Stride*size.Samples),
+		Span:    interval * time.Duration(size.Stride*size.Samples),
 		Windows: len(rhos),
 		Rho:     rho,
 		Delta:   standardErrorOf(rhos, rho),
@@ -275,9 +276,9 @@ func succeededOf(checks []*healthcheck.History) int {
 	return succeeded
 }
 
-// samplingInterval returns the interval between two checks, from the median gap of the
-// first history that has one.
-func samplingInterval(series []WindowSeries) time.Duration {
+// checkInterval returns the time between two checks, from the median gap of the first
+// history that has one.
+func checkInterval(series []WindowSeries) time.Duration {
 	for _, node := range series {
 		if len(node.Checks) < 2 {
 			continue

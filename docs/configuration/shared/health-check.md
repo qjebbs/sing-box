@@ -128,6 +128,8 @@ At least 10 samples, and no more than 30 minutes of span.
 `urltest` uses a single node, so sample more: `1m × 15` or `2m × 12–15`, with `tolerance` left
 at its default.
 
+#### Debug
+
 To check this table against your own lines and load, ask the API (a non-ASCII group name has to
 be URL encoded):
 
@@ -136,9 +138,22 @@ curl -s 'http://127.0.0.1:9090/private/health/Name/windows?ahead=2&configs=1:5,1
 ```
 
 Every window is priced by the same score that ranks the group, so a `rho` close to 1 means the
-window orders the nodes the way they behave afterwards. The interval is read from the checks,
-not from the configuration. Right after a restart, when there are too few checks to hold a
-window, `configs` is empty and `note` says what is missing.
+window orders the nodes the way they behave afterwards. `interval` is read from the checks, not
+from the configuration. Right after a restart, when there are too few checks to hold a window,
+`configs` is empty and `note` says what is missing.
+
+A window needs `samples × stride` + `ahead` checks to be measurable at all, and a group keeps
+only `sampling` of them: the rest is not kept. Both can be resized in place, without a restart
+and without losing what was already collected:
+
+```bash
+curl -X PUT 'http://127.0.0.1:9090/private/health/Name/history?sampling=15&extra=60'
+```
+
+`sampling` is how many checks the ranking reads, leave it out to
+keep the one in use. `extra` is how many checks to keep behind it, for the measurement only;
+leave it out, or set it to `0`, to keep the sampling alone. The checks already collected survive
+the resize.
 
 Parameters
 
@@ -151,12 +166,12 @@ Fields
 
 | Field | Meaning |
 | --- | --- |
-| `sampling` | the actual interval between the checks (median), not the configured one |
+| `interval` | the actual interval between the checks (median), not the configured one |
 | `nodes` | how many nodes were measured |
 | `checks` | how many checks the longest history holds |
 | `ahead` | how many checks each window was asked to predict |
 | `stride` | how many checks are skipped between samples, `1` for consecutive |
-| `samples` | how many checks the window holds; its span is `sampling × stride × samples` |
+| `samples` | how many checks the window holds; its span is `interval × stride × samples` |
 | `span` | the actual width of the window |
 | `windows` | how many positions of the history the window was measured at; the other fields are the average over them |
 | `rho` | rank correlation between the order the window produces and the order the checks after it produce: `1` identical, `0` as good as guessing |

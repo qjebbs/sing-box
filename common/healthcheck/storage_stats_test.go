@@ -11,7 +11,7 @@ import (
 func TestStorageStats(t *testing.T) {
 	t.Parallel()
 	rtts := []healthcheck.RTT{60, 140, 60, 140, 60, 60, 140, 60, 140}
-	s := healthcheck.NewStorage(4, time.Hour)
+	s := healthcheck.NewStorage(healthcheck.StorageOptions{Sampling: 4, Validity: time.Hour})
 	for _, rtt := range rtts {
 		s.Put(rtt)
 	}
@@ -77,7 +77,7 @@ func TestStorageStatsFirstCheckFailed(t *testing.T) {
 	t.Parallel()
 	// A node that only failed has no delay to report, and the zero of a missing value
 	// would read like the best possible result.
-	s := healthcheck.NewStorage(10, time.Hour)
+	s := healthcheck.NewStorage(healthcheck.StorageOptions{Sampling: 10, Validity: time.Hour})
 	s.Put(healthcheck.Failed)
 	want := healthcheck.Stats{
 		All:    1,
@@ -92,7 +92,7 @@ func TestStorageStatsMostlyFail(t *testing.T) {
 	// A node failing most of its checks is described by the delay of the two that
 	// worked: its reliability is not a delay, and hiding it in the delays made it look
 	// like the most stable node of all.
-	s := healthcheck.NewStorage(10, time.Hour)
+	s := healthcheck.NewStorage(healthcheck.StorageOptions{Sampling: 10, Validity: time.Hour})
 	for i := 0; i < 8; i++ {
 		s.Put(healthcheck.Failed)
 	}
@@ -120,7 +120,7 @@ func TestStorageStatsMostlyFail(t *testing.T) {
 func TestStorageStatsIgnoreOutdated(t *testing.T) {
 	t.Parallel()
 	rtts := []healthcheck.RTT{60, 140, 60, 140}
-	s := healthcheck.NewStorage(4, time.Duration(10)*time.Millisecond)
+	s := healthcheck.NewStorage(healthcheck.StorageOptions{Sampling: 4, Validity: time.Duration(10) * time.Millisecond})
 	for i, rtt := range rtts {
 		if i == 2 {
 			// wait for previous 2 outdated
@@ -259,6 +259,14 @@ func TestStatsCostScalesWithTheNode(t *testing.T) {
 	}
 }
 
+func delaysOf(checks []*healthcheck.History) []healthcheck.RTT {
+	delays := make([]healthcheck.RTT, 0, len(checks))
+	for _, check := range checks {
+		delays = append(delays, check.Delay)
+	}
+	return delays
+}
+
 func assertStats(t *testing.T, name string, want, got healthcheck.Stats) {
 	// do not comapre times
 	want.Expires = time.Time{}
@@ -288,7 +296,7 @@ func TestStatsOfMatchesStorage(t *testing.T) {
 	// storage computes for that same window: the evaluation of a window is only worth
 	// reading if it prices the checks the way the group priced them.
 	rtts := []healthcheck.RTT{60, 140, 60, 0, 80, 60, 140, 60, 200, 60}
-	s := healthcheck.NewStorage(uint(len(rtts)), time.Hour)
+	s := healthcheck.NewStorage(healthcheck.StorageOptions{Sampling: uint(len(rtts)), Validity: time.Hour})
 	for _, rtt := range rtts {
 		s.Put(rtt)
 	}
@@ -324,5 +332,80 @@ func TestStatsOfMatchesStorage(t *testing.T) {
 	// An empty window has nothing to say, not a zero measurement.
 	if !reflect.DeepEqual(healthcheck.StatsOf(nil, floor, stats.Expires), healthcheck.Stats{}) {
 		t.Fatalf("want empty statistics, got %v", healthcheck.StatsOf(nil, floor, stats.Expires))
+	}
+}
+
+func TestStorageKeepsMoreThanTheWindow(t *testing.T) {
+	t.Parallel()
+	// The history is kept for measuring the window, never for ranking it: a node that
+	// keeps twice the checks must produce exactly the statistics of one that keeps the
+	// window alone.
+	rtts := []healthcheck.RTT{60, 140, 60, 140, 60, 60, 140, 60, 45, 200}
+	window := healthcheck.NewStorage(healthcheck.StorageOptions{
+		Sampling: 4,
+		Validity: time.Hour,
+		Retained: 4,
+	})
+	kept := healthcheck.NewStorage(healthcheck.StorageOptions{
+		Sampling:  4,
+		Validity:  time.Hour,
+		Retained:  uint(len(rtts)),
+		Retention: time.Hour,
+	})
+	for _, rtt := range rtts {
+		window.Put(rtt)
+		kept.Put(rtt)
+	}
+	assertStats(t, "Stats() - window only", window.Stats(), kept.Stats())
+	if got := len(kept.All()); got != len(rtts) {
+		t.Fatalf("want the whole history kept, got %d checks", got)
+	}
+	if got := len(window.All()); got != 4 {
+		t.Fatalf("want the window kept, got %d checks", got)
+	}
+	// most recent first, which is what the report hands to the measurement
+	if newest := kept.All()[0].Delay; newest != rtts[len(rtts)-1] {
+		t.Fatalf("want the newest check first, got %v", newest)
+	}
+}
+
+func TestStoragesResizeKeepsTheHistory(t *testing.T) {
+	t.Parallel()
+	storages := healthcheck.NewStorages(healthcheck.StorageOptions{Sampling: 4, Validity: time.Hour})
+	put := func(values ...healthcheck.RTT) {
+		for _, value := range values {
+			storages.Put("node", value)
+		}
+	}
+	put(60, 140, 60, 140)
+	if got := len(storages.All("node")); got != 4 {
+		t.Fatalf("want the four checks of the window, got %d", got)
+	}
+
+	// Growing the history keeps what was already collected: a resize must not cost the
+	// user the checks they waited for, which is the whole reason it exists.
+	applied := storages.Resize(4, 6, time.Hour)
+	if applied.Sampling != 4 || applied.Retained != 10 {
+		t.Fatalf("want four checks read out of ten kept, got %v", applied)
+	}
+	if got := len(storages.All("node")); got != 4 {
+		t.Fatalf("the resize lost the collected checks: %d left", got)
+	}
+	put(45, 200, 60, 140, 60, 60)
+	if got := len(storages.All("node")); got != 10 {
+		t.Fatalf("want the history to grow to ten checks, got %d", got)
+	}
+	if got := storages.Stats("node").All; got != 4 {
+		t.Fatalf("the window moved with the history: %d checks", got)
+	}
+
+	// Shrinking keeps the newest checks, and still leaves the window alone.
+	newest := delaysOf(storages.All("node")[:4])
+	storages.Resize(4, 0, time.Hour)
+	if kept := delaysOf(storages.All("node")); !reflect.DeepEqual(kept, newest) {
+		t.Fatalf("the shrink kept %v instead of the newest %v", kept, newest)
+	}
+	if got := storages.Stats("node").All; got != 4 {
+		t.Fatalf("the window moved with the history: %d checks", got)
 	}
 }

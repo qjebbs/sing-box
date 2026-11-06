@@ -137,12 +137,26 @@ func NewHealthCheck(
 		mergedProviders: newMergedProvider(),
 		options:         options,
 		globalHistory:   service.PtrFromContext[urltest.HistoryStorage](ctx),
-		Storage: NewStorages(
-			options.Sampling,
-			time.Duration(options.Sampling+1)*time.Duration(options.Interval),
-		),
+		Storage: NewStorages(StorageOptions{
+			Sampling: options.Sampling,
+			Validity: time.Duration(options.Sampling+1) * time.Duration(options.Interval),
+			Interval: time.Duration(options.Interval),
+		}),
 		pauseManager: service.FromContext[pause.Manager](ctx),
 	}
+}
+
+// ConfigureHistory sets how many checks the statistics read and how many are kept behind
+// them, keeping what was already collected. It is what lets the sampling be changed, and be
+// measured against the checks that follow it, without a restart.
+//
+// A sampling of zero keeps the one in use; an extra of zero keeps the sampling alone. The
+// sampling is what the ranking reads, so changing it changes the ranking of every node. The
+// extra checks are read by the health report only.
+//
+// It returns the sizes that were applied.
+func (h *HealthCheck) ConfigureHistory(sampling uint, extra uint) StorageOptions {
+	return h.Storage.Resize(sampling, extra, time.Duration(h.options.Interval))
 }
 
 // SetProviders replaces the full provider list for the given namespace.

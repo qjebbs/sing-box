@@ -27,7 +27,7 @@ func newIdleTestChecker(idleTimeout, interval time.Duration) *HealthCheck {
 			IdleTimeout: badoption.Duration(idleTimeout),
 		},
 		pauseManager: service.FromContext[pause.Manager](ctx),
-		Storage:      NewStorages(10, time.Hour),
+		Storage:      NewStorages(StorageOptions{Sampling: 10, Validity: time.Hour}),
 		lastActive:   make(map[string]time.Time),
 		lastCheck:    make(map[string]time.Time),
 		checking:     make(map[string]struct{}),

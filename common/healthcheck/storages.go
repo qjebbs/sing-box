@@ -5,28 +5,92 @@ import (
 	"time"
 )
 
+// StorageOptions is how much of the history one node keeps.
+//
+// The sampling and the history are two sizes, not one: the statistics read Sampling checks,
+// the history keeps Retained of them. The extra checks are never read by the ranking, only by
+// the report, which uses them to measure the ranking against the checks that follow it.
+type StorageOptions struct {
+	// Sampling is how many checks the statistics read: the sampling the node is ranked over.
+	Sampling uint
+	// Validity is how old those checks may be.
+	Validity time.Duration
+	// Retained is how many checks the history keeps, at least Sampling.
+	Retained uint
+	// Retention is how old the kept checks may be, at least Validity. It is a staleness
+	// bound, not the width of the history: the checks are the width, and this only says
+	// when the whole of them stops describing the node.
+	Retention time.Duration
+	// Interval is the time between two checks, which the ages above are sized from and
+	// the history is as wide as.
+	Interval time.Duration
+}
+
+func (o StorageOptions) withDefaults() StorageOptions {
+	if o.Sampling == 0 {
+		o.Sampling = 1
+	}
+	if o.Retained < o.Sampling {
+		o.Retained = o.Sampling
+	}
+	if o.Retention < o.Validity {
+		o.Retention = o.Validity
+	}
+	return o
+}
+
 // Storages is the storages for different tags (nodes)
 type Storages struct {
 	sync.RWMutex
 
-	cap      uint
-	validity time.Duration
-
+	options  StorageOptions
 	storages map[string]*Storage
 }
 
 // NewStorages returns a new Storages
-func NewStorages(cap uint, validity time.Duration) *Storages {
+func NewStorages(options StorageOptions) *Storages {
 	return &Storages{
-		cap:      cap,
-		validity: validity,
+		options:  options.withDefaults(),
 		storages: make(map[string]*Storage),
 	}
 }
 
-// Cap returns the capacity of each storage
-func (s *Storages) Cap() int {
-	return int(s.cap)
+// Sampling returns how many checks the statistics of each node read, the sampling the group
+// is ranked over. The history may keep more of them, see StorageOptions.
+func (s *Storages) Sampling() int {
+	return int(s.options.Sampling)
+}
+
+// retentionMultiple is how many times the width of the history a check may be kept. The
+// ring is what decides how many checks are kept, so the age is here to catch a pause rather
+// than to police the spacing: a round that runs longer than the interval must not quietly
+// shorten the history that was asked for.
+const retentionMultiple = 2
+
+// Resize sets how many checks the statistics read and how many the history keeps behind
+// them, keeping the checks already stored, and returns what was applied.
+//
+// A sampling of zero keeps the one in use, an extra of zero keeps the sampling alone. Reading
+// and applying the sizes is one step, so two resizes cannot interleave into a history
+// neither of them asked for.
+func (s *Storages) Resize(sampling uint, extra uint, interval time.Duration) StorageOptions {
+	s.Lock()
+	defer s.Unlock()
+	if sampling == 0 {
+		sampling = s.options.Sampling
+	}
+	retained := sampling + extra
+	s.options = StorageOptions{
+		Sampling:  sampling,
+		Validity:  time.Duration(sampling+1) * interval,
+		Retained:  retained,
+		Retention: time.Duration(retained+1) * interval * retentionMultiple,
+		Interval:  interval,
+	}.withDefaults()
+	for _, store := range s.storages {
+		store.retain(s.options)
+	}
+	return s.options
 }
 
 // Latest gets the latest history for the tag
@@ -56,7 +120,7 @@ func (s *Storages) Put(tag string, delay RTT) {
 	defer s.Unlock()
 	store, ok := s.storages[tag]
 	if !ok {
-		store = NewStorage(s.cap, s.validity)
+		store = NewStorage(s.options)
 		s.storages[tag] = store
 	}
 	store.Put(delay)
@@ -68,7 +132,7 @@ func (s *Storages) Update(tag string, delay RTT) {
 	defer s.Unlock()
 	store, ok := s.storages[tag]
 	if !ok {
-		store = NewStorage(s.cap, s.validity)
+		store = NewStorage(s.options)
 		s.storages[tag] = store
 	}
 	store.Update(delay)
