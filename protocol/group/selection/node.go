@@ -200,6 +200,13 @@ func calcStatus(s *healthcheck.Stats, maxRTT healthcheck.RTT, maxFailRate float3
 		// nothing ever worked, there is no delay to rank and nothing to fall back on
 		return StatusDead
 	}
+	if s.Suspended {
+		// The node was checked because the connections it carried were failing, and that
+		// check failed too. It worked before, so it is alive rather than dead, but it does
+		// not qualify until a check passes: the window is the reads of the interval, and
+		// the checks that are in it say nothing about the node now.
+		return StatusAlive
+	}
 	if s.Fail > 0 && float32(s.Fail)/float32(s.All) > maxFailRate {
 		return StatusAlive
 	}

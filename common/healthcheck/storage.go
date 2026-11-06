@@ -12,6 +12,10 @@ type Storage struct {
 	// window: a window describes the node now, the baseline describes what it can be.
 	baseline baseline
 	stats    Stats
+	// suspended is set by an out of band check that failed, see Update, and cleared by
+	// the first check that passes. It is not part of the window: the window is what the
+	// interval measured, this is what the connections the node carried have shown.
+	suspended bool
 }
 
 // History is the rtt history
@@ -54,22 +58,32 @@ func now() time.Time {
 	return time.Now().Round(0)
 }
 
-// Put puts a new rtt to the HealthPingResult
+// Put puts a new rtt to the HealthPingResult, as the scheduled check does. A check that
+// passed lifts the suspension, since the node answered the question the failed connections
+// asked: a check that failed leaves it as it is, because that failure is a sample of the
+// window rather than a verdict about the node now.
 func (s *Storage) Put(d RTT) {
 	if s == nil {
 		return
 	}
 	s.history.Push(History{Time: now(), Delay: d})
+	if d != Failed {
+		s.suspended = false
+	}
 	// statistics is not valid any more
 	s.stats = Stats{}
 }
 
-// Update updates the last history
+// Update updates the last history, which is what a check the connections asked for does:
+// it replaces the latest result instead of adding one, so the sampling stays as even as the
+// interval made it. The result is the answer to the question the failed connections raised,
+// so a failed one suspends the node until a check passes, see Stats.Suspended.
 func (s *Storage) Update(d RTT) {
 	if s == nil {
 		return
 	}
 	s.history.Replace(History{Time: now(), Delay: d})
+	s.suspended = d == Failed
 	// statistics is not valid any more
 	s.stats = Stats{}
 }

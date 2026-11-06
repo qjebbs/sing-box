@@ -79,6 +79,11 @@ type HealthNode struct {
 	// Status is the class the node is ranked in: "x" never worked, "?" not checked yet,
 	// "*" alive, "OK" qualified.
 	Status string `json:"status"`
+	// Suspended reports that the node was checked again because its connections were
+	// failing, and that the check failed too. It is suspended from the selection until a
+	// check passes, which is why a node can be alive with almost every check behind it
+	// having worked.
+	Suspended bool `json:"suspended,omitempty"`
 	// Networks are the networks this node supports.
 	Networks []string `json:"networks"`
 	// Selected reports whether new connections may use this node, Score is what the

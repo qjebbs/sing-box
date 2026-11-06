@@ -114,7 +114,7 @@ func (s *Storages) Stats(tag string) Stats {
 	return s.storages[tag].Stats()
 }
 
-// Put gets all histories for the tag
+// Put appends a scheduled check for the tag
 func (s *Storages) Put(tag string, delay RTT) {
 	s.Lock()
 	defer s.Unlock()
@@ -126,7 +126,8 @@ func (s *Storages) Put(tag string, delay RTT) {
 	store.Put(delay)
 }
 
-// Update updates the latest history for the tag
+// Update commits an out of band check for the tag, replacing its latest result and
+// suspending the node when the check failed
 func (s *Storages) Update(tag string, delay RTT) {
 	s.Lock()
 	defer s.Unlock()

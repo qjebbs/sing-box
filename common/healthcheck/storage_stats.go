@@ -49,6 +49,13 @@ type Stats struct {
 	Min     RTT // minimum RTT of all health checks
 	Latest  RTT // latest RTT of all health checks
 
+	// Suspended reports that the node was checked because its connections were failing, and
+	// that check failed too, see Storage.Update. It is the one thing here that is not a
+	// statistic: the window still describes what the interval measured, and this describes
+	// what the traffic the node carried has shown, so it is read next to the statistics
+	// rather than mixed into them. It is cleared by the first check that passes.
+	Suspended bool
+
 	Expires time.Time // time of the statistics expires
 }
 
@@ -77,7 +84,7 @@ func (s *Storage) Stats() Stats {
 func (s *Storage) refreshStats(now time.Time) {
 	latest, loaded := s.history.At(0)
 	if !loaded || now.Sub(latest.Time) > s.options.Validity {
-		s.stats = Stats{}
+		s.stats = Stats{Suspended: s.suspended}
 		return
 	}
 	delays := make([]RTT, 0, s.history.Length())
@@ -113,6 +120,7 @@ func (s *Storage) refreshStats(now time.Time) {
 		floor, _ = s.baseline.RTT(now)
 	}
 	s.stats = statsOf(len(delays)+fail, fail, latest.Delay, expiresAt, delays, floor)
+	s.stats.Suspended = s.suspended
 }
 
 // StatsOf returns the statistics of the given checks, most recent first, as of expires:

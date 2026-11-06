@@ -28,6 +28,14 @@ failed connections within a short window the node is checked again. The check re
 its latest result instead of adding one, so the results of every node stay as evenly
 sampled as the interval made them.
 
+That check is also the one that decides whether the node is used right now. A failed
+connection can be the client, the destination or the network, which is why a few of them
+are needed and why a failed scheduled check on its own never removes a node; but a node
+whose own connections were already failing, and whose check then failed too, is suspended:
+it is not selected for new connections until a check passes. A suspended node ranks with
+the nodes that are alive but not qualified, so it is still used when nothing better is
+left. The health report marks it with `suspended`.
+
 Each entry of the top-level `health_checks` uses the same object structure, with an additional `tag` field:
 
 ```json

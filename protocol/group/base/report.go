@@ -212,14 +212,15 @@ func (g *Group) providersReport() []adapter.HealthProvider {
 // objective has a score for it: the score is a property of the node, the selection is not.
 func (g *Group) nodeReport(node *selection.Node, selected bool) adapter.HealthNode {
 	report := adapter.HealthNode{
-		Tag:      node.Tag(),
-		Index:    node.Index,
-		Status:   node.Status.String(),
-		Networks: node.Network(),
-		Selected: selected,
-		Score:    g.scoreOf(node),
-		All:      node.All,
-		Fail:     node.Fail,
+		Tag:       node.Tag(),
+		Index:     node.Index,
+		Status:    node.Status.String(),
+		Suspended: node.Stats.Suspended,
+		Networks:  node.Network(),
+		Selected:  selected,
+		Score:     g.scoreOf(node),
+		All:       node.All,
+		Fail:      node.Fail,
 	}
 	if node.Stats.Succeeded() > 0 {
 		report.Latest = optionalRTT(node.Latest)

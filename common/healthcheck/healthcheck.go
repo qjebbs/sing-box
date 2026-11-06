@@ -76,8 +76,11 @@ type HealthCheck struct {
 // node are spread evenly over the time they describe. A connection is only a reason to
 // check the node again, so the record stays comparable between nodes.
 type connectionFailures struct {
-	count     int
-	firstSeen time.Time
+	count int
+	// lastSeen is when the last of them was reported, which the window is measured
+	// from: a failed attempt costs a whole timeout by itself, so a window measured from
+	// the first one would expire between the attempts it was meant to count.
+	lastSeen  time.Time
 	lastCheck time.Time
 }
 
@@ -85,7 +88,10 @@ const (
 	// connectionFailureThreshold is how many failed connections a node may carry
 	// within the window before it is checked again.
 	connectionFailureThreshold = 3
-	// connectionFailureWindow is the time in which the failed connections are counted.
+	// connectionFailureWindow is the quiet gap that ends the window: the failures are
+	// counted while they keep coming closer together than this. A node that carries a
+	// failure and then nothing for this long is counted from the start again, so a
+	// failure every few minutes never adds up to a check.
 	connectionFailureWindow = 30 * time.Second
 	// connectionFailureCooldown is the shortest time between two checks of a node
 	// triggered by its connections, so a node that keeps failing is not probed more
@@ -250,10 +256,15 @@ func (h *HealthCheck) InterfaceUpdated(ctx context.Context) {
 // scheduled round.
 //
 // The failed connections are counted, not measured: a single one can be the client, the
-// destination or the network, so the node is checked only after a few of them inside the
-// window. The check is an out of band refresh, it replaces the latest result of the node
+// destination or the network, so the node is checked only after a few of them close
+// together. The check is an out of band refresh, it replaces the latest result of the node
 // rather than adding a sample, see storeResult, so the sampling of every node stays as
 // even as the interval made it.
+//
+// The check is also the corroboration the connections asked for: a failure that the node's
+// own traffic has already confirmed suspends the node, while a failure of the scheduled
+// probe alone never does, see recheck. That is the line between a node that is bad now and
+// a probe that came out bad once, which is what keeps the selection from flapping.
 func (h *HealthCheck) ReportConnectionFailure(outbound adapter.Outbound) {
 	if h == nil || outbound == nil {
 		return
@@ -268,25 +279,9 @@ func (h *HealthCheck) ReportConnectionFailure(outbound adapter.Outbound) {
 		return
 	}
 	tag := node.Tag()
-	now := time.Now()
-	h.failureMu.Lock()
-	if h.failures == nil {
-		h.failures = make(map[string]*connectionFailures)
-	}
-	failure := h.failures[tag]
-	if failure == nil || now.Sub(failure.firstSeen) > connectionFailureWindow {
-		failure = &connectionFailures{firstSeen: now}
-		h.failures[tag] = failure
-	}
-	failure.count++
-	if failure.count < connectionFailureThreshold || now.Sub(failure.lastCheck) < connectionFailureCooldown {
-		h.failureMu.Unlock()
+	if !h.countConnectionFailure(tag, time.Now()) {
 		return
 	}
-	failure.count = 0
-	failure.firstSeen = now
-	failure.lastCheck = now
-	h.failureMu.Unlock()
 	h.logger.Debug("checking ", tag, " again after its failed connections")
 	select {
 	case h.recheckSem <- struct{}{}:
@@ -300,7 +295,33 @@ func (h *HealthCheck) ReportConnectionFailure(outbound adapter.Outbound) {
 	}
 }
 
-// recheck checks a single node, and commits the result as a non-scheduled one.
+// countConnectionFailure records a failed connection of the node and reports whether it is
+// the one that asks for a check: the threshold inside a window, and no more often than the
+// cooldown allows.
+func (h *HealthCheck) countConnectionFailure(tag string, now time.Time) bool {
+	h.failureMu.Lock()
+	defer h.failureMu.Unlock()
+	if h.failures == nil {
+		h.failures = make(map[string]*connectionFailures)
+	}
+	failure := h.failures[tag]
+	if failure == nil || now.Sub(failure.lastSeen) > connectionFailureWindow {
+		failure = &connectionFailures{}
+		h.failures[tag] = failure
+	}
+	failure.count++
+	failure.lastSeen = now
+	if failure.count < connectionFailureThreshold || now.Sub(failure.lastCheck) < connectionFailureCooldown {
+		return false
+	}
+	failure.count = 0
+	failure.lastCheck = now
+	return true
+}
+
+// recheck checks a single node, and commits the result as a non-scheduled one: a failure
+// suspends the node until a check passes, see Stats.Suspended, because the node's own
+// connections have already confirmed it is failing right now.
 func (h *HealthCheck) recheck(outbound adapter.Outbound) {
 	if h.isClosed() {
 		return
@@ -662,7 +683,8 @@ func (h *HealthCheck) checkOutbound(ctx context.Context, outbound adapter.Outbou
 }
 
 // storeResult commits a check result for a node: the scheduled check appends it
-// to the sampling window, the non-scheduled one updates the latest result.
+// to the sampling window, the non-scheduled one updates the latest result and, when it
+// failed, suspends the node, see Storage.Update.
 func (h *HealthCheck) storeResult(scheduled bool, tag string, delay RTT) {
 	// always update global history for display usage,
 	// so that user can see the latest failure status
