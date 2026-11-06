@@ -29,8 +29,9 @@ DEV     = (1/n) × Σdᵢ          # average deviation
 SLOT     = 30 minutes per slot, 48 slots covering 24 hours
 SLOT[k]  = fastest delay seen in slot k
 FLOOR    = min(values from slots in the last 24 hours) # the node's best observed delay
+FAILR    = long-run failure rate                      # continuous in time, outside the window
 PRES     = max(0, MED − FLOOR) / FLOOR                # how much longer the typical delay is than its own best, as a ratio
-BAD      = (#{xᵢ > 2 × FLOOR} + FAIL) / ALL           # share of attempts that missed the node's limit
+BAD      = #{xᵢ > 2 × FLOOR} / ALL + max(FAIL / ALL, FAILR) # share of attempts that missed the node's limit
 ```
 
 These formulas apply when there are at least two successful checks. With only one, there is not enough data to estimate variation, so `JIT` and `DEV` are both taken as half of that delay: too few samples should not be mistaken for no variation. Both ratios are undefined there as well — the floor is that one check itself — so `idle` ranks by the delay, see [Scores: Delay and Queueing](#scores-delay-and-queueing). With no successful checks, there are no delay statistics.
@@ -53,10 +54,11 @@ The `quick` score represents the delay a node usually adds. Successful and faile
 base    = MED + JIT
 cost    = min(TIMEOUT, base)
 failure = min(TIMEOUT, 3 × cost)
-score   = (ALL - FAIL) / ALL × cost + FAIL / ALL × failure
+p       = max(FAIL / ALL, FAILR)
+score   = (1 − p) × cost + p × failure
 ```
 
-Nodes with a lower typical delay and less usual variation get a lower score. Variation is added to the delay cost in milliseconds.
+Nodes with a lower typical delay and less usual variation get a lower score. Variation is added to the delay cost in milliseconds. `p` is the share of failures: the window's own share, or the long-run rate `FAILR`, whichever is larger, see [Long-Run Failure Rate](#long-run-failure-rate-the-risk-a-clean-window-hides).
 
 `cost` is the base score for a successful check; `failure` is the penalty for a failed one. A failure counts as at most three times the successful-check cost and is capped at `TIMEOUT`. This is a scoring rule, not an exact measurement of the time a real retry takes. If every failure counted as a full timeout, one failure could outweigh every node with no failures.
 
@@ -83,13 +85,48 @@ How do failures affect the score? They count only toward **frequency**: each fai
 
 There is a trade-off in this conversion: every 10% increase in `BAD` adds 50ms to the score. So **a 10% failure rate is roughly equal to having 5% more queueing all the time**. This is lighter than `quick`'s three-times penalty for a failure: `quick` scores a delay, so a failure has to be priced at the timeout to matter at all, while `idle` scores a share, where a failure and a slow check are the same kind of thing and counting it once is enough.
 
-`max_fail` is therefore no longer the only thing standing between a failing node and the selection, but it is still **needed as a backstop**. It talks about this window — not one failure allowed — while `BAD` talks about a rate: a node can pass a whole window without a failure and still drop out now and then, which ten checks will not show. Its default stays `0`: without configuring it, nodes with failures belong only to the `alive` category, and `idle` counts the failures in its score at the same time, so the two protections stack.
+`max_fail` is therefore no longer the only thing standing between a failing node and the selection, but it is still **needed as a backstop**. It says "not one failure in this window" and acts as an entrance; `BAD` and `FAILR` act on the score. The two answer different questions: `max_fail` decides whether a node may be used at all right now, and the score decides which of the nodes that may be used is used. Its default stays `0`: without configuring it, nodes with failures belong only to the `alive` category.
 
 Both ratios of `idle` need at least two successful checks. With only one, `FLOOR` is that check itself, so `PRES` and `BAD` are both zero and every node ties at the smallest score there is, leaving the group to pick among them at random. In that round `idle` ranks by the delay instead, on half of it, which is the order `quick` reads the same window in: a node whose one check came out low must not look like the steadiest node there is. The score returns to the ratios above as soon as a second check succeeds.
 
 If every check fails, the successful delay is unknown, so both goals score `TIMEOUT`. If no check has run yet, there is no score.
 
 A score comes from a finite number of checks; it is not the permanent "true value" of a node or line. Comparisons should account for measurement error.
+
+### Long-Run Failure Rate: the Risk a Clean Window Hides
+
+The default of `max_fail` is `0`, so every node that can be picked has no failure in its window. `FAIL / ALL` in both score formulas is therefore always zero, and the failure term only has a value after a node **has already been rejected** — the risk signal stops at the entrance.
+
+But a clean window is not the same as safety. Measured on a real history, taking only the samples whose window was clean and looking at whether the next 8 checks failed:
+
+| Failure pattern | Historical failure rate | Next 8 checks still fail, given a clean window |
+| --- | --- | --- |
+| Flapping: failures spread through the history | 13.3% | 89.5% |
+| Outage: one continuous drop, clean otherwise | 10.0% | 9.9% |
+
+The two nodes have almost the same failure rate and are indistinguishable in the current formula while their windows are clean, yet their residual risk differs by nine times. The difference is the **structure** of the failures: a flapping node can drop again at any moment, an outage node is reliable outside its outage. A window of ten checks cannot see that; the history already says it. Across all nodes, the correlation between "historical failure rate" and "probability of failing soon while the window is clean" is `+0.59`.
+
+So the group keeps one more statistic across rounds:
+
+```
+Δt     = wall-clock time since the last update
+α      = 1 − exp(−Δt / τ)                  # τ ≈ 45 minutes
+FAILR  ← FAILR + α × ((failed this check ? 1 : 0) − FAILR)
+```
+
+It is a **continuous-time exponentially weighted estimate**: it describes how likely the node has been to fail in the last τ, and older events fade out exponentially. It starts from a prior worth ten clean checks, so a cold start is "nobody has seen it fail" rather than "it was seen failing": without it, the first check would be all the evidence there is and a single failure at start-up would read as a perfect failure rate for an hour. The prior decays like the rest, so a long enough history is unaffected by it. It enters the score as the larger of itself and the window's own share, see `p` and `BAD` above. The checks the connections asked for count as well: such a check is the second half of what a failed connection said.
+
+**Why decay by wall-clock time rather than by a count of checks:**
+
+- It needs no retention rule of its own. `sampling` and `extra` are counts, and the same count covers five times as much time at `5m` as at `1m`; counting checks would put that difference into the score.
+- It does not depend on `interval`: two one-minute gaps move it as much as one two-minute gap, so changing the check interval needs no relearning.
+- It does not depend on the runtime resize of `sampling` (see [Debug](#debug)): re-sampling the window does not clear this estimate.
+
+**Why not a whole day.** A whole-day failure rate averages the evening peak away with the quiet hours, and the difference between queueing and dropping is exactly a matter of when. An estimate that decays with τ follows the current period: at the evening peak it describes the evening peak, without a daily average overwriting the difference between periods.
+
+**How long τ should be.** This cannot be settled from the data: stretching the measured span from 20 checks to 100 leaves the separation of "fails soon or not" almost unchanged (AUC between 0.54 and 0.58). The value has to be set by two opposing requirements: short enough to forget an outage that has ended, long enough not to be swayed by a single stray failure. 45 minutes is one point between them — a node that failed continuously for 54 minutes and then recovered should not still be paying for it an hour later.
+
+**How much it matters.** The separation above is only about `0.57`, far less reliable as a ranking basis than the delay itself. Its job is to break a near tie, to tell "fast but flapping" from "a little slower but steady"; it does not change the fact that the fastest node is still the fastest. At a cold start `FAILR` is zero and the score is exactly what it was without it, and it only takes effect once there is evidence.
 
 ### Noise: Uncertainty in Scores
 
@@ -517,6 +554,58 @@ SD(D)  ≈ √(SE_proxy_node² + SE_proxy_best²)
 `SD` (standard deviation) describes how much a random value varies. `SE` (standard error) describes how much an estimate varies when sampled again. A score is estimated from samples, so its standard deviation is its standard error. Here, `SE_proxy` is the implementation's approximate estimate of that error.
 
 `score_node` and `score_best` are fixed observed values in the current window. Calling them random quantities means asking how much they might change if measured again.
+
+#### Long-Run Failure Rate: Why the Weight Is Exponential
+
+`FAIL / ALL` is an **equal-weight** average: every check in the window weighs the same, and once a check leaves the window its weight drops from `1/n` to `0`. That has two consequences: a step at the window boundary, and the same failure rate covering five times as much time at `5m` as at `1m`.
+
+The long-run rate is a different kind of average: **recent checks weigh more, older ones weigh less, and "how much less" depends only on time**. Let check `i` happen at `tᵢ`, the current moment be `t`, and take the weights
+
+```
+wᵢ = exp(−(t − tᵢ) / τ)
+R  = Σ wᵢ·xᵢ / Σ wᵢ              # xᵢ = 1 when that check failed
+```
+
+**Why it has to be exponential.** The weight should depend only on "how long ago", and two stretches of time have to compose:
+
+```
+w(a + b) = w(a) · w(b)
+```
+
+That is the requirement that "wait `a` minutes, then count `b` minutes" equals "count `a+b` minutes at once". Among continuous functions that are not identically zero, only the exponential satisfies it, so
+
+```
+w(t) = exp(−t / τ)
+```
+
+With any other shape — linear decay, steps, a fixed-length sliding window — the weights would depend on when the checks happened to land, and the same `τ` would stand for a different stretch of time at `1m` and at `5m`.
+
+**The recursion.** Write `c = exp(−Δt/τ)`. When a new check arrives, every older weight is multiplied by the same `c`, so two running totals are all it takes:
+
+```
+S ← c·S + x          # weighted number of failed checks
+W ← c·W + 1          # weighted number of checks
+R  = S / W
+```
+
+Keeping `S` and `W` apart rather than only `R` is what lets a cold start carry a prior, see below. The denser the checks, the larger the steady state of `W`, which is `τ/Δt`, and the less each one matters — precisely because it stands for a shorter stretch of time.
+
+**The prior at a cold start.** `W` begins at 10, the weight of ten clean checks: a cold start is a node nobody has seen fail, not a node seen failing. Starting from nothing would make the first check all the evidence there is, and one failure would put `R` straight at `1.0` — right after a restart, before the network is up, every node's first check fails, and every node would carry an almost perfect failure rate for an hour. The prior decays with the same `c` as the rest, so once the history is long enough its weight is negligible and `R` behaves exactly as it did without it.
+
+**How it relates to `FAIL / ALL`.** While the failure rate is constant, the steady state of `R` is that rate, the same number `FAIL / ALL` gives. The two part company only when the rate changes: one steps at the window boundary, the other fades as `exp(−t/τ)`. With `τ = 45 minutes` and a check every minute, a node that had been clean (`R ≈ 0`) and then fails ten times in a row:
+
+| Then healthy for | Window `FAIL / ALL` (10 samples) | `R` |
+| --- | --- | --- |
+| 0 minutes | `10/10 = 1.000` | `0.199` |
+| 10 minutes | `0/10 = 0.000` (a step) | `0.160` |
+| 45 minutes | `0/10 = 0.000` | `0.073` |
+| 90 minutes | `0/10 = 0.000` | `0.027` |
+
+The table assumes a history long enough for the prior to have faded. The first row is `1 − exp(−10/45)`, and each later one is multiplied by `exp(−Δt/45)`. The window forgets the outage by minute ten, while the node's record takes over an hour to recover — which is the whole reason for using `FAILR` instead of `FAIL / ALL`.
+
+**Effective sample count.** The sum of the weights is `1/(1 − c) ≈ τ / Δt`, so the estimate is "worth" that many recent checks: about 45 at `1m`, 22 at `2m`, 9 at `5m`. The longer the interval, the fewer checks the same `τ` covers and the coarser the estimate, which is what keeps `τ` from being set too small.
+
+**Where it is not exact.** `S` and `W` decay by the same `c`, so a change of spacing needs no correction and the weighted average stays right. What is left is the prior: until it has faded, `W` is below its steady state, so the same failures read slightly higher early on — which is what is wanted, since there is little evidence then.
 
 ### Debug
 

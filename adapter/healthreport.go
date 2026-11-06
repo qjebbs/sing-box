@@ -114,6 +114,12 @@ type HealthNode struct {
 	// reported so that a score can be read back into what it was made of.
 	Pressure *float32 `json:"pressure,omitempty"`
 	BadShare *float32 `json:"bad_share,omitempty"`
+	// FailureRate is how often the node has failed over the last few hours, which outlives
+	// the window: it is the prior a clean window is read with, see healthcheck.Stats.
+	FailureRate *float32 `json:"failure_rate,omitempty"`
+	// FailureShare is the share of attempts the score priced as failed: the window's own
+	// share or FailureRate, whichever is larger.
+	FailureShare *float32 `json:"failure_share,omitempty"`
 	// Spread and DeviationSpread are the sample spreads of the checks and of their
 	// distances to the median, which the standard error of a score is computed from.
 	Spread          *uint16 `json:"spread,omitempty"`

@@ -50,10 +50,14 @@ func idlePressure(node *Node) float64 {
 // The share is over the attempts rather than over the ones that worked, so a node that fails
 // often cannot hide behind the checks that succeeded.
 func idleBadShare(node *Node) float64 {
-	if node.All <= 0 {
-		return 0
+	bad := 0.0
+	if node.All > 0 {
+		bad = float64(node.Bad) / float64(node.All)
 	}
-	return float64(node.Bad+node.Fail) / float64(node.All)
+	// The sum can exceed one: Bad is a share of the checks that worked and the failure
+	// share is of the attempts, and the long-run estimate stands in for failures the
+	// window does not hold. The score is a share, so it is capped at one.
+	return math.Min(1, bad+node.FailureShare())
 }
 
 // idleScore is the score of idle: the depth and the frequency of the queueing, added on one

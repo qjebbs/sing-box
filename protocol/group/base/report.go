@@ -238,6 +238,13 @@ func (g *Group) nodeReport(node *selection.Node, selected bool) adapter.HealthNo
 		report.Spread = optionalRTT(node.Spread)
 		report.DeviationSpread = optionalRTT(node.DeviationSpread)
 	}
+	// The failure record is about the node rather than about the delays of its window, so it
+	// is reported even for a node no check has ever succeeded on: that node has the worst
+	// record there is, and leaving it out would read as no record at all.
+	failureRate := node.Stats.FailureRate
+	report.FailureRate = &failureRate
+	failureShare := float32(node.Stats.FailureShare())
+	report.FailureShare = &failureShare
 	if !node.Expires.IsZero() {
 		expires := node.Expires
 		report.Expires = &expires

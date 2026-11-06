@@ -11,6 +11,10 @@ type Storage struct {
 	// baseline is the fastest the node has been, kept per time of day. It outlives the
 	// window: a window describes the node now, the baseline describes what it can be.
 	baseline baseline
+	// failures is how often the node has failed over the last few hours, in wall-clock
+	// time. It outlives the window too: a window can be clean while the node is not
+	// reliable, see failureRate.
+	failures failureRate
 	stats    Stats
 	// suspended is set by an out of band check that failed, see Update, and cleared by
 	// the first check that passes. It is not part of the window: the window is what the
@@ -66,7 +70,9 @@ func (s *Storage) Put(d RTT) {
 	if s == nil {
 		return
 	}
-	s.history.Push(History{Time: now(), Delay: d})
+	at := now()
+	s.history.Push(History{Time: at, Delay: d})
+	s.failures.observe(at, d == Failed)
 	if d != Failed {
 		s.suspended = false
 	}
@@ -82,7 +88,11 @@ func (s *Storage) Update(d RTT) {
 	if s == nil {
 		return
 	}
-	s.history.Replace(History{Time: now(), Delay: d})
+	at := now()
+	s.history.Replace(History{Time: at, Delay: d})
+	// a check the connections asked for is evidence about the node like any other: it is
+	// the second half of what a failed connection already said
+	s.failures.observe(at, d == Failed)
 	s.suspended = d == Failed
 	// statistics is not valid any more
 	s.stats = Stats{}

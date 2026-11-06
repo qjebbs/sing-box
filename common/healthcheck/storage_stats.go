@@ -42,12 +42,17 @@ type Stats struct {
 	// Bad is how many of the successful checks came out slower than
 	// badCheckMultiple times the floor, the ones that are not merely noisy but queueing.
 	// Their share is the frequency the idle objective counts, next to the depth.
-	Bad     int
-	Average RTT // average RTT of all health checks
-	Median  RTT // median RTT of all health checks
-	Max     RTT // maximum RTT of all health checks
-	Min     RTT // minimum RTT of all health checks
-	Latest  RTT // latest RTT of all health checks
+	Bad int
+	// FailureRate is how often the node has failed over the last few hours, estimated in
+	// wall-clock time and outliving the window, see failureRate. Fail over All describes
+	// the checks the sampling read; this describes the node. It is read through
+	// FailureShare, which lets the window win while it has something to say.
+	FailureRate float32
+	Average     RTT // average RTT of all health checks
+	Median      RTT // median RTT of all health checks
+	Max         RTT // maximum RTT of all health checks
+	Min         RTT // minimum RTT of all health checks
+	Latest      RTT // latest RTT of all health checks
 
 	// Suspended reports that the node was checked because its connections were failing, and
 	// that check failed too, see Storage.Update. It is the one thing here that is not a
@@ -84,7 +89,7 @@ func (s *Storage) Stats() Stats {
 func (s *Storage) refreshStats(now time.Time) {
 	latest, loaded := s.history.At(0)
 	if !loaded || now.Sub(latest.Time) > s.options.Validity {
-		s.stats = Stats{Suspended: s.suspended}
+		s.stats = Stats{Suspended: s.suspended, FailureRate: float32(s.failures.rate())}
 		return
 	}
 	delays := make([]RTT, 0, s.history.Length())
@@ -119,7 +124,7 @@ func (s *Storage) refreshStats(now time.Time) {
 		s.baseline.Put(now, minOf(delays))
 		floor, _ = s.baseline.RTT(now)
 	}
-	s.stats = statsOf(len(delays)+fail, fail, latest.Delay, expiresAt, delays, floor)
+	s.stats = statsOf(len(delays)+fail, fail, latest.Delay, expiresAt, delays, floor, s.failures.rate())
 	s.stats.Suspended = s.suspended
 }
 
@@ -130,7 +135,11 @@ func (s *Storage) refreshStats(now time.Time) {
 // The baseline is the one input of the statistics the storage keeps outside the window, so
 // it is passed in. A floor of zero means the node has none yet, and Bad stays zero, which
 // is what the storage does for a window too short to set one.
-func StatsOf(checks []*History, floor RTT, expires time.Time) Stats {
+//
+// longRun is the failure estimate of the checks older than this window, see
+// ReplayFailureRate: it is the one statistic a window does not carry, and passing it in
+// keeps a window measured here priced the way the group priced it.
+func StatsOf(checks []*History, floor RTT, expires time.Time, longRun float64) Stats {
 	if len(checks) == 0 {
 		return Stats{}
 	}
@@ -143,11 +152,11 @@ func StatsOf(checks []*History, floor RTT, expires time.Time) Stats {
 			delays = append(delays, check.Delay)
 		}
 	}
-	return statsOf(len(checks), fail, checks[0].Delay, expires, delays, floor)
+	return statsOf(len(checks), fail, checks[0].Delay, expires, delays, floor, longRun)
 }
 
 // statsOf builds the statistics of a window of checks from the delays that succeeded.
-func statsOf(all int, fail int, latest RTT, expires time.Time, delays []RTT, floor RTT) Stats {
+func statsOf(all int, fail int, latest RTT, expires time.Time, delays []RTT, floor RTT, longRun float64) Stats {
 	var bad int
 	if floor > 0 {
 		// Counted before newStats, which replaces the delays with their distances to the
@@ -156,6 +165,7 @@ func statsOf(all int, fail int, latest RTT, expires time.Time, delays []RTT, flo
 	}
 	stats := newStats(all, fail, latest, expires, delays)
 	stats.Floor, stats.Bad = floor, bad
+	stats.FailureRate = float32(longRun)
 	return stats
 }
 
@@ -317,6 +327,23 @@ func (s Stats) Succeeded() int {
 	return s.All - s.Fail
 }
 
+// FailureShare returns the share of the attempts that failed: the window's own share, or
+// the long-run estimate, whichever is larger.
+//
+// The window is what the node is doing now and the estimate is what it does when the window
+// happens to be clean, so the larger of the two is the cautious reading of the same
+// question. With no window at all there is nothing to weigh the estimate against, and the
+// estimate stands alone.
+func (s Stats) FailureShare() float64 {
+	share := float64(s.FailureRate)
+	if s.All > 0 {
+		if window := float64(s.Fail) / float64(s.All); window > share {
+			share = window
+		}
+	}
+	return math.Min(1, share)
+}
+
 // Cost returns what an attempt costs on average, which is what a group that ranks a time
 // ranks its nodes by: base plus the spread added to it, mixed with the failures.
 //
@@ -332,20 +359,19 @@ func (s Stats) Cost(base RTT, spread RTT) RTT {
 }
 
 // mixed returns the expected value of cost per attempt: an attempt either succeeds
-// with cost, or fails, and the two are mixed by the share of the checks that failed.
-// The result never exceeds the timeout.
+// with cost, or fails, and the two are mixed by the share of the attempts that failed, see
+// FailureShare. The result never exceeds the timeout.
 func (s Stats) mixed(cost uint64) RTT {
 	timeout := uint64(failureDelay)
 	if cost > timeout {
 		// an attempt never costs more than the timeout it waits for
 		cost = timeout
 	}
-	// every check is one attempt, the failed ones are counted by their share
-	attempts := uint64(s.All)
-	failures := uint64(s.Fail)
-	successes := attempts - failures
-	result := RTT((successes*cost + failures*s.failureCost(cost)) / attempts)
-	if result == Failed && successes > 0 {
+	// every check is one attempt; the window's failures are counted by their share, and
+	// the node's own record stands in when the window holds none
+	share := s.FailureShare()
+	result := RTT((1-share)*float64(cost) + share*float64(s.failureCost(cost)))
+	if result == Failed && share < 1 {
 		// A cost of zero is a cost like any other, but RTT reserves zero for a missing
 		// value: the jitter of a node that does not vary is exactly that, and reporting it
 		// as missing would rank the steadiest node behind every measured one.

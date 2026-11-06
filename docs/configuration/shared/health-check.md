@@ -147,7 +147,8 @@ about 1.4 times wider, and it sees any change up to two minutes later: the inter
 granularity. Beyond 10 minutes of span, the node a window picks stops matching how it behaves
 afterwards.
 
-Keep `max_fail` at `0`: the `idle` score does count failures, but one failure counts as one bad
-check — 50 points at ten samples, exactly one `tolerance`, before the resolution margin is added —
-so a single failure does not move a node out of the band. When failures are tolerated, the status
-gate of `max_fail` is what stops the node. Leave `tolerance` at its default.
+Keep `max_fail` at `0`: it says "not one failure in this window" and stops an unstable node
+earlier and harder than a score can. Raised to `1` or more, a single failure is worth only 50
+points of `idle` at ten samples, which does not move a node out of the band, and what is left to
+stop it is the long-run failure rate — evidence that builds up slowly. Leave `tolerance` at its
+default.

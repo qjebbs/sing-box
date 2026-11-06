@@ -242,11 +242,11 @@ func (o *ScoreObjective) measureAt(series []WindowSeries, size WindowSize, offse
 		if len(window) == 0 {
 			continue
 		}
-		stats := node.statsOf(window)
+		stats := node.statsOf(window, node.longRunAt(offset))
 		if stats.Succeeded() == 0 {
 			continue
 		}
-		future := node.statsOf(node.Checks[offset-ahead : offset])
+		future := node.statsOf(node.Checks[offset-ahead:offset], node.longRunAt(offset-ahead))
 		if future.Succeeded() == 0 {
 			continue
 		}
@@ -277,7 +277,7 @@ func (o *ScoreObjective) measuredWindowAt(series []WindowSeries, size WindowSize
 		if len(window) == 0 {
 			continue
 		}
-		stats := node.statsOf(window)
+		stats := node.statsOf(window, node.longRunAt(offset))
 		if stats.Succeeded() == 0 {
 			continue
 		}
@@ -309,8 +309,9 @@ func (s WindowSeries) checksStrided(offset int, size WindowSize) []*healthcheck.
 }
 
 // statsOf prices a window of the history the way a round is priced: against the baseline
-// the node has now, which is the one input the storage keeps outside its window.
-func (s WindowSeries) statsOf(checks []*healthcheck.History) healthcheck.Stats {
+// the node has now and the failure estimate of the checks older than the window, which are
+// the two inputs the storage keeps outside its window.
+func (s WindowSeries) statsOf(checks []*healthcheck.History, longRun float64) healthcheck.Stats {
 	floor := s.Node.Stats.Floor
 	if succeededOf(checks) < 2 {
 		// too short to set a baseline, and the storage reports no baseline in that case
@@ -318,7 +319,18 @@ func (s WindowSeries) statsOf(checks []*healthcheck.History) healthcheck.Stats {
 	}
 	// the expiry of the window is left to zero: it is what makes the storage recompute its
 	// statistics, and the score reads none of it
-	return healthcheck.StatsOf(checks, floor, time.Time{})
+	return healthcheck.StatsOf(checks, floor, time.Time{}, longRun)
+}
+
+// longRunAt returns the failure estimate the storage held when the check at offset was the
+// newest one: everything from there back, replayed, see healthcheck.ReplayFailureRate. A
+// history that does not reach behind the window has nothing to replay and reports no
+// estimate, which is what a group that keeps only its sampling would have had.
+func (s WindowSeries) longRunAt(offset int) float64 {
+	if offset >= len(s.Checks) {
+		return 0
+	}
+	return healthcheck.ReplayFailureRate(s.Checks[offset:])
 }
 
 // poolMembers returns the nodes the selection made of the window would consider, and those

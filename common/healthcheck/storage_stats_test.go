@@ -271,6 +271,10 @@ func assertStats(t *testing.T, name string, want, got healthcheck.Stats) {
 	// do not comapre times
 	want.Expires = time.Time{}
 	got.Expires = time.Time{}
+	// The failure estimate is wall-clock, and these histories are written in a tight loop:
+	// it is a measurement of the clock rather than of the checks, so it has a test of its
+	// own, see TestFailureRateFollowsTheClock.
+	want.FailureRate = got.FailureRate
 	if !reflect.DeepEqual(want, got) {
 		t.Fatalf("[%s] want: %v, got: %v", name, want, got)
 	}
@@ -304,13 +308,13 @@ func TestStatsOfMatchesStorage(t *testing.T) {
 
 	checks := s.All()
 	floor := stats.Floor
-	got := healthcheck.StatsOf(checks, floor, stats.Expires)
+	got := healthcheck.StatsOf(checks, floor, stats.Expires, healthcheck.ReplayFailureRate(checks))
 	assertStats(t, "StatsOf() - whole history", stats, got)
 
 	// A window of the most recent checks, measured against the same baseline: every
 	// statistic has to come from that window and nothing else.
 	window := checks[:4]
-	got = healthcheck.StatsOf(window, floor, stats.Expires)
+	got = healthcheck.StatsOf(window, floor, stats.Expires, healthcheck.ReplayFailureRate(checks))
 	if got.All != 4 {
 		t.Fatalf("want 4 checks in the window, got %d", got.All)
 	}
@@ -324,14 +328,14 @@ func TestStatsOfMatchesStorage(t *testing.T) {
 
 	// Without a baseline the frequency term has nothing to measure against, so it stays
 	// zero rather than counting every check as bad.
-	got = healthcheck.StatsOf(checks, 0, stats.Expires)
+	got = healthcheck.StatsOf(checks, 0, stats.Expires, healthcheck.ReplayFailureRate(checks))
 	if got.Bad != 0 || got.Floor != 0 {
 		t.Fatalf("want no baseline and no bad checks, got floor %v and %d bad", got.Floor, got.Bad)
 	}
 
 	// An empty window has nothing to say, not a zero measurement.
-	if !reflect.DeepEqual(healthcheck.StatsOf(nil, floor, stats.Expires), healthcheck.Stats{}) {
-		t.Fatalf("want empty statistics, got %v", healthcheck.StatsOf(nil, floor, stats.Expires))
+	if !reflect.DeepEqual(healthcheck.StatsOf(nil, floor, stats.Expires, 0), healthcheck.Stats{}) {
+		t.Fatalf("want empty statistics, got %v", healthcheck.StatsOf(nil, floor, stats.Expires, 0))
 	}
 }
 
