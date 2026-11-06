@@ -69,6 +69,27 @@ type WindowResult struct {
 	// Pool is the number of nodes the selection made of the window would consider, i.e.
 	// the ones inside the band around the best node with no failure behind them.
 	Pool float64
+	// Agreement is how much of the two pools the positions share, the Jaccard index of the
+	// nodes the window would select and the nodes the checks after it select: 1 when they
+	// are the same set, 0 when they have none in common. Unlike Rho it says nothing about
+	// the order inside a pool, which is what a load balance group serves from.
+	Agreement float64
+	// Exact is the share of positions where the two pools were the same set, the question
+	// Agreement averages: a node that entered or left counts there, however small it is.
+	Exact float64
+	// Reaction is how many checks a node that starts going bad stays in the pool, averaged
+	// over Reactions reactions: the price of a window steady enough to agree with itself.
+	// A node still in the pool ahead checks later counts as ahead+1.
+	Reaction float64
+	// Reactions is how many times the history holds a node that turned bad while it was in
+	// the pool. Reaction has no meaning without them, so it is zero when there are none.
+	Reactions int
+	// Recovery is the other side of the same coin: how many checks a node that turns good
+	// again takes to come back into the pool, averaged over Recoveries recoveries.
+	Recovery float64
+	// Recoveries is how many times the history holds a node that turned good again while it
+	// was out of the pool.
+	Recoveries int
 }
 
 // minEvaluationNodes is the fewest nodes a position is measured over: a rank correlation
@@ -156,44 +177,67 @@ func (o *ScoreObjective) evaluateSize(
 		return WindowResult{}, false
 	}
 	step := max(1, positions/maxEvaluationPositions)
-	var rhos, pools []float64
+	var rhos, pools, agreements, exacts []float64
 	for offset := ahead; offset < ahead+positions; offset += step {
 		measured := o.measureAt(series, size, offset, ahead)
 		if len(measured) < minEvaluationNodes {
 			continue
 		}
 		rhos = append(rhos, rankCorrelation(measured))
-		pools = append(pools, float64(o.poolOf(measured)))
+		windowPool, futurePool := o.poolMembers(measured)
+		agreement := jaccardOf(windowPool, futurePool)
+		pools = append(pools, float64(len(windowPool)))
+		agreements = append(agreements, agreement)
+		if agreement == 1 {
+			exacts = append(exacts, 1)
+		} else {
+			exacts = append(exacts, 0)
+		}
 	}
 	if len(rhos) == 0 {
 		return WindowResult{}, false
 	}
 	rho := meanOf(rhos)
+	reaction, reactions := o.reactionOf(series, size, ahead, longest)
+	recovery, recoveries := o.recoveryOf(series, size, ahead, longest)
 	return WindowResult{
-		Stride:  size.Stride,
-		Samples: size.Samples,
-		Span:    interval * time.Duration(size.Stride*size.Samples),
-		Windows: len(rhos),
-		Rho:     rho,
-		Delta:   standardErrorOf(rhos, rho),
-		Pool:    meanOf(pools),
+		Stride:     size.Stride,
+		Samples:    size.Samples,
+		Span:       interval * time.Duration(size.Stride*size.Samples),
+		Windows:    len(rhos),
+		Rho:        rho,
+		Delta:      standardErrorOf(rhos, rho),
+		Pool:       meanOf(pools),
+		Agreement:  meanOf(agreements),
+		Exact:      meanOf(exacts),
+		Reaction:   reaction,
+		Reactions:  reactions,
+		Recovery:   recovery,
+		Recoveries: recoveries,
 	}, true
 }
 
 // measuredNode is one node as a window priced it, next to what the checks after the
 // window priced it at.
 type measuredNode struct {
+	// index is the position of the node in the series the window was measured over, so a
+	// node keeps its identity across the offsets of the same history.
+	index  int
 	node   Node
 	score  healthcheck.RTT
 	future healthcheck.RTT
-	fail   int
+	// later is the node priced by the checks after the window: the band of the future
+	// selection is sized by that window, not by the one being measured.
+	later     Node
+	fail      int
+	laterFail int
 }
 
 // measureAt prices every node over the window at offset and over the checks that follow
 // it, skipping the nodes one of the two windows has nothing to say about.
 func (o *ScoreObjective) measureAt(series []WindowSeries, size WindowSize, offset int, ahead int) []measuredNode {
 	measured := make([]measuredNode, 0, len(series))
-	for _, node := range series {
+	for index, node := range series {
 		window := node.checksStrided(offset, size)
 		if len(window) == 0 {
 			continue
@@ -211,10 +255,39 @@ func (o *ScoreObjective) measureAt(series []WindowSeries, size WindowSize, offse
 		later := current
 		later.Stats = future
 		measured = append(measured, measuredNode{
-			node:   current,
-			score:  o.Score(&current),
-			future: o.Score(&later),
-			fail:   stats.Fail,
+			index:     index,
+			node:      current,
+			score:     o.Score(&current),
+			future:    o.Score(&later),
+			later:     later,
+			fail:      stats.Fail,
+			laterFail: future.Fail,
+		})
+	}
+	return measured
+}
+
+// measuredWindowAt prices every node over the window at offset alone: a window older than
+// the horizon has no complete future left to be measured against, but it still has a pool,
+// and that pool is what a group would have served from at the time.
+func (o *ScoreObjective) measuredWindowAt(series []WindowSeries, size WindowSize, offset int) []measuredNode {
+	measured := make([]measuredNode, 0, len(series))
+	for index, node := range series {
+		window := node.checksStrided(offset, size)
+		if len(window) == 0 {
+			continue
+		}
+		stats := node.statsOf(window)
+		if stats.Succeeded() == 0 {
+			continue
+		}
+		current := *node.Node
+		current.Stats = stats
+		measured = append(measured, measuredNode{
+			index: index,
+			node:  current,
+			score: o.Score(&current),
+			fail:  stats.Fail,
 		})
 	}
 	return measured
@@ -248,22 +321,227 @@ func (s WindowSeries) statsOf(checks []*healthcheck.History) healthcheck.Stats {
 	return healthcheck.StatsOf(checks, floor, time.Time{})
 }
 
-// poolOf returns how many nodes the band around the best one would let through.
-func (o *ScoreObjective) poolOf(measured []measuredNode) int {
+// poolMembers returns the nodes the selection made of the window would consider, and those
+// of the nodes the selection made of the checks after it would: both are read by the band
+// of their own best node, so the two sets are the ones a group would have served from at
+// the two moments. A node is identified by its position in measured, which is the same in
+// both readings.
+func (o *ScoreObjective) poolMembers(measured []measuredNode) (window, future map[int]struct{}) {
+	window = o.poolOf(measured, func(node measuredNode) (Node, healthcheck.RTT, int) {
+		return node.node, node.score, node.fail
+	})
+	future = o.poolOf(measured, func(node measuredNode) (Node, healthcheck.RTT, int) {
+		return node.later, node.future, node.laterFail
+	})
+	return window, future
+}
+
+// poolOf returns the nodes the band around the best one would let through: the nodes with
+// no failure behind them whose score is within the limit of the best node, as view reads
+// both out of a measured node. The nodes are keyed by the position they hold in the series,
+// so the pools of two offsets of the same history can be compared.
+func (o *ScoreObjective) poolOf(
+	measured []measuredNode, view func(measuredNode) (Node, healthcheck.RTT, int),
+) map[int]struct{} {
 	best := 0
+	var bestScore healthcheck.RTT
 	for i := range measured {
-		if measured[i].score < measured[best].score {
-			best = i
+		_, score, _ := view(measured[i])
+		if i == 0 || score < bestScore {
+			best, bestScore = i, score
 		}
 	}
-	limit := o.Limit(&measured[best].node)
-	count := 0
-	for i := range measured {
-		if measured[i].fail == 0 && measured[i].score <= limit {
-			count++
+	node, _, _ := view(measured[best])
+	limit := o.Limit(&node)
+	members := make(map[int]struct{}, len(measured))
+	for _, each := range measured {
+		_, score, fail := view(each)
+		if fail == 0 && score <= limit {
+			members[each.index] = struct{}{}
 		}
 	}
-	return count
+	return members
+}
+
+// jaccardOf returns how much of the two sets is shared: 1 when they are the same set, 0
+// when they share nothing. Two empty sets are the same set.
+func jaccardOf(a, b map[int]struct{}) float64 {
+	if len(a) == 0 && len(b) == 0 {
+		return 1
+	}
+	shared := 0
+	for node := range a {
+		if _, ok := b[node]; ok {
+			shared++
+		}
+	}
+	return float64(shared) / float64(len(a)+len(b)-shared)
+}
+
+// reactionOf returns how many checks a node that starts slowing down stays in the pool,
+// averaged over the reactions the history holds.
+//
+// A check is bad when it is slower than twice the node's floor, the rule the statistics
+// count as Bad. A failure is not a reaction: the pool already requires a window with no
+// failure in it, so a node is dropped on the check that fails, whatever the window holds.
+// What a longer window can do is keep serving a node that merely got slower, and that is
+// what this measures.
+//
+// The event is read from the window that does not hold the bad check yet, which has to
+// include the node, so the answer is about a node that was being served. A node still in
+// the pool ahead checks later returns ahead+1, the horizon of the report.
+func (o *ScoreObjective) reactionOf(
+	series []WindowSeries, size WindowSize, ahead int, longest int,
+) (float64, int) {
+	limit := longest - size.Samples*size.Stride
+	if limit < 1 {
+		return 0, 0
+	}
+	known := newPools(o, series, size, limit+1)
+	var lags []float64
+	for index, node := range series {
+		for check := 0; check+1 < len(node.Checks); check++ {
+			if !o.badCheck(&node, check) || o.badCheck(&node, check+1) {
+				// only the first check of a run of bad ones is where the node turned bad
+				continue
+			}
+			// the window that does not see it yet, and that starts after the horizon
+			before := check + 1
+			if before+ahead > limit || before < ahead {
+				continue
+			}
+			if _, served := known.at(before)[index]; !served {
+				continue
+			}
+			lag := float64(ahead + 1)
+			for step := 1; step <= ahead; step++ {
+				if _, kept := known.at(before - step)[index]; !kept {
+					lag = float64(step)
+					break
+				}
+			}
+			lags = append(lags, lag)
+		}
+	}
+	return meanOf(lags), len(lags)
+}
+
+// recoveryOf returns how many checks a node that is usable again takes to get back into
+// the pool, averaged over the recoveries the history holds.
+//
+// It is the other half of the same question, and it is paired with the drop that preceded
+// it: the node has to have been served when it turned bad, so the answer is about a node
+// the group had and lost, not about the many nodes that were never in the pool. Both a
+// failure and a slow run count as turning bad, because both cost checks: a failure leaves
+// the pool at once, but it has to leave the window before the node can come back, which is
+// what makes a single failed check cost as many checks as the window holds. That is why the
+// horizon here is the window rather than the prediction: ahead checks are not enough to see
+// a node come back from a failure.
+func (o *ScoreObjective) recoveryOf(
+	series []WindowSeries, size WindowSize, ahead int, longest int,
+) (float64, int) {
+	limit := longest - size.Samples*size.Stride
+	if limit < 1 {
+		return 0, 0
+	}
+	// the horizon is the whole window: a failure has to leave the window before the node
+	// can come back, so a return measured over the horizon of the prediction would report
+	// the window itself as the answer
+	horizon := max(ahead, size.Samples*size.Stride)
+	if horizon > limit {
+		return 0, 0
+	}
+	known := newPools(o, series, size, limit+1)
+	var lags []float64
+	for index, node := range series {
+		dropped := false
+		// older to newer, which is the order the node lives through
+		for check := len(node.Checks) - 2; check >= 0; check-- {
+			if !o.goodCheck(&node, check) && o.goodCheck(&node, check+1) {
+				// the node turned bad: it counts only if it was being served
+				before := check + 1
+				_, dropped = known.at(before)[index]
+				dropped = dropped && before <= limit && before >= horizon
+				continue
+			}
+			if !dropped || !o.goodCheck(&node, check) || o.goodCheck(&node, check+1) {
+				continue
+			}
+			// the window that does not see the recovery yet
+			start := check + 1
+			if start > limit || start < horizon {
+				continue
+			}
+			dropped = false
+			if _, back := known.at(start)[index]; back {
+				// it never left, so there is no return to measure
+				continue
+			}
+			lag := float64(horizon + 1)
+			for step := 1; step <= horizon; step++ {
+				if _, back := known.at(start - step)[index]; back {
+					lag = float64(step)
+					break
+				}
+			}
+			lags = append(lags, lag)
+		}
+	}
+	return meanOf(lags), len(lags)
+}
+
+// pools remembers the pool of one window size at each offset of the history, so the
+// metrics that walk it pay for each offset once.
+type pools struct {
+	objective *ScoreObjective
+	series    []WindowSeries
+	size      WindowSize
+	known     map[int]map[int]struct{}
+}
+
+func newPools(o *ScoreObjective, series []WindowSeries, size WindowSize, capacity int) *pools {
+	return &pools{
+		objective: o,
+		series:    series,
+		size:      size,
+		known:     make(map[int]map[int]struct{}, capacity),
+	}
+}
+
+// at returns the pool of the window at offset, empty when the window is too short to be
+// measured there.
+func (p *pools) at(offset int) map[int]struct{} {
+	if cached, ok := p.known[offset]; ok {
+		return cached
+	}
+	measured := p.objective.measuredWindowAt(p.series, p.size, offset)
+	var window map[int]struct{}
+	if len(measured) >= minEvaluationNodes {
+		window, _ = p.objective.poolMembers(measured)
+	}
+	p.known[offset] = window
+	return window
+}
+
+// badCheck reports whether the check at index is slower than twice the node's floor, the
+// rule the statistics count as Bad. A node without a floor has no bad checks: nothing says
+// what slow means for it yet.
+func (o *ScoreObjective) badCheck(series *WindowSeries, index int) bool {
+	floor := series.Node.Stats.Floor
+	if floor <= 0 {
+		return false
+	}
+	// a failed check is not a slow one, and it is zero, so the comparison rules it out too
+	return series.Checks[index].Delay > floor*2
+}
+
+// goodCheck reports whether the check at index is neither failed nor slower than twice the
+// node's floor, the state a node has to be in to be qualified again.
+func (o *ScoreObjective) goodCheck(series *WindowSeries, index int) bool {
+	if series.Checks[index].Delay == healthcheck.Failed {
+		return false
+	}
+	return !o.badCheck(series, index)
 }
 
 func succeededOf(checks []*healthcheck.History) int {

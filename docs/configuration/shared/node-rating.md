@@ -517,3 +517,76 @@ SD(D)  ≈ √(SE_proxy_node² + SE_proxy_best²)
 `SD` (standard deviation) describes how much a random value varies. `SE` (standard error) describes how much an estimate varies when sampled again. A score is estimated from samples, so its standard deviation is its standard error. Here, `SE_proxy` is the implementation's approximate estimate of that error.
 
 `score_node` and `score_best` are fixed observed values in the current window. Calling them random quantities means asking how much they might change if measured again.
+
+### Debug
+
+To check this table against your own lines and load, ask the API (a non-ASCII group name has to
+be URL encoded):
+
+```bash
+curl -s 'http://127.0.0.1:9090/private/health/Name/windows?ahead=2&configs=1:5,1:10,2:5'
+```
+
+Right after a restart, when there are too few checks to hold a window, `configs` is empty and
+`note` says what is missing.
+
+`rho` compares the rank of every node, `agreement` compares the members of the pool: a load
+balance group serves from the whole pool, so what matters is that the two pools are the same set,
+not who ranks first inside one. The two answer different questions: a high `rho` does not mean a
+stable pool, and a high `agreement` does not mean the order inside the pool is meaningful. A
+longer window does not necessarily score a higher `rho`: the more checks it holds, the more of a
+node's earlier state it mixes into a prediction of the few checks that follow it.
+
+`agreement` rewards a steady pool, `reaction` and `recovery` report what that steadiness costs: how
+many checks a node that turned bad (slower than twice its own floor) stays in the pool, and how
+many checks it takes to come back once it is usable again. A longer window is steadier and slower;
+both means cover only a handful of events, so neither is a measurement when `reactions` or
+`recoveries` is small.
+
+`rho` compares the rank of every node, which the nodes' lasting differences dominate. In a period
+where those differences hold, it saturates and every row crowds into a narrow band: do not compare
+windows with it then. In a period where the line itself is uneven, the ranking is not stable and
+`rho` separates the windows again.
+
+A window needs `samples × stride` + `ahead` checks to be measurable at all, and a group keeps
+only `sampling` of them: the rest is not kept. Both can be resized in place, without a restart
+and without losing what was already collected:
+
+```bash
+curl -X PUT 'http://127.0.0.1:9090/private/health/Name/history?sampling=15&extra=60'
+```
+
+`sampling` is how many checks the ranking reads, leave it out to
+keep the one in use. `extra` is how many checks to keep behind it, for the measurement only;
+leave it out, or set it to `0`, to keep the sampling alone. The checks already collected survive
+the resize.
+
+Parameters
+
+| Parameter | Default | Meaning |
+| --- | --- | --- |
+| `ahead` | `8` | how many checks after the window it is asked to predict |
+| `configs` | the default grid | `stride:samples` pairs, e.g. `1:15,2:10`. `stride` is how many checks are skipped between samples, `samples` how many the window holds |
+
+Fields
+
+| Field | Meaning |
+| --- | --- |
+| `interval` | the actual interval between the checks (median), not the configured one |
+| `nodes` | how many nodes were measured |
+| `checks` | how many checks the longest history holds |
+| `ahead` | how many checks each window was asked to predict |
+| `stride` | how many checks are skipped between samples, `1` for consecutive |
+| `samples` | how many checks the window holds; its span is `interval × stride × samples` |
+| `span` | the actual width of the window |
+| `windows` | how many positions of the history the window was measured at; the other fields are the average over them |
+| `rho` | rank correlation between the order the window produces and the order the checks after it produce: `1` identical, `0` as good as guessing. It saturates, so read it only as a reference when the history is too short for anything else |
+| `delta` | the standard error of `rho`; it collapses to `0` when `windows` is small, which means no precision rather than precision |
+| `pool` | how many nodes the band lets in, on average, for that window |
+| `agreement` | Jaccard index of the pool the window selects and the pool the checks after it select: `1` the same set, `0` nothing in common |
+| `exact` | the share of positions where the two pools were the same set; `agreement` also counts a partial overlap, `exact` counts only a complete match |
+| `reaction` | how many checks a node that turned bad stays in the pool; `ahead + 1` is a node still in it at the horizon, absent when there are no reactions |
+| `reactions` | how many times a node turned bad while it was in the pool; failures are not reactions, because the pool drops them on the check that fails |
+| `recovery` | the other direction: how many checks a node that is usable again takes to come back into the pool. The horizon is the window (`samples × stride`), because a failure has to leave it first; a node that has not returned within it counts as the horizon + 1, absent when there are no recoveries |
+| `recoveries` | how many times a node that had been served was dropped and turned good again |
+| `note` | what was missing, when not one window could be measured |

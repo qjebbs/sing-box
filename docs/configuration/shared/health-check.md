@@ -118,63 +118,28 @@ window of `interval × sampling`. Recommended:
 
 | Case | `interval` | `sampling` | Span |
 | --- | --- | --- | --- |
-| Few nodes, cheap checks | `1m` | `15` | 15 minutes |
 | Everyday load balancing (recommended) | `2m` | `10` | 20 minutes |
+| Few nodes, cheap checks | `1m` | `15` | 15 minutes |
 | Many nodes, steadier | `2m` | `15` | 30 minutes |
 | The defaults, limited checks (span beyond the recommendation) | `5m` | `10` | 50 minutes |
 
-At least 10 samples, and no more than 30 minutes of span.
+For load balancing, at least 10 samples, and no more than 30 minutes of span.
 
-`urltest` uses a single node, so sample more: `1m × 15` or `2m × 12–15`, with `tolerance` left
-at its default.
+`urltest` uses a single node, so a 10 minute window is enough and there is no reason to stretch the
+span for more samples:
 
-#### Debug
+| Case | `interval` | `sampling` | Span |
+| --- | --- | --- | --- |
+| Recommended (half the checks) | `2m` | `5` | 10 minutes |
+| Changes found sooner | `1m` | `10` | 10 minutes |
 
-To check this table against your own lines and load, ask the API (a non-ASCII group name has to
-be URL encoded):
+Both cover the same span, and the measured agreement of the pick between them is within noise.
+`2m × 5` holds only five samples, so its median is coarser and the resolution margin of the band is
+about 1.4 times wider, and it sees any change up to two minutes later: the interval is the reaction
+granularity. Beyond 10 minutes of span, the node a window picks stops matching how it behaves
+afterwards.
 
-```bash
-curl -s 'http://127.0.0.1:9090/private/health/Name/windows?ahead=2&configs=1:5,1:10,2:5'
-```
-
-Every window is priced by the same score that ranks the group, so a `rho` close to 1 means the
-window orders the nodes the way they behave afterwards. `interval` is read from the checks, not
-from the configuration. Right after a restart, when there are too few checks to hold a window,
-`configs` is empty and `note` says what is missing.
-
-A window needs `samples × stride` + `ahead` checks to be measurable at all, and a group keeps
-only `sampling` of them: the rest is not kept. Both can be resized in place, without a restart
-and without losing what was already collected:
-
-```bash
-curl -X PUT 'http://127.0.0.1:9090/private/health/Name/history?sampling=15&extra=60'
-```
-
-`sampling` is how many checks the ranking reads, leave it out to
-keep the one in use. `extra` is how many checks to keep behind it, for the measurement only;
-leave it out, or set it to `0`, to keep the sampling alone. The checks already collected survive
-the resize.
-
-Parameters
-
-| Parameter | Default | Meaning |
-| --- | --- | --- |
-| `ahead` | `8` | how many checks after the window it is asked to predict |
-| `configs` | the default grid | `stride:samples` pairs, e.g. `1:15,2:10`. `stride` is how many checks are skipped between samples, `samples` how many the window holds |
-
-Fields
-
-| Field | Meaning |
-| --- | --- |
-| `interval` | the actual interval between the checks (median), not the configured one |
-| `nodes` | how many nodes were measured |
-| `checks` | how many checks the longest history holds |
-| `ahead` | how many checks each window was asked to predict |
-| `stride` | how many checks are skipped between samples, `1` for consecutive |
-| `samples` | how many checks the window holds; its span is `interval × stride × samples` |
-| `span` | the actual width of the window |
-| `windows` | how many positions of the history the window was measured at; the other fields are the average over them |
-| `rho` | rank correlation between the order the window produces and the order the checks after it produce: `1` identical, `0` as good as guessing |
-| `delta` | the standard error of `rho`; it collapses to `0` when `windows` is small, which means no precision rather than precision |
-| `pool` | how many nodes the band lets in, on average, for that window |
-| `note` | what was missing, when not one window could be measured |
+Keep `max_fail` at `0`: the `idle` score does count failures, but one failure counts as one bad
+check — 50 points at ten samples, exactly one `tolerance`, before the resolution margin is added —
+so a single failure does not move a node out of the band. When failures are tolerated, the status
+gate of `max_fail` is what stops the node. Leave `tolerance` at its default.

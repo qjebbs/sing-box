@@ -102,13 +102,19 @@ func (g *Group) HealthWindows(options adapter.HealthWindowsOptions) adapter.Heal
 	report.Configs = make([]adapter.HealthWindowResult, 0, len(evaluation.Sizes))
 	for _, size := range evaluation.Sizes {
 		report.Configs = append(report.Configs, adapter.HealthWindowResult{
-			Stride:  size.Stride,
-			Samples: size.Samples,
-			Span:    size.Span.String(),
-			Windows: size.Windows,
-			Rho:     size.Rho,
-			Delta:   size.Delta,
-			Pool:    size.Pool,
+			Stride:     size.Stride,
+			Samples:    size.Samples,
+			Span:       size.Span.String(),
+			Windows:    size.Windows,
+			Rho:        size.Rho,
+			Delta:      size.Delta,
+			Pool:       size.Pool,
+			Agreement:  size.Agreement,
+			Exact:      size.Exact,
+			Reaction:   size.Reaction,
+			Reactions:  size.Reactions,
+			Recovery:   size.Recovery,
+			Recoveries: size.Recoveries,
 		})
 	}
 	return report

@@ -82,4 +82,23 @@ type HealthWindowResult struct {
 	Delta float64 `json:"delta"`
 	// Pool is the number of nodes the selection made of the window would consider.
 	Pool float64 `json:"pool"`
+	// Agreement is the Jaccard index of the two pools, the nodes the window would select
+	// against the nodes the checks after it select: 1 when they are the same set, 0 when
+	// they share none. A load balance group serves from the whole pool, so this is how
+	// much of the coming selection the window already agrees with.
+	Agreement float64 `json:"agreement"`
+	// Exact is the share of positions where the two pools were the same set.
+	Exact float64 `json:"exact"`
+	// Reaction is how many checks a node that turns bad stays in the pool, averaged over
+	// Reactions reactions: 1 is the check where the score moved, and ahead+1 a node that was
+	// still in the pool at the horizon.
+	Reaction float64 `json:"reaction,omitempty"`
+	// Reactions is how many times a node turned bad while it was in the pool. Reaction is
+	// absent when there were none.
+	Reactions int `json:"reactions"`
+	// Recovery is the other direction: how many checks a node that turns good again takes to
+	// come back into the pool, averaged over Recoveries recoveries.
+	Recovery float64 `json:"recovery,omitempty"`
+	// Recoveries is how many times a node turned good again while it was out of the pool.
+	Recoveries int `json:"recoveries"`
 }
