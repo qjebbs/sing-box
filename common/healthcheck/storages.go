@@ -3,6 +3,8 @@ package healthcheck
 import (
 	"sync"
 	"time"
+
+	"github.com/sagernet/sing-box/adapter"
 )
 
 // StorageOptions is how much of the history one node keeps.
@@ -45,6 +47,9 @@ type Storages struct {
 
 	options  StorageOptions
 	storages map[string]*Storage
+	// changed reports whether anything was measured since the last save, so a checker whose
+	// groups are all idle does not rewrite what is already stored.
+	changed bool
 }
 
 // NewStorages returns a new Storages
@@ -118,12 +123,9 @@ func (s *Storages) Stats(tag string) Stats {
 func (s *Storages) Put(tag string, delay RTT) {
 	s.Lock()
 	defer s.Unlock()
-	store, ok := s.storages[tag]
-	if !ok {
-		store = NewStorage(s.options)
-		s.storages[tag] = store
-	}
+	store := s.storageOf(tag)
 	store.Put(delay)
+	s.changed = true
 }
 
 // Update commits an out of band check for the tag, replacing its latest result and
@@ -131,12 +133,62 @@ func (s *Storages) Put(tag string, delay RTT) {
 func (s *Storages) Update(tag string, delay RTT) {
 	s.Lock()
 	defer s.Unlock()
-	store, ok := s.storages[tag]
-	if !ok {
-		store = NewStorage(s.options)
-		s.storages[tag] = store
-	}
+	store := s.storageOf(tag)
 	store.Update(delay)
+	s.changed = true
+}
+
+// storageOf returns the storage of the tag, creating it when the node is checked for the
+// first time.
+func (s *Storages) storageOf(tag string) *Storage {
+	store, loaded := s.storages[tag]
+	if loaded {
+		return store
+	}
+	store = NewStorage(s.options)
+	s.storages[tag] = store
+	return store
+}
+
+// Restore puts a stored state back into the storage of its tag, creating that storage when the
+// node has not been checked yet. It is called before the first round measures anything, with
+// the nodes the providers still have, so the record of a node that is gone never enters memory
+// and nothing has to drop it afterwards.
+func (s *Storages) Restore(tag string, state adapter.HealthState, now time.Time) {
+	s.Lock()
+	defer s.Unlock()
+	s.storageOf(tag).restoreState(state, now)
+}
+
+// States returns the states to store, one per node that has something to keep. A state that
+// has expired is left out, see Storage.State.
+func (s *Storages) States(now time.Time) map[string]adapter.HealthState {
+	s.Lock()
+	defer s.Unlock()
+	states := make(map[string]adapter.HealthState, len(s.storages))
+	for tag, store := range s.storages {
+		if state, ok := store.State(now); ok {
+			states[tag] = state
+		}
+	}
+	return states
+}
+
+// TakeChanged reports whether anything was measured since the last call, and forgets it, so
+// a period that wrote the states does not write them again while nothing moves.
+func (s *Storages) TakeChanged() bool {
+	s.Lock()
+	defer s.Unlock()
+	changed := s.changed
+	s.changed = false
+	return changed
+}
+
+// MarkChanged records that the states still have to be written, which a failed write does.
+func (s *Storages) MarkChanged() {
+	s.Lock()
+	defer s.Unlock()
+	s.changed = true
 }
 
 // Delete remove the histories storage for the tag

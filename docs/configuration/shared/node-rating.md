@@ -326,7 +326,14 @@ If fewer than two checks succeed, the slot is not updated. That single result ma
 
 **Sudden changes.** If the node stays stable or changes slowly, the baseline moves by at most the change in one slot at a time, since only one slot is replaced every 30 minutes. For a node that gets 144ms slower each day, expiring everything at once would cause a 144ms jump. With slots, the change is spread across 48 updates during the day, about 11ms each. **A sudden change, such as a new line or machine, can still cause a jump**: when the last old reading is overwritten, the minimum has to move to the next-lowest value. The jump is the size of the change itself. That is the cost of forgetting old data, not noise that smoothing can remove.
 
-**Starting up.** The first round writes its fastest check, so `FLOOR` starts at `MIN` without a separate fallback. The ring then fills one slot at a time and takes 24 hours to cover the full day. After a restart it has to build up again because the baseline is kept in memory. While it is rebuilding, each slot covers fewer time periods and the floor may be too high. This is the cost of forgetting old data; the ranking still works. See [Design Choice: Does an Immature Floor Change the Ranking?](#design-choice-does-an-immature-floor-change-the-ranking).
+**Starting up.** The first round writes its fastest check, so `FLOOR` starts at `MIN` without a separate fallback. The ring then fills one slot at a time and takes 24 hours to cover the full day. When the cache file is on, a restart restores the day of slots and the long-run failure rate, see [Design Choice: Why Only the Floor and the Failure Rate Are Cached](#design-choice-why-only-the-floor-and-the-failure-rate-are-cached); when it is off, or its record is unusable (not enabled, a different target or path, expired), a restart builds up again as it always did. While it is rebuilding, each slot covers fewer time periods and the floor may be too high. This is the cost of forgetting old data; the ranking still works. See [Design Choice: Does an Immature Floor Change the Ranking?](#design-choice-does-an-immature-floor-change-the-ranking).
+
+### Design Choice: Why Only the Floor and the Failure Rate Are Cached
+
+Two pieces of state outlive the window: the baseline and the long-run failure rate. The window holds `sampling` checks (`sampling × interval`), while those two look back 24 hours and `τ = 45` minutes. The cost of a restart is therefore very uneven — the window rebuilds quickly, `FLOOR` has to wait for the next daily trough, and `FAILR` has no evidence again until the node **fails once more**.
+
+
+Each record carries the moment it was written, and its validity is how long the floor lives — 24 hours. The cache file drops the records that have passed when it opens, so a node that is no longer checked does not stay in the file for good.
 
 ### Design Choice: Why the Threshold Is Two and the Weight Is 0.5
 
@@ -590,7 +597,7 @@ R  = S / W
 
 Keeping `S` and `W` apart rather than only `R` is what lets a cold start carry a prior, see below. The denser the checks, the larger the steady state of `W`, which is `τ/Δt`, and the less each one matters — precisely because it stands for a shorter stretch of time.
 
-**The prior at a cold start.** `W` begins at 10, the weight of ten clean checks: a cold start is a node nobody has seen fail, not a node seen failing. Starting from nothing would make the first check all the evidence there is, and one failure would put `R` straight at `1.0` — right after a restart, before the network is up, every node's first check fails, and every node would carry an almost perfect failure rate for an hour. The prior decays with the same `c` as the rest, so once the history is long enough its weight is negligible and `R` behaves exactly as it did without it.
+**The prior at a cold start.** `W` begins at 10, the weight of ten clean checks: a cold start is a node nobody has seen fail, not a node seen failing. Starting from nothing would make the first check all the evidence there is, and one failure would put `R` straight at `1.0` — right after a restart, before the network is up, every node's first check fails, and every node would carry an almost perfect failure rate for an hour. The prior decays with the same `c` as the rest, so once the history is long enough its weight is negligible and `R` behaves exactly as it did without it. With the cache file on, the restored history takes the place of that prior.
 
 **How it relates to `FAIL / ALL`.** While the failure rate is constant, the steady state of `R` is that rate, the same number `FAIL / ALL` gives. The two part company only when the rate changes: one steps at the window boundary, the other fades as `exp(−t/τ)`. With `τ = 45 minutes` and a check every minute, a node that had been clean (`R ≈ 0`) and then fails ten times in a row:
 

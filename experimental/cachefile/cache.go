@@ -33,6 +33,7 @@ var (
 		string(bucketRuleSet),
 		string(bucketRDRC),
 		string(bucketDNSCache),
+		string(bucketHealthState),
 	}
 
 	cacheIDDefault = []byte("default")
@@ -237,6 +238,11 @@ func (c *CacheFile) start() error {
 			return nil
 		})
 	})
+	if err != nil {
+		db.Close()
+		return err
+	}
+	err = c.dropExpiredHealthStates(db)
 	if err != nil {
 		db.Close()
 		return err

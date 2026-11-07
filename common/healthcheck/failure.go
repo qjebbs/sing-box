@@ -81,6 +81,24 @@ func (f *failureRate) rate() float64 {
 	return f.sum / f.weight
 }
 
+// estimate returns the two weighted counts and the time they were brought forward to, which
+// is the whole of the state: the next observe folds a check into them by decaying and adding.
+// Nothing has been observed while at is zero, which is the state of a fresh estimate.
+func (f *failureRate) estimate() (sum float64, weight float64, at time.Time) {
+	return f.sum, f.weight, f.at
+}
+
+// restore sets the estimate back to a stored one. It reports false when the state is not one
+// observe could have produced: a weight without a time, a sum larger than the weight, or a
+// time in the future.
+func (f *failureRate) restore(sum float64, weight float64, at time.Time) bool {
+	if at.IsZero() || weight <= 0 || sum < 0 || sum > weight || time.Since(at) < -time.Minute {
+		return false
+	}
+	f.sum, f.weight, f.at = sum, weight, at
+	return true
+}
+
 // ReplayFailureRate returns the estimate the storage would hold after the checks, which are
 // newest first like the history they come from. It is how a window cut out of that history
 // is given the same prior the group had when the window was current.

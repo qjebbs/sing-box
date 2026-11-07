@@ -2,6 +2,8 @@ package healthcheck
 
 import (
 	"time"
+
+	"github.com/sagernet/sing-box/adapter"
 )
 
 // Storage holds ping rtts for health Checker, it's not thread safe
@@ -26,6 +28,46 @@ type Storage struct {
 type History struct {
 	Time  time.Time `json:"time"`
 	Delay RTT       `json:"delay"`
+}
+
+// failureStateTimeout is how long a stored failure estimate is worth restoring. An estimate
+// is read as it stands, without being brought forward, so one that has been decaying
+// unwatched for longer than this no longer describes the node: the window is the better
+// evidence by then.
+const failureStateTimeout = 3 * failureTimeConstant
+
+// State returns what the storage keeps outside the window, and whether there is anything to
+// keep. A floor older than a day, or a failure estimate that has gone stale, is left out:
+// the record would not be usable on the next start either.
+func (s *Storage) State(now time.Time) (adapter.HealthState, bool) {
+	// The round writes the baseline before it reads it, see refreshStats, so a state taken
+	// without refreshing the statistics can be a round behind.
+	s.refreshStats(now)
+	var state adapter.HealthState
+	values, window, filled := s.baseline.export(now)
+	if filled {
+		state.Floors = values
+		state.FloorsAt = window
+	}
+	if sum, weight, at := s.failures.estimate(); !at.IsZero() && now.Sub(at) < failureStateTimeout {
+		state.FailureSum = sum
+		state.FailureWeight = weight
+		state.FailureAt = at
+	}
+	return state, filled || !state.FailureAt.IsZero()
+}
+
+// restoreState puts a stored state back. The slots go back into the windows they came from,
+// so they expire when they would have without the restart, see baseline.restore. The failure
+// estimate is restored as it was: the next check folds into it as if the process had never
+// stopped.
+func (s *Storage) restoreState(state adapter.HealthState, now time.Time) {
+	s.baseline.restore(state.Floors, state.FloorsAt)
+	if !state.FailureAt.IsZero() && now.Sub(state.FailureAt) < failureStateTimeout {
+		s.failures.restore(state.FailureSum, state.FailureWeight, state.FailureAt)
+	}
+	// statistics is not valid any more
+	s.stats = Stats{}
 }
 
 // NewStorage returns a new rtt storage with the given sizes

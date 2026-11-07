@@ -61,6 +61,14 @@ type HealthCheck struct {
 	listenersMu        sync.Mutex
 	postCheckListeners []func()
 
+	// stateStore is the cache file the floor and the long-run failure rate are kept in, nil
+	// when the cache file is not enabled. stateKey describes the measurement they belong to.
+	stateStore    adapter.HealthStateStore
+	stateKey      []byte
+	stateCancel   context.CancelFunc
+	stateSaveOnce sync.Once
+	restoreOnce   sync.Once
+
 	// failureMu guards the failed connections of each node, which decide when a node
 	// is checked again between the scheduled rounds.
 	failureMu sync.Mutex
@@ -132,7 +140,7 @@ func NewHealthCheck(
 	if options.IdleTimeout > 0 && options.IdleTimeout < options.Interval {
 		options.IdleTimeout = options.Interval
 	}
-	return &HealthCheck{
+	healthCheck := &HealthCheck{
 		lastActive:      make(map[string]time.Time),
 		lastCheck:       make(map[string]time.Time),
 		checking:        make(map[string]struct{}),
@@ -150,6 +158,8 @@ func NewHealthCheck(
 		}),
 		pauseManager: service.FromContext[pause.Manager](ctx),
 	}
+	healthCheck.attachHealthState()
+	return healthCheck
 }
 
 // ConfigureHistory sets how many checks the statistics read and how many are kept behind
@@ -212,6 +222,7 @@ func (h *HealthCheck) Start() error {
 	ctx, cancel := context.WithCancel(context.Background())
 	h.cancel = cancel
 	h.loopCtx = ctx
+	h.startHealthState()
 	go h.cleanupLoop(ctx, 8*time.Hour)
 	// The check loop is only started when a group is used, see Touch.
 	return nil
@@ -228,7 +239,10 @@ func (h *HealthCheck) Close() error {
 	h.loopCtx = nil
 	h.loopStarted = false
 	h.suspended = false
+	stateCancel := h.stateCancel
+	h.stateCancel = nil
 	h.loopMu.Unlock()
+	h.closeHealthState(stateCancel)
 	if h.detourScope == nil {
 		return nil
 	}
@@ -565,6 +579,7 @@ func (h *HealthCheck) CheckAll(ctx context.Context, namespace string) (map[strin
 // checkAll performs checks for the nodes of the given namespaces, a nil list
 // means all namespaces.
 func (h *HealthCheck) checkAll(ctx context.Context, scheduled bool, namespaces []string) (map[string]uint16, error) {
+	h.restoreHealthState()
 	batch, _ := batch.New(ctx, batch.WithConcurrencyNum[uint16](10))
 	// share ctx information between checks
 	meta := NewMetaData()

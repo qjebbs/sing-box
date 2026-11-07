@@ -122,8 +122,10 @@ func (s *Storage) refreshStats(now time.Time) {
 		// cannot make a score of zero: the baseline can never be above the median of the
 		// round that just set it.
 		s.baseline.Put(now, minOf(delays))
-		floor, _ = s.baseline.RTT(now)
 	}
+	// The floor outlives the window, so it is read even when the window is too short to set
+	// one: a restored floor is what a restart must not wait for.
+	floor, _ = s.baseline.RTT(now)
 	s.stats = statsOf(len(delays)+fail, fail, latest.Delay, expiresAt, delays, floor, s.failures.rate())
 	s.stats.Suspended = s.suspended
 }
@@ -133,8 +135,7 @@ func (s *Storage) refreshStats(now time.Time) {
 // priced exactly the way the group priced it.
 //
 // The baseline is the one input of the statistics the storage keeps outside the window, so
-// it is passed in. A floor of zero means the node has none yet, and Bad stays zero, which
-// is what the storage does for a window too short to set one.
+// it is passed in. A floor of zero means the node has none yet, and Bad stays zero.
 //
 // longRun is the failure estimate of the checks older than this window, see
 // ReplayFailureRate: it is the one statistic a window does not carry, and passing it in

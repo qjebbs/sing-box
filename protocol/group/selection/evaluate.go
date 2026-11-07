@@ -312,14 +312,9 @@ func (s WindowSeries) checksStrided(offset int, size WindowSize) []*healthcheck.
 // the node has now and the failure estimate of the checks older than the window, which are
 // the two inputs the storage keeps outside its window.
 func (s WindowSeries) statsOf(checks []*healthcheck.History, longRun float64) healthcheck.Stats {
-	floor := s.Node.Stats.Floor
-	if succeededOf(checks) < 2 {
-		// too short to set a baseline, and the storage reports no baseline in that case
-		floor = 0
-	}
 	// the expiry of the window is left to zero: it is what makes the storage recompute its
 	// statistics, and the score reads none of it
-	return healthcheck.StatsOf(checks, floor, time.Time{}, longRun)
+	return healthcheck.StatsOf(checks, s.Node.Stats.Floor, time.Time{}, longRun)
 }
 
 // longRunAt returns the failure estimate the storage held when the check at offset was the
@@ -554,16 +549,6 @@ func (o *ScoreObjective) goodCheck(series *WindowSeries, index int) bool {
 		return false
 	}
 	return !o.badCheck(series, index)
-}
-
-func succeededOf(checks []*healthcheck.History) int {
-	succeeded := 0
-	for _, check := range checks {
-		if check.Delay != healthcheck.Failed {
-			succeeded++
-		}
-	}
-	return succeeded
 }
 
 // checkInterval returns the time between two checks, from the median gap of the first

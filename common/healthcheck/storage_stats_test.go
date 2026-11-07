@@ -65,9 +65,11 @@ func TestStorageStats(t *testing.T) {
 
 	s.Put(healthcheck.Failed)
 	s.Put(healthcheck.Failed)
+	// the floor outlives the window: it is what the node can do, not what it is doing
 	want = healthcheck.Stats{
 		All:    4,
 		Fail:   4,
+		Floor:  60,
 		Latest: healthcheck.Failed,
 	}
 	assertStats(t, "Stats() - All Fail", want, s.Stats())
@@ -162,12 +164,13 @@ func TestStorageStatsIgnoreOutdated(t *testing.T) {
 
 	s.Put(60)
 	// one sample says nothing about how much the node varies, so the spreads are assumed
-	// to be half of its delay
+	// to be half of its delay; the floor is still the one the window set before it expired
 	want = healthcheck.Stats{
 		All:           1,
 		Fail:          0,
 		Jitter:        30,
 		MeanDeviation: 30,
+		Floor:         60,
 		Average:       60,
 		Median:        60,
 		Max:           60,
