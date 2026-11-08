@@ -114,6 +114,18 @@ func idleNoise(node *Node) healthcheck.RTT {
 // The spread of the samples is used here rather than the jitter, the opposite of idleNoise:
 // this is how wrong the score of a known node can be, and the band, which has to stay
 // narrow enough to tell nodes apart, is the one read off the jitter.
+//
+// The frequency is read as one share of the window, which is exact while the window has the
+// failures: the bad checks and the failed ones are disjoint outcomes of the same checks, so
+// the covariance of the two shares cancels and what is left is the error of a single share
+// over All. When the long-run estimate is the larger of the two it stands for many more
+// checks than the window holds at a short interval, and the error is then taken a little too
+// wide; at a long interval it is taken a little too narrow. Both are absorbed by the band the
+// allowance is capped at, see Keep.
+//
+// The share is clamped at one, and the error of a share at one is zero: a node that saturates
+// it is reported as perfectly certain. Only a node scoring at least half the scale can get
+// there, which is nowhere near a band, so the reading is never asked for.
 func idleError(node *Node) float64 {
 	floor := float64(node.Floor)
 	if floor <= 0 {

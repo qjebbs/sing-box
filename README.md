@@ -12,7 +12,7 @@ For extended features
 
 > [!WARNING]
 > BREAKING changes since v1.14.4+rev: 
-> - The `urltest` / `loadbalance` groups are almost entirely rewritten and their options changed significantly, reconfiguring them from the new doc is recommended. 
+> - The `urltest` / `loadbalance` groups use entirely new objectives and algorithms, which markedly improve the quality of the nodes they select. Their options changed as much, so reconfiguring them from the new doc is recommended.
 > - The `chain` outbound is replaced by `relay` and lists its nodes in the order the connection passes through them, so the last one is the final exit. 
 > - The health check fields are changed as well, with `detour_of` renamed to `relay_path`, listing its nodes in the same order, and `destination` renamed to `url`. 
 
@@ -23,6 +23,7 @@ For extended features
 - Fallback: [中文](./docs/configuration/outbound/fallback.zh.md), [English](./docs/configuration/outbound/fallback.md)
 - Health Check: [中文](./docs/configuration/shared/health-check.zh.md), [English](./docs/configuration/shared/health-check.md)
 - Muiltifile Configuration Extended: [中文](./docs/configuration/index.zh.md), [English](./docs/configuration/index.md)
+- Node Rating: [中文](./docs/configuration/shared/node-rating.zh.md), [English](./docs/configuration/shared/node-rating.md)
 
 ## License
 
