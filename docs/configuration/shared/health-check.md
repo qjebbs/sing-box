@@ -76,17 +76,14 @@ The URL for health check. Default is `https://www.gstatic.com/generate_204`.
 
 #### idle_timeout
 
-The duration after which health checks are paused when no outbound group using
-this health check has been in use, 0 to keep checking permanently.
+The duration after which checks are paused when all outbound groups using this
+health check are inactive. Checks resume as soon as a group is used again. `0`
+keeps checking continuously, values smaller than `interval` are raised to
+`interval`.
 
-When a shared health check is used by multiple outbound groups, the checks are
-only paused after every group has been idle for this duration.
-
-While paused, no node is tested. Checking resumes as soon as a group is used
-again, starting with an immediate check to refresh the statistics, since results
-older than `(sampling+1) * interval` are discarded.
-
-Values smaller than `interval` are raised to `interval`.
+If this health check is used by any outbound group with an `idle` objective, idle probes continue
+while regular checks are paused. At most one check is made per 30-minute slot,
+providing a reliable baseline for evaluating node load.
 
 #### relay_path
 

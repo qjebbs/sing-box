@@ -93,6 +93,7 @@ func (g *Group) Start(
 	stage adapter.StartStage,
 	scope *adapter.Scope,
 	healthCheckOptions *option.HealthCheckOptions,
+	idleProbe bool,
 	pick selection.Selection,
 	nodeOptions selection.NodeOptions,
 ) error {
@@ -109,6 +110,7 @@ func (g *Group) Start(
 	if err != nil {
 		return err
 	}
+	healthCheck.SetIdleProbe(g.Tag(), idleProbe)
 	nodes, err := selection.NewNodeBuilder(nodeOptions)
 	if err != nil {
 		return err

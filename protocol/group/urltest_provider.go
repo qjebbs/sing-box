@@ -86,6 +86,7 @@ func (s *URLTestProvider) Start(stage adapter.StartStage, scope *adapter.Scope) 
 		return err
 	}
 	return s.Group.Start(stage, scope, s.options.HealthCheck,
+		objective.Name() == selection.ObjectiveIdle,
 		selection.NewSingle(objective),
 		selection.NodeOptions{
 			// The failures are already priced into the score of a node, in its own

@@ -2,6 +2,7 @@ package healthcheck
 
 import (
 	"context"
+	"math/rand"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -48,15 +49,15 @@ type HealthCheck struct {
 
 	loopCtx     context.Context
 	loopStarted bool
+	loopWake    chan struct{}
 	loopMu      sync.Mutex
 
-	// idleMu guards the per namespace activity used to suspend the loops when
-	// every namespace is idle. suspended is guarded by loopMu.
-	idleMu     sync.Mutex
-	lastActive map[string]time.Time
-	lastCheck  map[string]time.Time
-	checking   map[string]struct{}
-	suspended  bool
+	// idleMu guards the per-namespace activity and idle-probe registrations.
+	idleMu              sync.Mutex
+	lastActive          map[string]time.Time
+	lastCheck           map[string]time.Time
+	idleProbeNamespaces map[string]struct{}
+	checking            map[string]struct{}
 
 	listenersMu        sync.Mutex
 	postCheckListeners []func()
@@ -141,16 +142,18 @@ func NewHealthCheck(
 		options.IdleTimeout = options.Interval
 	}
 	healthCheck := &HealthCheck{
-		lastActive:      make(map[string]time.Time),
-		lastCheck:       make(map[string]time.Time),
-		checking:        make(map[string]struct{}),
-		recheckSem:      make(chan struct{}, connectionRecheckConcurrency),
-		ctx:             ctx,
-		om:              outbound,
-		logger:          logger,
-		mergedProviders: newMergedProvider(),
-		options:         options,
-		globalHistory:   service.PtrFromContext[urltest.HistoryStorage](ctx),
+		lastActive:          make(map[string]time.Time),
+		lastCheck:           make(map[string]time.Time),
+		idleProbeNamespaces: make(map[string]struct{}),
+		checking:            make(map[string]struct{}),
+		loopWake:            make(chan struct{}, 1),
+		recheckSem:          make(chan struct{}, connectionRecheckConcurrency),
+		ctx:                 ctx,
+		om:                  outbound,
+		logger:              logger,
+		mergedProviders:     newMergedProvider(),
+		options:             options,
+		globalHistory:       service.PtrFromContext[urltest.HistoryStorage](ctx),
 		Storage: NewStorages(StorageOptions{
 			Sampling: options.Sampling,
 			Validity: time.Duration(options.Sampling+1) * time.Duration(options.Interval),
@@ -190,8 +193,26 @@ func (h *HealthCheck) RemoveProviders(namespace string) error {
 	h.idleMu.Lock()
 	delete(h.lastActive, namespace)
 	delete(h.lastCheck, namespace)
+	delete(h.idleProbeNamespaces, namespace)
 	h.idleMu.Unlock()
+	h.wakeLoop()
 	return nil
+}
+
+// SetIdleProbe reports whether the group using namespace ranks its nodes by the
+// idle objective, which is the only objective that needs probes while idle.
+func (h *HealthCheck) SetIdleProbe(namespace string, enabled bool) {
+	h.idleMu.Lock()
+	if enabled {
+		if h.idleProbeNamespaces == nil {
+			h.idleProbeNamespaces = make(map[string]struct{})
+		}
+		h.idleProbeNamespaces[namespace] = struct{}{}
+	} else {
+		delete(h.idleProbeNamespaces, namespace)
+	}
+	h.idleMu.Unlock()
+	h.wakeLoop()
 }
 
 // Start starts the health check service, implements adapter.Service
@@ -238,7 +259,6 @@ func (h *HealthCheck) Close() error {
 	}
 	h.loopCtx = nil
 	h.loopStarted = false
-	h.suspended = false
 	stateCancel := h.stateCancel
 	h.stateCancel = nil
 	h.loopMu.Unlock()
@@ -376,10 +396,8 @@ func (h *HealthCheck) IsActive(namespace string) bool {
 	return time.Since(lastActive) < idleTimeout
 }
 
-// Touch records that the namespace is in use, so its health checks keep running.
-// When the loop was suspended because every namespace was idle, it is restarted
-// and a catch-up check is performed for this namespace, since the statistics of
-// its nodes are stale.
+// Touch records that the namespace is in use and wakes the scheduler. A stale
+// namespace gets a catch-up check, since its statistics may no longer be current.
 func (h *HealthCheck) Touch(namespace string) {
 	if h == nil {
 		return
@@ -389,12 +407,11 @@ func (h *HealthCheck) Touch(namespace string) {
 	h.lastActive[namespace] = now
 	h.idleMu.Unlock()
 	if h.startLoop() {
-		// The first round of the started loop covers this namespace.
+		// The first round of the scheduler covers this namespace.
 		return
 	}
 	if h.options.IdleTimeout <= 0 {
-		// Without an idle timeout the loop checks every namespace each round,
-		// a catch-up would only duplicate it.
+		h.wakeLoop()
 		return
 	}
 	h.idleMu.Lock()
@@ -410,6 +427,7 @@ func (h *HealthCheck) Touch(namespace string) {
 	if catchUp {
 		go h.checkNamespace(namespace)
 	}
+	h.wakeLoop()
 }
 
 // markChecked records that the namespaces were just checked, so a Touch doesn't
@@ -429,8 +447,7 @@ func (h *HealthCheck) markChecked(namespaces []string) {
 	h.idleMu.Unlock()
 }
 
-// checkNamespace performs a scheduled check for a single namespace, it is used
-// to catch up after the loop was suspended or the namespace was idle.
+// checkNamespace performs a catch-up check for a single namespace after it was idle.
 func (h *HealthCheck) checkNamespace(namespace string) {
 	defer func() {
 		h.idleMu.Lock()
@@ -443,35 +460,37 @@ func (h *HealthCheck) checkNamespace(namespace string) {
 	}
 }
 
-// startLoop starts the check loop when it is not running, either because it was
-// never needed or because it was suspended after being idle. It returns true
-// when the loop was started, in which case its first round covers the namespaces
-// in use right away.
+// startLoop starts the scheduler on first use. It returns true when the scheduler
+// was started, in which case its first round covers the namespaces in use right away.
 func (h *HealthCheck) startLoop() bool {
 	h.loopMu.Lock()
 	defer h.loopMu.Unlock()
-	if h.loopCtx == nil {
+	if h.loopCtx == nil || h.loopStarted {
 		return false
 	}
-	if h.suspended {
-		h.suspended = false
-		h.loopStarted = true
-		h.logger.Info("health check resumed")
-		go h.checkLoop(h.loopCtx)
-		return true
-	}
-	if h.loopStarted {
-		return false
+	if h.loopWake == nil {
+		h.loopWake = make(chan struct{}, 1)
 	}
 	h.loopStarted = true
 	h.logger.Debug("health check started")
-	go h.checkLoop(h.loopCtx)
+	go h.checkLoop(h.loopCtx, h.loopWake)
 	return true
 }
 
+func (h *HealthCheck) wakeLoop() {
+	h.loopMu.Lock()
+	wake := h.loopWake
+	h.loopMu.Unlock()
+	if wake != nil {
+		select {
+		case wake <- struct{}{}:
+		default:
+		}
+	}
+}
+
 // activeNamespaces returns the namespaces that are still in use. A nil result
-// means all namespaces. The loop must be suspended when run is false, because
-// every namespace has been idle for longer than the configured idle timeout.
+// means all namespaces.
 func (h *HealthCheck) activeNamespaces() (namespaces []string, run bool) {
 	now := time.Now()
 	h.idleMu.Lock()
@@ -496,7 +515,7 @@ func (h *HealthCheck) activeNamespaces() (namespaces []string, run bool) {
 }
 
 // scheduledCheck runs a scheduled check for the namespaces in use and reports
-// whether the loop should keep running.
+// whether any namespaces were active.
 func (h *HealthCheck) scheduledCheck(ctx context.Context) bool {
 	namespaces, run := h.activeNamespaces()
 	if !run {
@@ -511,37 +530,159 @@ func (h *HealthCheck) scheduledCheck(ctx context.Context) bool {
 	return true
 }
 
-func (h *HealthCheck) checkLoop(ctx context.Context) {
-	if !h.scheduledCheck(ctx) {
-		h.suspend()
-		return
-	}
-	ticker := time.NewTicker(time.Duration(h.options.Interval))
-	defer ticker.Stop()
+func (h *HealthCheck) hasIdleProbeNamespaces() bool {
+	h.idleMu.Lock()
+	defer h.idleMu.Unlock()
+	return len(h.idleProbeNamespaces) > 0
+}
+
+func (h *HealthCheck) checkLoop(ctx context.Context, wake <-chan struct{}) {
+	// Check once on first use; subsequent regular rounds are interval-based.
+	h.scheduledCheck(ctx)
+	nextRegular := time.Now().Add(time.Duration(h.options.Interval))
+	var (
+		// nextIdle is the random probe time; idleSlot is the wall-clock slot it belongs to.
+		nextIdle time.Time
+		idleSlot time.Time
+	)
+	timer := time.NewTimer(time.Hour)
+	defer timer.Stop()
 	for {
-		h.pauseManager.WaitActive()
+		now := time.Now()
+
+		// Keep a regular deadline only while at least one namespace is active.
+		_, hasActive := h.activeNamespaces()
+		if !hasActive {
+			nextRegular = time.Time{}
+		} else if nextRegular.IsZero() {
+			nextRegular = now.Add(time.Duration(h.options.Interval))
+		}
+
+		// Idle probes are needed only when an idle objective is registered.
+		if h.options.IdleTimeout <= 0 || !h.hasIdleProbeNamespaces() {
+			nextIdle = time.Time{}
+			idleSlot = time.Time{}
+		} else if nextIdle.IsZero() {
+			nextIdle, idleSlot = nextIdleProbeTime(now, time.Time{})
+		}
+
+		// One timer serves both schedules; when neither has work, wait for a state change.
+		nextCheck := nextRegular
+		if nextRegular.IsZero() || (!nextIdle.IsZero() && nextIdle.Before(nextRegular)) {
+			nextCheck = nextIdle
+		}
+		if nextCheck.IsZero() {
+			select {
+			case <-ctx.Done():
+				return
+			case <-wake:
+				continue
+			}
+		}
+
+		// Recompute on wake rather than keeping a deadline based on stale activity or registrations.
+		resetTimer(timer, time.Until(nextCheck))
 		select {
 		case <-ctx.Done():
 			return
-		case <-ticker.C:
-			if !h.scheduledCheck(ctx) {
-				h.suspend()
-				return
+		case <-wake:
+			continue
+		case <-timer.C:
+		}
+
+		// Respect system pause before dispatching either kind of check.
+		h.pauseManager.WaitActive()
+		if ctx.Err() != nil {
+			return
+		}
+		now = time.Now()
+
+		// A paused or delayed scheduler may have missed the deadline; run one round, never catch up in a burst.
+		if !nextRegular.IsZero() && !now.Before(nextRegular) {
+			if h.scheduledCheck(ctx) {
+				nextRegular = now.Add(time.Duration(h.options.Interval))
+			} else {
+				nextRegular = time.Time{}
 			}
+		}
+
+		// Run an idle probe only in its planned slot. If pausing carried us past it, skip it.
+		if !nextIdle.IsZero() && !now.Before(nextIdle) {
+			if baselineWindowStart(now).Equal(idleSlot) {
+				namespaces := h.idleProbeCandidatesForSlot(now)
+				if len(namespaces) > 0 {
+					h.logger.Info("scheduled idle health check for: ", strings.Join(namespaces, ", "))
+					go h.checkAll(ctx, true, namespaces)
+				}
+			}
+			nextIdle, idleSlot = nextIdleProbeTime(now, idleSlot.Add(baselineSlot))
 		}
 	}
 }
 
-// suspend stops the loops until Touch is called for any namespace.
-func (h *HealthCheck) suspend() {
-	h.loopMu.Lock()
-	defer h.loopMu.Unlock()
-	if h.loopCtx == nil {
-		return
+func resetTimer(timer *time.Timer, duration time.Duration) {
+	if !timer.Stop() {
+		select {
+		case <-timer.C:
+		default:
+		}
 	}
-	h.suspended = true
-	h.loopStarted = false
-	h.logger.Info("health check paused, no namespace active for ", time.Duration(h.options.IdleTimeout))
+	if duration < 0 {
+		duration = 0
+	}
+	timer.Reset(duration)
+}
+
+// nextIdleProbeTime chooses a random instant in the current or a later wall-clock slot.
+// nextSlot is the earliest slot start allowed; zero means there is no lower bound.
+// It returns both the probe time and the start of the slot containing that time.
+func nextIdleProbeTime(now time.Time, nextSlot time.Time) (time.Time, time.Time) {
+	slotStart := baselineWindowStart(now)
+	// Never schedule before the next unvisited slot.
+	if nextSlot.After(slotStart) {
+		slotStart = nextSlot
+	}
+	probeStart := now
+	if probeStart.Before(slotStart) {
+		probeStart = slotStart
+	}
+	remaining := slotStart.Add(baselineSlot).Sub(probeStart)
+	if remaining <= time.Nanosecond {
+		slotStart = slotStart.Add(baselineSlot)
+		probeStart = slotStart
+		remaining = baselineSlot
+	}
+	// Choose a future instant within the remaining part of the slot, not the elapsed part.
+	probeAt := probeStart.Add(time.Duration(rand.Int63n(int64(remaining-time.Nanosecond))) + time.Nanosecond)
+	return probeAt, slotStart
+}
+
+// idleProbeCandidatesForSlot returns idle-objective namespaces that have not
+// already been checked in the current slot.
+func (h *HealthCheck) idleProbeCandidatesForSlot(now time.Time) []string {
+	if h.options.IdleTimeout <= 0 {
+		return nil
+	}
+	currentSlot := baselineWindowStart(now)
+	idleTimeout := time.Duration(h.options.IdleTimeout)
+	h.idleMu.Lock()
+	defer h.idleMu.Unlock()
+	var namespaces []string
+	for namespace, lastActive := range h.lastActive {
+		if _, enabled := h.idleProbeNamespaces[namespace]; !enabled {
+			continue
+		}
+		if now.Sub(lastActive) < idleTimeout {
+			continue
+		}
+		lastCheck := h.lastCheck[namespace]
+		if !lastCheck.IsZero() && baselineWindowStart(lastCheck).Equal(currentSlot) {
+			continue
+		}
+		h.lastCheck[namespace] = now
+		namespaces = append(namespaces, namespace)
+	}
+	return namespaces
 }
 
 // RegisterPostCheckListener registers a listener function that will be called after each CheckAll() call.

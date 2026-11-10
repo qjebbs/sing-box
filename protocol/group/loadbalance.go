@@ -60,6 +60,7 @@ func (s *LoadBalance) Start(stage adapter.StartStage, scope *adapter.Scope) erro
 		return err
 	}
 	return s.Group.Start(stage, scope, s.options.HealthCheck,
+		objective.Name() == selection.ObjectiveIdle,
 		selection.NewBalancing(objective, strategy),
 		selection.NodeOptions{
 			MaxRTT:  healthcheck.RTT(s.options.Pick.MaxRTT.Build().Milliseconds()),

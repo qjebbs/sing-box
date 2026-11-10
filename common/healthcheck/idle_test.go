@@ -26,11 +26,13 @@ func newIdleTestChecker(idleTimeout, interval time.Duration) *HealthCheck {
 			Interval:    badoption.Duration(interval),
 			IdleTimeout: badoption.Duration(idleTimeout),
 		},
-		pauseManager: service.FromContext[pause.Manager](ctx),
-		Storage:      NewStorages(StorageOptions{Sampling: 10, Validity: time.Hour}),
-		lastActive:   make(map[string]time.Time),
-		lastCheck:    make(map[string]time.Time),
-		checking:     make(map[string]struct{}),
+		pauseManager:        service.FromContext[pause.Manager](ctx),
+		Storage:             NewStorages(StorageOptions{Sampling: 10, Validity: time.Hour}),
+		lastActive:          make(map[string]time.Time),
+		lastCheck:           make(map[string]time.Time),
+		idleProbeNamespaces: make(map[string]struct{}),
+		checking:            make(map[string]struct{}),
+		loopWake:            make(chan struct{}, 1),
 	}
 }
 
@@ -98,6 +100,67 @@ func TestActiveNamespaces(t *testing.T) {
 				t.Fatalf("namespaces = %v, want %d entries", namespaces, test.wantCount)
 			}
 		})
+	}
+}
+
+func TestIdleNamespacesAreCheckedOncePerSlot(t *testing.T) {
+	checker := newIdleTestChecker(time.Minute, time.Second)
+	now := baselineWindowStart(time.Now()).Add(10 * time.Minute)
+	checker.SetIdleProbe("idle", true)
+	checker.lastActive["idle"] = now.Add(-time.Hour)
+	checker.lastCheck["idle"] = now.Add(-baselineSlot)
+
+	namespaces := checker.idleProbeCandidatesForSlot(now)
+	if len(namespaces) != 1 || namespaces[0] != "idle" {
+		t.Fatalf("namespaces = %v, want [idle]", namespaces)
+	}
+	if namespaces = checker.idleProbeCandidatesForSlot(now); len(namespaces) != 0 {
+		t.Fatalf("namespaces = %v, want no second check in the same slot", namespaces)
+	}
+
+	if namespaces = checker.idleProbeCandidatesForSlot(now.Add(baselineSlot)); len(namespaces) != 1 || namespaces[0] != "idle" {
+		t.Fatalf("namespaces = %v, want [idle] in the next slot", namespaces)
+	}
+}
+
+func TestIdleNamespacesSkipActiveAndAlreadyChecked(t *testing.T) {
+	checker := newIdleTestChecker(time.Minute, time.Second)
+	now := baselineWindowStart(time.Now()).Add(10 * time.Minute)
+	checker.SetIdleProbe("active", true)
+	checker.SetIdleProbe("checked", true)
+	checker.SetIdleProbe("quick", false)
+	checker.lastActive["active"] = now
+	checker.lastActive["checked"] = now.Add(-time.Hour)
+	checker.lastActive["quick"] = now.Add(-time.Hour)
+	checker.lastCheck["checked"] = now
+
+	if namespaces := checker.idleProbeCandidatesForSlot(now); len(namespaces) != 0 {
+		t.Fatalf("namespaces = %v, want no checks for active or already checked groups", namespaces)
+	}
+}
+
+func TestNextIdleProbeTimeIsRandomizedWithinAFutureSlot(t *testing.T) {
+	now := baselineWindowStart(time.Now()).Add(15 * time.Minute)
+	probeAt, slotStart := nextIdleProbeTime(now, time.Time{})
+	if !probeAt.After(now) {
+		t.Fatalf("probeAt = %v, want a future time", probeAt)
+	}
+	if !baselineWindowStart(probeAt).Equal(slotStart) {
+		t.Fatalf("probeAt = %v, want it in slot starting at %v", probeAt, slotStart)
+	}
+	if !slotStart.Equal(baselineWindowStart(now)) {
+		t.Fatalf("slotStart = %v, want the current slot %v", slotStart, baselineWindowStart(now))
+	}
+	if probeAt.Before(slotStart) || !probeAt.Before(slotStart.Add(baselineSlot)) {
+		t.Fatalf("probeAt = %v, want it inside the 30-minute slot", probeAt)
+	}
+	if !probeAt.After(now) {
+		t.Fatalf("probeAt = %v, want a future point after %v", probeAt, now)
+	}
+
+	nextAt, nextStart := nextIdleProbeTime(now, slotStart.Add(baselineSlot))
+	if !nextStart.Equal(slotStart.Add(baselineSlot)) || !baselineWindowStart(nextAt).Equal(nextStart) {
+		t.Fatalf("next probe = %v in slot %v, want the slot after %v", nextAt, nextStart, slotStart)
 	}
 }
 
@@ -188,7 +251,7 @@ func TestCheckLoopStartsLazily(t *testing.T) {
 	}
 }
 
-func TestIdleTimeoutSuspendsAndResumes(t *testing.T) {
+func TestSchedulerWaitsWhenIdleAndResumesOnTouch(t *testing.T) {
 	checker := newIdleTestChecker(50*time.Millisecond, 10*time.Millisecond)
 	err := checker.Start()
 	if err != nil {
@@ -198,17 +261,34 @@ func TestIdleTimeoutSuspendsAndResumes(t *testing.T) {
 	checker.Touch("group")
 
 	waitFor(t, time.Second, func() bool {
-		checker.loopMu.Lock()
-		defer checker.loopMu.Unlock()
-		return checker.suspended
-	}, "loop not suspended after being idle")
+		checker.idleMu.Lock()
+		defer checker.idleMu.Unlock()
+		return !checker.lastCheck["group"].IsZero() &&
+			time.Since(checker.lastActive["group"]) > time.Duration(checker.options.IdleTimeout)+time.Duration(checker.options.Interval)*2
+	}, "scheduler did not reach the idle state")
+	checker.idleMu.Lock()
+	lastCheck := checker.lastCheck["group"]
+	checker.idleMu.Unlock()
+	time.Sleep(30 * time.Millisecond)
+	checker.idleMu.Lock()
+	if got := checker.lastCheck["group"]; !got.Equal(lastCheck) {
+		checker.idleMu.Unlock()
+		t.Fatalf("last check advanced while idle: got %v, want %v", got, lastCheck)
+	}
+	checker.idleMu.Unlock()
 
 	checker.Touch("group")
 	waitFor(t, time.Second, func() bool {
-		checker.loopMu.Lock()
-		defer checker.loopMu.Unlock()
-		return !checker.suspended
-	}, "loop not resumed after being used")
+		checker.idleMu.Lock()
+		defer checker.idleMu.Unlock()
+		return checker.lastCheck["group"].After(lastCheck)
+	}, "touch did not trigger a catch-up check after idle")
+	checker.loopMu.Lock()
+	started := checker.loopStarted
+	checker.loopMu.Unlock()
+	if !started {
+		t.Fatal("scheduler stopped after the namespace became idle")
+	}
 }
 
 func waitIdle(t *testing.T, checker *HealthCheck, namespace string) {
