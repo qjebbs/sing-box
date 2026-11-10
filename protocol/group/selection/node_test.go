@@ -92,6 +92,11 @@ func TestNodeString(t *testing.T) {
 			stats: healthcheck.Stats{All: 1, Fail: 1},
 			want:  "#0 x [nil] LAST=None MED=None FLOOR=None JIT=None DEV=None FAIL=1/1",
 		},
+		{
+			name:  "all failed with remembered floor",
+			stats: healthcheck.Stats{All: 1, Fail: 1, Floor: 60},
+			want:  "#0 x [nil] LAST=None MED=None FLOOR=60ms JIT=None DEV=None FAIL=1/1",
+		},
 		// one successful check among failures still has the spreads of the node
 		{
 			name:  "some failed",

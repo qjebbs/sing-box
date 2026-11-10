@@ -89,7 +89,12 @@ func (s *Storage) Stats() Stats {
 func (s *Storage) refreshStats(now time.Time) {
 	latest, loaded := s.history.At(0)
 	if !loaded || now.Sub(latest.Time) > s.options.Validity {
-		s.stats = Stats{Suspended: s.suspended, FailureRate: float32(s.failures.rate())}
+		floor, _ := s.baseline.RTT(now)
+		s.stats = Stats{
+			Floor:       floor,
+			Suspended:   s.suspended,
+			FailureRate: float32(s.failures.rate()),
+		}
 		return
 	}
 	delays := make([]RTT, 0, s.history.Length())

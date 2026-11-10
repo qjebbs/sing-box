@@ -151,16 +151,12 @@ func TestStorageStatsIgnoreOutdated(t *testing.T) {
 	// wait for all outdated
 	time.Sleep(time.Duration(100) * time.Millisecond)
 	want = healthcheck.Stats{
-		All:     0,
-		Fail:    0,
-		Jitter:  0,
-		Average: 0,
-		Median:  0,
-		Max:     0,
-		Min:     0,
-		Latest:  0,
+		All:    0,
+		Fail:   0,
+		Floor:  60,
+		Latest: 0,
 	}
-	assertStats(t, "Stats() - All Outdated", want, s.Stats())
+	assertStats(t, "Stats() - All Outdated, baseline retained", want, s.Stats())
 
 	s.Put(60)
 	// one sample says nothing about how much the node varies, so the spreads are assumed
