@@ -126,7 +126,8 @@ func (b *baseline) export(now time.Time) (values []uint16, window time.Time, fil
 // that would have reset it. A slot this run has measured itself is newer than what was
 // stored, and is kept.
 //
-// It reports false when the values are not one per slot of the day.
+// It reports false when the values are not one per slot of the day, and when every slot of the
+// record is older than what this run holds: reading the same record again is then nothing.
 func (b *baseline) restore(values []uint16, at time.Time) bool {
 	if len(values) != baselineSlots || at.IsZero() {
 		return false
@@ -135,6 +136,7 @@ func (b *baseline) restore(values []uint16, at time.Time) bool {
 	// build that kept the moment rather than the start is still placed the same way
 	window := baselineWindowStart(at)
 	current := baselineSlotOf(at)
+	restored := false
 	for index, value := range values {
 		if value == 0 {
 			continue
@@ -146,6 +148,7 @@ func (b *baseline) restore(values []uint16, at time.Time) bool {
 		}
 		b.values[index] = RTT(value)
 		b.written[index] = written
+		restored = true
 	}
-	return true
+	return restored
 }

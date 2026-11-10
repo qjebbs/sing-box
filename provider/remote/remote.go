@@ -35,13 +35,6 @@ var _ adapter.Lifecycle = (*Remote)(nil)
 var _ adapter.ProviderInfoer = (*Remote)(nil)
 var _ adapter.Service = (*Remote)(nil)
 
-// closedchan is a reusable closed channel.
-var closedchan = make(chan struct{})
-
-func init() {
-	close(closedchan)
-}
-
 // Remote is a remote outbounds provider.
 type Remote struct {
 	parentCtx  context.Context
@@ -55,9 +48,15 @@ type Remote struct {
 	include    *regexp.Regexp
 	options    option.RemoteProviderOptions
 
-	sync.Mutex
-	*adapter.ProviderInfo
-	chReady        chan struct{}
+	// access guards the state below. It is never held over a download, nor over the creation
+	// of the outbounds: both are slow, and a connection reads the nodes through it.
+	access sync.Mutex
+	info   *adapter.ProviderInfo
+	// ready is closed by the first finished fetch, whatever it returned. It is created once,
+	// so Ready needs no lock, and readyClosed is what keeps it to one close.
+	ready          chan struct{}
+	readyClosed    bool
+	closed         bool
 	ctx            context.Context
 	cancel         context.CancelFunc
 	httpClient     *http.Client
@@ -65,6 +64,9 @@ type Remote struct {
 	updatedAt      time.Time
 	outbounds      []adapter.Outbound
 	outboundsByTag map[string]adapter.Outbound
+	// update serializes the updates themselves, which are not run under access: the download
+	// takes as long as the subscription server does.
+	update sync.Mutex
 }
 
 // NewRemote creates a new remote provider.
@@ -116,8 +118,8 @@ func NewRemote(ctx context.Context, router adapter.Router, logFactory log.Factor
 		include:   includeRegexp,
 		options:   options,
 
-		ctx:     ctx,
-		chReady: make(chan struct{}),
+		ctx:   ctx,
+		ready: make(chan struct{}),
 	}, nil
 }
 
@@ -131,18 +133,24 @@ func (s *Remote) Tag() string {
 	return s.tag
 }
 
-// Info implements Infoer
+// Info implements Infoer. It returns a copy: every update replaces the record, and a reader
+// holding the pointer would see it change under itself.
 func (s *Remote) Info() *adapter.ProviderInfo {
-	return s.ProviderInfo
+	s.access.Lock()
+	defer s.access.Unlock()
+	if s.info == nil {
+		return nil
+	}
+	info := *s.info
+	return &info
 }
 
 // Start starts the provider.
 func (s *Remote) Start(stage adapter.StartStage, scope *adapter.Scope) error {
-	s.Lock()
-	defer s.Unlock()
-
 	switch stage {
 	case adapter.StartStateInitialize:
+		s.access.Lock()
+		defer s.access.Unlock()
 		if s.cancel != nil {
 			return nil
 		}
@@ -167,24 +175,45 @@ func (s *Remote) Start(stage adapter.StartStage, scope *adapter.Scope) error {
 
 // Close closes the service.
 func (s *Remote) Close() error {
-	if s.cancel != nil {
-		s.cancel()
+	s.access.Lock()
+	if s.closed {
+		s.access.Unlock()
+		return nil
 	}
-	s.Lock()
-	defer s.Unlock()
-	if s.httpClient != nil {
-		s.httpClient.CloseIdleConnections()
+	s.closed = true
+	cancel := s.cancel
+	httpClient := s.httpClient
+	outbounds := s.outbounds
+	s.outboundsByTag = nil
+	s.outbounds = nil
+	s.access.Unlock()
+	// The context is cancelled outside the lock, and before the nodes are removed: it aborts
+	// the download an update may be waiting on, so the update gives up instead of putting its
+	// nodes back into a provider that is going away.
+	if cancel != nil {
+		cancel()
+	}
+	if httpClient != nil {
+		httpClient.CloseIdleConnections()
+	}
+	return s.removeOutbounds(outbounds)
+}
+
+// removeOutbounds takes the nodes out of the outbound manager. It is what a close does with the
+// nodes it holds, and what an update does with the ones it built for a provider that was closed
+// under it.
+func (s *Remote) removeOutbounds(outbounds []adapter.Outbound) error {
+	if s.outbound == nil {
+		return nil
 	}
 	var err error
-	for _, ob := range s.outbounds {
+	for _, ob := range outbounds {
 		if err2 := s.outbound.Remove(ob.Tag()); err2 != nil {
 			err = E.Append(err, err2, func(err error) error {
 				return E.Cause(err, "close outbound [", ob.Tag(), "]")
 			})
 		}
 	}
-	s.outbounds = nil
-	s.outboundsByTag = nil
 	return err
 }
 
@@ -195,9 +224,17 @@ func (s *Remote) Wait() {
 
 // Ready returns a channel that's closed when provider is ready.
 func (s *Remote) Ready() <-chan struct{} {
-	s.Lock()
-	defer s.Unlock()
-	return s.chReady
+	return s.ready
+}
+
+// closeReadyLocked marks the first fetch as finished, whatever it returned: the nodes are then
+// either loaded or known to be unavailable, and a reader waiting for them has an answer.
+func (s *Remote) closeReadyLocked() {
+	if s.readyClosed {
+		return
+	}
+	s.readyClosed = true
+	close(s.ready)
 }
 
 func (s *Remote) refreshLoop() {
@@ -221,15 +258,15 @@ L:
 
 // Outbounds returns all the outbounds from the provider.
 func (s *Remote) Outbounds() []adapter.Outbound {
-	s.Lock()
-	defer s.Unlock()
+	s.access.Lock()
+	defer s.access.Unlock()
 	return s.outbounds
 }
 
 // Outbound returns the outbound from the provider.
 func (s *Remote) Outbound(tag string) (adapter.Outbound, bool) {
-	s.Lock()
-	defer s.Unlock()
+	s.access.Lock()
+	defer s.access.Unlock()
 	if s.outboundsByTag == nil {
 		return nil, false
 	}
@@ -239,11 +276,13 @@ func (s *Remote) Outbound(tag string) (adapter.Outbound, bool) {
 
 // UpdatedAt implements adapter.Provider
 func (s *Remote) UpdatedAt() time.Time {
-	s.Lock()
-	defer s.Unlock()
+	s.access.Lock()
+	defer s.access.Unlock()
 	return s.updatedAt
 }
 
+// quickStart loads the outbounds of the cache file, so the provider has nodes before its first
+// fetch finishes, which is what a start without a network needs.
 func (s *Remote) quickStart() {
 	if s.options.CacheFile == "" {
 		return
@@ -252,46 +291,83 @@ func (s *Remote) quickStart() {
 	if err != nil {
 		return
 	}
-	s.updateOutboundsWithContent(fc)
-	close(s.chReady)
-	s.chReady = closedchan
+	outbounds, outboundsByTag := s.buildOutbounds(fc.links)
+	s.access.Lock()
+	defer s.access.Unlock()
+	s.applyContent(fc, outbounds, outboundsByTag)
+	s.closeReadyLocked()
 }
 
 // Update fetches and updates outbounds from the provider.
+//
+// The download and the creation of the outbounds are the slow parts of it, and both run without
+// the lock: a connection reads the nodes of the provider through it, and the first fetch of a
+// slow subscription would hold them for as long as the server takes. update keeps two updates
+// apart instead, and the swap that follows is all that needs the lock.
 func (s *Remote) Update() error {
-	s.Lock()
-	defer s.Unlock()
-	if s.chReady != closedchan {
-		defer func() {
-			close(s.chReady)
-			s.chReady = closedchan
-		}()
-	}
+	s.update.Lock()
+	defer s.update.Unlock()
+	s.access.Lock()
+	loadedHash := s.loadedHash
+	s.access.Unlock()
 	// cache file is useful in cases that the first fetch will fail,
 	// which happens mostly when the network is not ready:
 	// - started as a service, and the network is not initilaized yet
 	// - disconnected
 	// without cache file, the outbounds will not be loaded until next
 	// loop, usually 1 hour later.
-	c, err := s.downloadWithCache()
+	c, err := s.downloadWithCache(loadedHash)
 	if err != nil {
+		s.access.Lock()
+		s.closeReadyLocked()
+		s.access.Unlock()
 		return err
 	}
-	s.updateOutboundsWithContent(c)
+	var (
+		outbounds      []adapter.Outbound
+		outboundsByTag map[string]adapter.Outbound
+	)
+	changed := c.linksHash != loadedHash
+	if changed {
+		outbounds, outboundsByTag = s.buildOutbounds(c.links)
+	}
+	s.access.Lock()
+	defer s.access.Unlock()
+	s.closeReadyLocked()
+	if s.closed {
+		// the close took the nodes while this update was in flight: the ones just built are
+		// not going to be used either
+		s.removeOutbounds(outbounds)
+		return nil
+	}
+	if !changed {
+		s.applyInfo(c)
+		return nil
+	}
+	s.applyContent(c, outbounds, outboundsByTag)
 	return nil
 }
 
-func (s *Remote) updateOutboundsWithContent(c *fileContent) {
-	s.updatedAt = c.updated
-	s.ProviderInfo = c.ProviderInfo
-	if s.loadedHash == c.linksHash {
-		return
-	}
+// applyContent puts the outbounds of a subscription in place. It runs under access.
+func (s *Remote) applyContent(c *fileContent, outbounds []adapter.Outbound, outboundsByTag map[string]adapter.Outbound) {
+	s.applyInfo(c)
 	s.loadedHash = c.linksHash
-	s.updateOutbounds(c.links)
+	s.outbounds = outbounds
+	s.outboundsByTag = outboundsByTag
 }
 
-func (s *Remote) updateOutbounds(content string) {
+// applyInfo records what the subscription says about itself, which is not the nodes: it is
+// stored even when the content did not change, because the counters of a subscription move on
+// their own. It runs under access.
+func (s *Remote) applyInfo(c *fileContent) {
+	s.updatedAt = c.updated
+	s.info = c.ProviderInfo
+}
+
+// buildOutbounds creates the outbounds of the links of a subscription. It reads only what a
+// start sets, so it runs without the lock: creating hundreds of outbounds is slow, and the set
+// it replaces stays readable while it does.
+func (s *Remote) buildOutbounds(content string) ([]adapter.Outbound, map[string]adapter.Outbound) {
 	outbounds := make([]adapter.Outbound, 0)
 	outboundsByTag := make(map[string]adapter.Outbound)
 
@@ -315,8 +391,7 @@ func (s *Remote) updateOutbounds(content string) {
 		outboundsByTag[outbound.Tag()] = outbound
 	}
 	s.logger.Info(len(outbounds), " outbounds available")
-	s.outbounds = outbounds
-	s.outboundsByTag = outboundsByTag
+	return outbounds, outboundsByTag
 }
 
 type parsedLink struct {
@@ -416,7 +491,11 @@ func (s *Remote) createOutbound(opt *option.Outbound) (adapter.Outbound, error) 
 	return outbound, nil
 }
 
-func (s *Remote) downloadWithCache() (*fileContent, error) {
+// downloadWithCache fetches the subscription, and falls back to the cache file when the fetch
+// fails and this run holds nothing yet. loadedHash is the content this run already has, read
+// under the lock by the caller: it is what tells a failed fetch that the nodes are worth
+// keeping.
+func (s *Remote) downloadWithCache(loadedHash string) (*fileContent, error) {
 	fc, err := s.download()
 	if err == nil {
 		if s.options.CacheFile != "" {
@@ -427,7 +506,7 @@ func (s *Remote) downloadWithCache() (*fileContent, error) {
 		return fc, nil
 	}
 	errfetch := E.Cause(err, "fetch provider")
-	if s.loadedHash != "" {
+	if loadedHash != "" {
 		return nil, errfetch
 	}
 	if s.options.CacheFile == "" {

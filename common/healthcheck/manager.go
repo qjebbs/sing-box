@@ -33,6 +33,9 @@ type Manager struct {
 	defines map[string]option.HealthCheck
 	checks  map[string]*HealthCheck
 	managed []*HealthCheck
+	// started reports that the post start has passed, so a check created later reads its own
+	// states instead of waiting for a start that will not come again.
+	started bool
 }
 
 // NewManager creates a health check manager from the top-level `health_checks`
@@ -58,14 +61,37 @@ func (m *Manager) Name() string {
 	return "health-check"
 }
 
-// Start implements adapter.LifecycleService.
+// Start implements adapter.LifecycleService. The start takes the close of every checker, and
+// the post start reads the states the previous run left: the groups have registered their
+// providers by then, so one read knows every node they hold. It is the reason SetProviders is
+// only called before the start.
 func (m *Manager) Start(stage adapter.StartStage, scope *adapter.Scope) error {
-	if m.scope != nil {
-		return nil
+	switch stage {
+	case adapter.StartStateStart:
+		if m.scope != nil {
+			return nil
+		}
+		m.scope = scope
+		m.scope.Add(m.Close)
+	case adapter.StartStatePostStart:
+		for _, check := range m.allCheckers() {
+			check.startRestore()
+		}
 	}
-	m.scope = scope
-	m.scope.Add(m.Close)
 	return nil
+}
+
+// allCheckers marks the post start as passed and returns every checker created so far. A
+// checker created after this call reads its own states, see track and resolveShared.
+func (m *Manager) allCheckers() []*HealthCheck {
+	m.access.Lock()
+	defer m.access.Unlock()
+	m.started = true
+	checks := make([]*HealthCheck, 0, len(m.checks)+len(m.managed))
+	for _, check := range m.checks {
+		checks = append(checks, check)
+	}
+	return append(checks, m.managed...)
 }
 
 // Get resolves a health check for a balancer group. If options.Tag is set it
@@ -80,33 +106,49 @@ func (m *Manager) Get(ctx context.Context, logger logger.ContextLogger, options 
 	if err := check.Start(); err != nil {
 		return nil, E.Cause(err, "start health check")
 	}
-	m.track(check)
+	if m.track(check) {
+		// the post start has passed, so this check is the one that reads its states
+		check.startRestore()
+	}
 	return check, nil
 }
 
 func (m *Manager) resolveShared(tag string) (*HealthCheck, error) {
 	m.access.Lock()
-	defer m.access.Unlock()
-	if check, loaded := m.checks[tag]; loaded {
+	check, loaded := m.checks[tag]
+	if loaded {
+		m.access.Unlock()
 		return check, nil
 	}
-	define, loaded := m.defines[tag]
-	if !loaded {
+	define, defined := m.defines[tag]
+	if !defined {
+		m.access.Unlock()
 		return nil, E.New("health check not found: ", tag)
 	}
 	options := define.Options()
-	check := NewHealthCheck(m.ctx, m.router, m.om, &options, m.logFactory.NewLogger(F.ToString("healthcheck[", tag, "]")))
-	if err := check.Start(); err != nil {
+	check = NewHealthCheck(m.ctx, m.router, m.om, &options, m.logFactory.NewLogger(F.ToString("healthcheck[", tag, "]")))
+	err := check.Start()
+	if err != nil {
+		m.access.Unlock()
 		return nil, E.Cause(err, "start health check[", tag, "]")
 	}
 	m.checks[tag] = check
+	started := m.started
+	m.access.Unlock()
+	if started {
+		// the post start has passed, so this check is the one that reads its states
+		check.startRestore()
+	}
 	return check, nil
 }
 
-func (m *Manager) track(check *HealthCheck) {
+// track records a checker so the post start reads its states, and reports whether that start
+// has already passed: the caller is then the one that has to read them.
+func (m *Manager) track(check *HealthCheck) bool {
 	m.access.Lock()
 	defer m.access.Unlock()
 	m.managed = append(m.managed, check)
+	return m.started
 }
 
 // Close stops all managed health checks.

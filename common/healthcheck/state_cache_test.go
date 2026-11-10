@@ -87,9 +87,9 @@ func floorOf(state adapter.HealthState) RTT {
 // there. It reads the baseline rather than the statistics: a node with no check of this run
 // has none of those yet, see refreshStats.
 func seededFloor(check *HealthCheck, tag string, at time.Time) (RTT, bool) {
-	check.Storage.Lock()
+	check.Storage.access.Lock()
 	store, loaded := check.Storage.storages[tag]
-	check.Storage.Unlock()
+	check.Storage.access.Unlock()
 	if !loaded {
 		return 0, false
 	}
@@ -223,12 +223,12 @@ func TestStateCarriesTheWholeDayOfSlots(t *testing.T) {
 	now := time.Now()
 	options := StorageOptions{Sampling: 10, Validity: 20 * time.Minute, Interval: 2 * time.Minute}
 	storages := NewStorages(options)
-	storages.Lock()
+	storages.access.Lock()
 	storage := storages.storageOf("node")
 	for index := 0; index < baselineSlots; index++ {
 		storage.baseline.Put(lastWindowOf(now, index), RTT(200+index))
 	}
-	storages.Unlock()
+	storages.access.Unlock()
 
 	state, loaded := storages.States(now)["node"]
 	if !loaded {
@@ -244,9 +244,9 @@ func TestStateCarriesTheWholeDayOfSlots(t *testing.T) {
 
 	restarted := NewStorages(options)
 	restarted.Restore("node", state, now)
-	restarted.Lock()
+	restarted.access.Lock()
 	restored := restarted.storages["node"]
-	restarted.Unlock()
+	restarted.access.Unlock()
 	for index := 0; index < baselineSlots; index++ {
 		if got := restored.baseline.values[index]; got != RTT(200+index) {
 			t.Fatalf("slot %d: want %d, got %d", index, 200+index, got)
@@ -555,10 +555,66 @@ func TestRestoreDropsTheRankingsBuiltBeforeIt(t *testing.T) {
 	if notified != 1 {
 		t.Fatalf("want the rankings dropped once by the restore, got %d", notified)
 	}
-	// the restore reads the file once: the rankings it dropped are not dropped again
+	// reading the same record again puts nothing back, so nothing is dropped again
 	check.restoreHealthState()
 	if notified != 1 {
 		t.Fatalf("want the restore to notify once, got %d", notified)
+	}
+}
+
+func TestRestoreReadsEveryRegisteredProvider(t *testing.T) {
+	t.Parallel()
+	// The states are read once, when every group has registered its providers: the nodes of a
+	// shared check are all there at that moment, whatever group they arrived with.
+	now := time.Now()
+	store := &fakeStateStore{}
+	check := newStoredCheck(store)
+	store.SaveHealthStates(check.stateKey, map[string]adapter.HealthState{
+		"first/node":  {Floors: floorValues(now.Add(-time.Hour), 120), FloorsAt: now.Add(-time.Hour)},
+		"second/node": {Floors: floorValues(now.Add(-time.Hour), 220), FloorsAt: now.Add(-time.Hour)},
+	}, time.Now().Add(time.Hour))
+	check.mergedProviders.Set("first", []adapter.Provider{&fakeProvider{tags: []string{"first/node"}}})
+	check.mergedProviders.Set("second", []adapter.Provider{&fakeProvider{tags: []string{"second/node"}}})
+
+	check.restoreHealthState()
+	if got, ok := seededFloor(check, "first/node", now); !ok || got != 120 {
+		t.Fatalf("want the node of the first group restored with a floor of 120, got %d (%v)", got, ok)
+	}
+	if got, ok := seededFloor(check, "second/node", now); !ok || got != 220 {
+		t.Fatalf("want the node of the second group restored with a floor of 220, got %d (%v)", got, ok)
+	}
+}
+
+func TestManagerReadsTheStatesAtThePostStart(t *testing.T) {
+	t.Parallel()
+	// A group that is never used is never checked, so the states cannot wait for the first
+	// round: they are read at the post start, and a report states the floor of a node that this
+	// run never measured.
+	now := time.Now()
+	store := &fakeStateStore{}
+	check := newStoredCheck(store)
+	store.SaveHealthStates(check.stateKey, map[string]adapter.HealthState{
+		"node": {Floors: floorValues(now.Add(-time.Hour), 120), FloorsAt: now.Add(-time.Hour)},
+	}, time.Now().Add(time.Hour))
+	check.SetProviders("group", []adapter.Provider{&fakeProvider{tags: []string{"node"}}})
+	manager := &Manager{checks: map[string]*HealthCheck{"check": check}}
+
+	err := manager.Start(adapter.StartStatePostStart, nil)
+	if err != nil {
+		t.Fatalf("start post stage: %v", err)
+	}
+	deadline := time.Now().Add(time.Second)
+	for {
+		if got, ok := seededFloor(check, "node", now); ok {
+			if got != 120 {
+				t.Fatalf("want a floor of 120, got %d", got)
+			}
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("want the states read at the post start, without a check")
+		}
+		time.Sleep(time.Millisecond)
 	}
 }
 

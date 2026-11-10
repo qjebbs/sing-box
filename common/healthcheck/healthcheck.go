@@ -68,7 +68,6 @@ type HealthCheck struct {
 	stateKey      []byte
 	stateCancel   context.CancelFunc
 	stateSaveOnce sync.Once
-	restoreOnce   sync.Once
 
 	// failureMu guards the failed connections of each node, which decide when a node
 	// is checked again between the scheduled rounds.
@@ -178,7 +177,9 @@ func (h *HealthCheck) ConfigureHistory(sampling uint, extra uint) StorageOptions
 	return h.Storage.Resize(sampling, extra, time.Duration(h.options.Interval))
 }
 
-// SetProviders replaces the full provider list for the given namespace.
+// SetProviders replaces the full provider list for the given namespace. It is called before the
+// check is started, and never after: the states the previous run left are read once, when the
+// post start of the box is past, see Manager.Start.
 func (h *HealthCheck) SetProviders(namespace string, providers []adapter.Provider) error {
 	h.mergedProviders.Set(namespace, providers)
 	// Nothing is checked until the group is used, see Touch.
@@ -720,7 +721,6 @@ func (h *HealthCheck) CheckAll(ctx context.Context, namespace string) (map[strin
 // checkAll performs checks for the nodes of the given namespaces, a nil list
 // means all namespaces.
 func (h *HealthCheck) checkAll(ctx context.Context, scheduled bool, namespaces []string) (map[string]uint16, error) {
-	h.restoreHealthState()
 	batch, _ := batch.New(ctx, batch.WithConcurrencyNum[uint16](10))
 	// share ctx information between checks
 	meta := NewMetaData()

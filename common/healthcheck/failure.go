@@ -91,8 +91,15 @@ func (f *failureRate) estimate() (sum float64, weight float64, at time.Time) {
 // restore sets the estimate back to a stored one. It reports false when the state is not one
 // observe could have produced: a weight without a time, a sum larger than the weight, or a
 // time in the future.
+//
+// An estimate this run has already brought forward is newer than any record: the record would
+// undo the checks it has folded in since, so it is left alone. Reading the same record twice is
+// then nothing.
 func (f *failureRate) restore(sum float64, weight float64, at time.Time) bool {
 	if at.IsZero() || weight <= 0 || sum < 0 || sum > weight || time.Since(at) < -time.Minute {
+		return false
+	}
+	if !f.at.IsZero() && !at.After(f.at) {
 		return false
 	}
 	f.sum, f.weight, f.at = sum, weight, at

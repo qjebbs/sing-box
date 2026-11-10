@@ -43,7 +43,10 @@ func (o StorageOptions) withDefaults() StorageOptions {
 
 // Storages is the storages for different tags (nodes)
 type Storages struct {
-	sync.RWMutex
+	// access guards the map and the changed flag, and the state of every storage in it: the
+	// per-node state is read for every connection the group carries, so it is one lock rather
+	// than one per node.
+	access sync.RWMutex
 
 	options  StorageOptions
 	storages map[string]*Storage
@@ -79,8 +82,8 @@ const retentionMultiple = 2
 // and applying the sizes is one step, so two resizes cannot interleave into a history
 // neither of them asked for.
 func (s *Storages) Resize(sampling uint, extra uint, interval time.Duration) StorageOptions {
-	s.Lock()
-	defer s.Unlock()
+	s.access.Lock()
+	defer s.access.Unlock()
 	if sampling == 0 {
 		sampling = s.options.Sampling
 	}
@@ -100,29 +103,29 @@ func (s *Storages) Resize(sampling uint, extra uint, interval time.Duration) Sto
 
 // Latest gets the latest history for the tag
 func (s *Storages) Latest(tag string) *History {
-	s.RLock()
-	defer s.RUnlock()
+	s.access.RLock()
+	defer s.access.RUnlock()
 	return s.storages[tag].Latest()
 }
 
 // All gets all histories for the tag
 func (s *Storages) All(tag string) []*History {
-	s.RLock()
-	defer s.RUnlock()
+	s.access.RLock()
+	defer s.access.RUnlock()
 	return s.storages[tag].All()
 }
 
 // Stats gets the statistics of all histories for the tag
 func (s *Storages) Stats(tag string) Stats {
-	s.Lock()
-	defer s.Unlock()
+	s.access.Lock()
+	defer s.access.Unlock()
 	return s.storages[tag].Stats()
 }
 
 // Floors returns the current baseline values by wall-clock slot for the tag.
 func (s *Storages) Floors(tag string) []uint16 {
-	s.RLock()
-	defer s.RUnlock()
+	s.access.RLock()
+	defer s.access.RUnlock()
 	store := s.storages[tag]
 	if store == nil {
 		return nil
@@ -132,8 +135,8 @@ func (s *Storages) Floors(tag string) []uint16 {
 
 // Put appends a scheduled check for the tag
 func (s *Storages) Put(tag string, delay RTT) {
-	s.Lock()
-	defer s.Unlock()
+	s.access.Lock()
+	defer s.access.Unlock()
 	store := s.storageOf(tag)
 	store.Put(delay)
 	s.changed = true
@@ -142,8 +145,8 @@ func (s *Storages) Put(tag string, delay RTT) {
 // Update commits an out of band check for the tag, replacing its latest result and
 // suspending the node when the check failed
 func (s *Storages) Update(tag string, delay RTT) {
-	s.Lock()
-	defer s.Unlock()
+	s.access.Lock()
+	defer s.access.Unlock()
 	store := s.storageOf(tag)
 	store.Update(delay)
 	s.changed = true
@@ -162,20 +165,20 @@ func (s *Storages) storageOf(tag string) *Storage {
 }
 
 // Restore puts a stored state back into the storage of its tag, creating that storage when the
-// node has not been checked yet. It is called before the first round measures anything, with
-// the nodes the providers still have, so the record of a node that is gone never enters memory
-// and nothing has to drop it afterwards.
-func (s *Storages) Restore(tag string, state adapter.HealthState, now time.Time) {
-	s.Lock()
-	defer s.Unlock()
-	s.storageOf(tag).restoreState(state, now)
+// node has not been checked yet. It reports whether the state held anything this run does not,
+// so the same record can be read again without undoing what the checks have measured, see
+// Storage.restoreState.
+func (s *Storages) Restore(tag string, state adapter.HealthState, now time.Time) bool {
+	s.access.Lock()
+	defer s.access.Unlock()
+	return s.storageOf(tag).restoreState(state, now)
 }
 
 // States returns the states to store, one per node that has something to keep. A state that
 // has expired is left out, see Storage.State.
 func (s *Storages) States(now time.Time) map[string]adapter.HealthState {
-	s.Lock()
-	defer s.Unlock()
+	s.access.Lock()
+	defer s.access.Unlock()
 	states := make(map[string]adapter.HealthState, len(s.storages))
 	for tag, store := range s.storages {
 		if state, ok := store.State(now); ok {
@@ -188,8 +191,8 @@ func (s *Storages) States(now time.Time) map[string]adapter.HealthState {
 // TakeChanged reports whether anything was measured since the last call, and forgets it, so
 // a period that wrote the states does not write them again while nothing moves.
 func (s *Storages) TakeChanged() bool {
-	s.Lock()
-	defer s.Unlock()
+	s.access.Lock()
+	defer s.access.Unlock()
 	changed := s.changed
 	s.changed = false
 	return changed
@@ -197,22 +200,22 @@ func (s *Storages) TakeChanged() bool {
 
 // MarkChanged records that the states still have to be written, which a failed write does.
 func (s *Storages) MarkChanged() {
-	s.Lock()
-	defer s.Unlock()
+	s.access.Lock()
+	defer s.access.Unlock()
 	s.changed = true
 }
 
 // Delete remove the histories storage for the tag
 func (s *Storages) Delete(tag string) {
-	s.Lock()
-	defer s.Unlock()
+	s.access.Lock()
+	defer s.access.Unlock()
 	delete(s.storages, tag)
 }
 
 // List returns the storage list
 func (s *Storages) List() []string {
-	s.RLock()
-	defer s.RUnlock()
+	s.access.RLock()
+	defer s.access.RUnlock()
 	list := make([]string, 0, len(s.storages))
 	for tag := range s.storages {
 		list = append(list, tag)

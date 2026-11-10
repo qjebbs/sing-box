@@ -55,7 +55,7 @@ func healthStateFingerprint(options option.HealthCheckOptions) []byte {
 }
 
 // attachHealthState resolves the cache file the states are kept in, if there is one. Reading
-// it is left to the first round, see restoreHealthState.
+// it is left to the registration of the providers, see restoreHealthState.
 func (h *HealthCheck) attachHealthState() {
 	cacheFile := service.FromContext[adapter.CacheFile](h.ctx)
 	if cacheFile == nil {
@@ -66,42 +66,54 @@ func (h *HealthCheck) attachHealthState() {
 }
 
 // restoreHealthState reads what the previous run left and puts back the states of the nodes
-// the providers still have. A record of a node that is gone is simply not taken: it is not
-// kept in memory waiting for a check that will never come, and nothing has to drop it later.
+// the providers have. A record of a node that is gone is simply not taken: it is not kept in
+// memory waiting for a check that will never come, and nothing has to drop it later.
+//
+// It runs once, when the post start is past and every group has registered its providers, see
+// Manager.Start.
 //
 // The rankings already built are dropped afterwards, see the listeners at the end of it: they
 // describe the storages as they were before, and a report asks for them without waiting for a
 // round.
 //
-// It runs before the first round measures anything, and waits for the providers first. That is
-// the earliest moment the node set is known: they are attached group by group, and a shared
-// check sees only the groups that attached before it, while a remote provider is still reading
-// its own cache when the groups start. The wait is bounded by the provider's own fetch, which
-// closes its ready channel once the first update finishes, cache or not.
+// It waits for the providers first: a remote provider is still reading its own cache when the
+// groups register, and its nodes are only there once the first update finishes, which is what
+// closes its ready channel, cache or not.
 func (h *HealthCheck) restoreHealthState() {
 	if h.stateStore == nil {
 		return
 	}
-	h.restoreOnce.Do(func() {
-		h.mergedProviders.Wait()
-		current := now()
-		restored := false
-		for tag, state := range h.stateStore.LoadHealthStates(h.stateKey) {
-			if _, loaded := h.mergedProviders.Outbound(tag); !loaded {
-				continue
-			}
-			h.Storage.Restore(tag, state, current)
+	h.mergedProviders.Wait()
+	current := now()
+	restored := false
+	for tag, state := range h.stateStore.LoadHealthStates(h.stateKey) {
+		if _, loaded := h.mergedProviders.Outbound(tag); !loaded {
+			continue
+		}
+		if h.Storage.Restore(tag, state, current) {
 			restored = true
 		}
-		if restored {
-			// A group builds its ranking from the statistics the storages held when it was
-			// first read, which was before this restore: the restored floors are not in it,
-			// and a report would state none of them until the first round of checks
-			// finished. The listeners drop the ranking, so the restored states are what the
-			// next report describes.
-			h.notifyPostCheckListeners()
-		}
-	})
+	}
+	if restored {
+		// A group builds its ranking from the statistics the storages held when it was first
+		// read, which was before this restore: the restored floors are not in it, and a report
+		// would state none of them until the first round of checks finished. The listeners drop
+		// the ranking, so the restored states are what the next report describes.
+		h.notifyPostCheckListeners()
+	}
+}
+
+// startRestore reads the states of the previous run in the background. It is called once, when
+// every group has registered its providers, see Manager.Start.
+//
+// It runs in the background because it waits for the providers: a remote provider is still
+// reading its own cache, and the start of the box must not wait on it. The states are only read
+// for the reports and for the first round, both of which come after a group is used.
+func (h *HealthCheck) startRestore() {
+	if h.stateStore == nil {
+		return
+	}
+	go h.restoreHealthState()
 }
 
 // startHealthState starts the periodic write. It is independent of the check loop: the checks

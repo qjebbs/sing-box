@@ -667,6 +667,7 @@ func (s *Box) start() error {
 	err = s.startComponents(adapter.StartStatePostStart,
 		boxComponent{"outbound", s.outbound},
 		boxComponent{"provider", s.provider},
+		boxComponent{s.healthCheckService.Name(), s.healthCheckService},
 		boxComponent{"network", s.network},
 		boxComponent{"dns-transport", s.dnsTransport},
 		boxComponent{"dns-router", s.dnsRouter},

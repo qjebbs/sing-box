@@ -61,13 +61,21 @@ func (s *Storage) State(now time.Time) (adapter.HealthState, bool) {
 // so they expire when they would have without the restart, see baseline.restore. The failure
 // estimate is restored as it was: the next check folds into it as if the process had never
 // stopped.
-func (s *Storage) restoreState(state adapter.HealthState, now time.Time) {
-	s.baseline.restore(state.Floors, state.FloorsAt)
+//
+// It reports whether the state held anything this run does not: a record read a second time,
+// or one older than what the checks have already measured, is nothing.
+func (s *Storage) restoreState(state adapter.HealthState, now time.Time) bool {
+	restored := s.baseline.restore(state.Floors, state.FloorsAt)
 	if !state.FailureAt.IsZero() && now.Sub(state.FailureAt) < failureStateTimeout {
-		s.failures.restore(state.FailureSum, state.FailureWeight, state.FailureAt)
+		if s.failures.restore(state.FailureSum, state.FailureWeight, state.FailureAt) {
+			restored = true
+		}
 	}
-	// statistics is not valid any more
-	s.stats = Stats{}
+	if restored {
+		// statistics is not valid any more
+		s.stats = Stats{}
+	}
+	return restored
 }
 
 // NewStorage returns a new rtt storage with the given sizes
