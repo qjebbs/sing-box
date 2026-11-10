@@ -221,6 +221,8 @@ func (g *Group) nodeReport(node *selection.Node, selected bool) adapter.HealthNo
 		Score:     g.scoreOf(node),
 		All:       node.All,
 		Fail:      node.Fail,
+		Floor:     optionalRTT(node.Floor),
+		Floors:    g.HealthCheck.Storage.Floors(node.Tag()),
 	}
 	if node.Stats.Succeeded() > 0 {
 		report.Latest = optionalRTT(node.Latest)
@@ -230,7 +232,6 @@ func (g *Group) nodeReport(node *selection.Node, selected bool) adapter.HealthNo
 		report.Max = optionalRTT(node.Max)
 		report.Jitter = optionalRTT(node.Jitter)
 		report.MeanDeviation = optionalRTT(node.MeanDeviation)
-		report.Floor = optionalRTT(node.Floor)
 		report.Bad = &node.Bad
 		pressure, badShare := selection.IdleTerms(node)
 		report.Pressure = &pressure

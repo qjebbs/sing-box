@@ -119,6 +119,17 @@ func (s *Storages) Stats(tag string) Stats {
 	return s.storages[tag].Stats()
 }
 
+// Floors returns the current baseline values by wall-clock slot for the tag.
+func (s *Storages) Floors(tag string) []uint16 {
+	s.RLock()
+	defer s.RUnlock()
+	store := s.storages[tag]
+	if store == nil {
+		return nil
+	}
+	return store.Floors()
+}
+
 // Put appends a scheduled check for the tag
 func (s *Storages) Put(tag string, delay RTT) {
 	s.Lock()

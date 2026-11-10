@@ -86,6 +86,19 @@ func (s *Storage) Stats() Stats {
 	return s.stats
 }
 
+// Floors returns the current baseline values by wall-clock slot, with zero for an
+// unmeasured slot. It returns nil when no baseline is available.
+func (s *Storage) Floors() []uint16 {
+	if s == nil {
+		return nil
+	}
+	values, _, filled := s.baseline.export(now())
+	if !filled {
+		return nil
+	}
+	return values
+}
+
 func (s *Storage) refreshStats(now time.Time) {
 	latest, loaded := s.history.At(0)
 	if !loaded || now.Sub(latest.Time) > s.options.Validity {

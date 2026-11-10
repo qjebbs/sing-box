@@ -52,6 +52,30 @@ func TestBaselineLeavesOutTheSlotsOfThePreviousDay(t *testing.T) {
 	}
 }
 
+func TestStoragesFloorsReturnsCurrentSlots(t *testing.T) {
+	now := time.Now()
+	storages := NewStorages(StorageOptions{Sampling: 2, Validity: time.Hour})
+	storage := storages.storageOf("node")
+	storage.baseline.Put(now.Add(-25*time.Hour), 80)
+	storage.baseline.Put(now, 90)
+
+	floors := storages.Floors("node")
+	if len(floors) != baselineSlots {
+		t.Fatalf("want %d floor slots, got %d", baselineSlots, len(floors))
+	}
+	if got := floors[baselineSlotOf(now)]; got != 90 {
+		t.Fatalf("want current slot floor 90, got %d", got)
+	}
+	for index, floor := range floors {
+		if index != baselineSlotOf(now) && floor != 0 {
+			t.Fatalf("want stale floor omitted and other slots empty, got slot %d = %d", index, floor)
+		}
+	}
+	if floors := storages.Floors("unknown"); floors != nil {
+		t.Fatalf("want no floors for unknown node, got %v", floors)
+	}
+}
+
 func TestBaselineRestoresEverySlotIntoItsWindow(t *testing.T) {
 	t.Parallel()
 	// A day of slots is what a restart restores, not only the one holding the floor: the rest
