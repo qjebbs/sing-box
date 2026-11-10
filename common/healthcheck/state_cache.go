@@ -69,6 +69,10 @@ func (h *HealthCheck) attachHealthState() {
 // the providers still have. A record of a node that is gone is simply not taken: it is not
 // kept in memory waiting for a check that will never come, and nothing has to drop it later.
 //
+// The rankings already built are dropped afterwards, see the listeners at the end of it: they
+// describe the storages as they were before, and a report asks for them without waiting for a
+// round.
+//
 // It runs before the first round measures anything, and waits for the providers first. That is
 // the earliest moment the node set is known: they are attached group by group, and a shared
 // check sees only the groups that attached before it, while a remote provider is still reading
@@ -81,11 +85,21 @@ func (h *HealthCheck) restoreHealthState() {
 	h.restoreOnce.Do(func() {
 		h.mergedProviders.Wait()
 		current := now()
+		restored := false
 		for tag, state := range h.stateStore.LoadHealthStates(h.stateKey) {
 			if _, loaded := h.mergedProviders.Outbound(tag); !loaded {
 				continue
 			}
 			h.Storage.Restore(tag, state, current)
+			restored = true
+		}
+		if restored {
+			// A group builds its ranking from the statistics the storages held when it was
+			// first read, which was before this restore: the restored floors are not in it,
+			// and a report would state none of them until the first round of checks
+			// finished. The listeners drop the ranking, so the restored states are what the
+			// next report describes.
+			h.notifyPostCheckListeners()
 		}
 	})
 }

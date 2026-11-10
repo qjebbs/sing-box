@@ -536,6 +536,32 @@ func TestRestoreTakesOnlyTheNodesTheProvidersHave(t *testing.T) {
 	}
 }
 
+func TestRestoreDropsTheRankingsBuiltBeforeIt(t *testing.T) {
+	t.Parallel()
+	// A report can be asked for before the first round measured anything, and the ranking it
+	// read holds the statistics the storages had while they were empty. The restore drops
+	// those rankings, so the floors it puts back are what the next report describes.
+	now := time.Now()
+	store := &fakeStateStore{}
+	check := newStoredCheck(store)
+	store.SaveHealthStates(check.stateKey, map[string]adapter.HealthState{
+		"node": {Floors: floorValues(now.Add(-time.Hour), 120), FloorsAt: now.Add(-time.Hour)},
+	}, time.Now().Add(time.Hour))
+	attachNodes(check, "node")
+	notified := 0
+	check.RegisterPostCheckListener(func() { notified++ })
+
+	check.restoreHealthState()
+	if notified != 1 {
+		t.Fatalf("want the rankings dropped once by the restore, got %d", notified)
+	}
+	// the restore reads the file once: the rankings it dropped are not dropped again
+	check.restoreHealthState()
+	if notified != 1 {
+		t.Fatalf("want the restore to notify once, got %d", notified)
+	}
+}
+
 func TestRestoreWaitsForTheProvidersToLoad(t *testing.T) {
 	t.Parallel()
 	// Attached is not loaded: a remote provider reads its own cache while the groups start,
