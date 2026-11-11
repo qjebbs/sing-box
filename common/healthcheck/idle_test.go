@@ -103,29 +103,34 @@ func TestActiveNamespaces(t *testing.T) {
 	}
 }
 
-func TestIdleNamespacesAreCheckedOncePerSlot(t *testing.T) {
+func TestIdleNamespacesAreCheckedOncePerProbeWindow(t *testing.T) {
 	checker := newIdleTestChecker(time.Minute, time.Second)
-	now := baselineWindowStart(time.Now()).Add(10 * time.Minute)
+	now := idleProbeWindowStart(time.Now()).Add(idleProbePeriod / 4)
 	checker.SetIdleProbe("idle", true)
 	checker.lastActive["idle"] = now.Add(-time.Hour)
-	checker.lastCheck["idle"] = now.Add(-baselineSlot)
+	checker.lastCheck["idle"] = now.Add(-idleProbePeriod)
 
-	namespaces := checker.idleProbeCandidatesForSlot(now)
+	namespaces := checker.idleProbeCandidates(now)
 	if len(namespaces) != 1 || namespaces[0] != "idle" {
 		t.Fatalf("namespaces = %v, want [idle]", namespaces)
 	}
-	if namespaces = checker.idleProbeCandidatesForSlot(now); len(namespaces) != 0 {
-		t.Fatalf("namespaces = %v, want no second check in the same slot", namespaces)
+	if namespaces = checker.idleProbeCandidates(now); len(namespaces) != 0 {
+		t.Fatalf("namespaces = %v, want no second check in the same window", namespaces)
+	}
+	// A check inside the window, which a probe or a round of a group in use can make, is
+	// enough for it: the next probe waits for the next window.
+	if namespaces = checker.idleProbeCandidates(now.Add(idleProbePeriod / 2)); len(namespaces) != 0 {
+		t.Fatalf("namespaces = %v, want no second check in the same window", namespaces)
 	}
 
-	if namespaces = checker.idleProbeCandidatesForSlot(now.Add(baselineSlot)); len(namespaces) != 1 || namespaces[0] != "idle" {
-		t.Fatalf("namespaces = %v, want [idle] in the next slot", namespaces)
+	if namespaces = checker.idleProbeCandidates(now.Add(idleProbePeriod)); len(namespaces) != 1 || namespaces[0] != "idle" {
+		t.Fatalf("namespaces = %v, want [idle] in the next window", namespaces)
 	}
 }
 
 func TestIdleNamespacesSkipActiveAndAlreadyChecked(t *testing.T) {
 	checker := newIdleTestChecker(time.Minute, time.Second)
-	now := baselineWindowStart(time.Now()).Add(10 * time.Minute)
+	now := idleProbeWindowStart(time.Now()).Add(idleProbePeriod / 4)
 	checker.SetIdleProbe("active", true)
 	checker.SetIdleProbe("checked", true)
 	checker.SetIdleProbe("quick", false)
@@ -134,33 +139,33 @@ func TestIdleNamespacesSkipActiveAndAlreadyChecked(t *testing.T) {
 	checker.lastActive["quick"] = now.Add(-time.Hour)
 	checker.lastCheck["checked"] = now
 
-	if namespaces := checker.idleProbeCandidatesForSlot(now); len(namespaces) != 0 {
+	if namespaces := checker.idleProbeCandidates(now); len(namespaces) != 0 {
 		t.Fatalf("namespaces = %v, want no checks for active or already checked groups", namespaces)
 	}
 }
 
-func TestNextIdleProbeTimeIsRandomizedWithinAFutureSlot(t *testing.T) {
-	now := baselineWindowStart(time.Now()).Add(15 * time.Minute)
-	probeAt, slotStart := nextIdleProbeTime(now, time.Time{})
+func TestNextIdleProbeTimeIsRandomizedWithinAFutureWindow(t *testing.T) {
+	now := idleProbeWindowStart(time.Now()).Add(idleProbePeriod / 4)
+	probeAt, windowStart := nextIdleProbeTime(now, time.Time{})
 	if !probeAt.After(now) {
 		t.Fatalf("probeAt = %v, want a future time", probeAt)
 	}
-	if !baselineWindowStart(probeAt).Equal(slotStart) {
-		t.Fatalf("probeAt = %v, want it in slot starting at %v", probeAt, slotStart)
+	if !idleProbeWindowStart(probeAt).Equal(windowStart) {
+		t.Fatalf("probeAt = %v, want it in the window starting at %v", probeAt, windowStart)
 	}
-	if !slotStart.Equal(baselineWindowStart(now)) {
-		t.Fatalf("slotStart = %v, want the current slot %v", slotStart, baselineWindowStart(now))
+	if !windowStart.Equal(idleProbeWindowStart(now)) {
+		t.Fatalf("windowStart = %v, want the current window %v", windowStart, idleProbeWindowStart(now))
 	}
-	if probeAt.Before(slotStart) || !probeAt.Before(slotStart.Add(baselineSlot)) {
-		t.Fatalf("probeAt = %v, want it inside the 30-minute slot", probeAt)
+	if probeAt.Before(windowStart) || !probeAt.Before(windowStart.Add(idleProbePeriod)) {
+		t.Fatalf("probeAt = %v, want it inside the probe window", probeAt)
 	}
 	if !probeAt.After(now) {
 		t.Fatalf("probeAt = %v, want a future point after %v", probeAt, now)
 	}
 
-	nextAt, nextStart := nextIdleProbeTime(now, slotStart.Add(baselineSlot))
-	if !nextStart.Equal(slotStart.Add(baselineSlot)) || !baselineWindowStart(nextAt).Equal(nextStart) {
-		t.Fatalf("next probe = %v in slot %v, want the slot after %v", nextAt, nextStart, slotStart)
+	nextAt, nextStart := nextIdleProbeTime(now, windowStart.Add(idleProbePeriod))
+	if !nextStart.Equal(windowStart.Add(idleProbePeriod)) || !idleProbeWindowStart(nextAt).Equal(nextStart) {
+		t.Fatalf("next probe = %v in window %v, want the window after %v", nextAt, nextStart, windowStart)
 	}
 }
 

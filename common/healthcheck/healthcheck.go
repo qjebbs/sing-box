@@ -542,9 +542,9 @@ func (h *HealthCheck) checkLoop(ctx context.Context, wake <-chan struct{}) {
 	h.scheduledCheck(ctx)
 	nextRegular := time.Now().Add(time.Duration(h.options.Interval))
 	var (
-		// nextIdle is the random probe time; idleSlot is the wall-clock slot it belongs to.
-		nextIdle time.Time
-		idleSlot time.Time
+		// nextIdle is the random probe time; idleWindow is the probe window it belongs to.
+		nextIdle        time.Time
+		idleWindowStart time.Time
 	)
 	timer := time.NewTimer(time.Hour)
 	defer timer.Stop()
@@ -562,9 +562,9 @@ func (h *HealthCheck) checkLoop(ctx context.Context, wake <-chan struct{}) {
 		// Idle probes are needed only when an idle objective is registered.
 		if h.options.IdleTimeout <= 0 || !h.hasIdleProbeNamespaces() {
 			nextIdle = time.Time{}
-			idleSlot = time.Time{}
+			idleWindowStart = time.Time{}
 		} else if nextIdle.IsZero() {
-			nextIdle, idleSlot = nextIdleProbeTime(now, time.Time{})
+			nextIdle, idleWindowStart = nextIdleProbeTime(now, time.Time{})
 		}
 
 		// One timer serves both schedules; when neither has work, wait for a state change.
@@ -607,16 +607,16 @@ func (h *HealthCheck) checkLoop(ctx context.Context, wake <-chan struct{}) {
 			}
 		}
 
-		// Run an idle probe only in its planned slot. If pausing carried us past it, skip it.
+		// Run an idle probe only in its planned window. If pausing carried us past it, skip it.
 		if !nextIdle.IsZero() && !now.Before(nextIdle) {
-			if baselineWindowStart(now).Equal(idleSlot) {
-				namespaces := h.idleProbeCandidatesForSlot(now)
+			if idleProbeWindowStart(now).Equal(idleWindowStart) {
+				namespaces := h.idleProbeCandidates(now)
 				if len(namespaces) > 0 {
 					h.logger.Info("scheduled idle health check for: ", strings.Join(namespaces, ", "))
 					go h.checkAll(ctx, true, namespaces)
 				}
 			}
-			nextIdle, idleSlot = nextIdleProbeTime(now, idleSlot.Add(baselineSlot))
+			nextIdle, idleWindowStart = nextIdleProbeTime(now, idleWindowStart.Add(idleProbePeriod))
 		}
 	}
 }
@@ -634,37 +634,55 @@ func resetTimer(timer *time.Timer, duration time.Duration) {
 	timer.Reset(duration)
 }
 
-// nextIdleProbeTime chooses a random instant in the current or a later wall-clock slot.
-// nextSlot is the earliest slot start allowed; zero means there is no lower bound.
-// It returns both the probe time and the start of the slot containing that time.
-func nextIdleProbeTime(now time.Time, nextSlot time.Time) (time.Time, time.Time) {
-	slotStart := baselineWindowStart(now)
-	// Never schedule before the next unvisited slot.
-	if nextSlot.After(slotStart) {
-		slotStart = nextSlot
-	}
-	probeStart := now
-	if probeStart.Before(slotStart) {
-		probeStart = slotStart
-	}
-	remaining := slotStart.Add(baselineSlot).Sub(probeStart)
-	if remaining <= time.Nanosecond {
-		slotStart = slotStart.Add(baselineSlot)
-		probeStart = slotStart
-		remaining = baselineSlot
-	}
-	// Choose a future instant within the remaining part of the slot, not the elapsed part.
-	probeAt := probeStart.Add(time.Duration(rand.Int63n(int64(remaining-time.Nanosecond))) + time.Nanosecond)
-	return probeAt, slotStart
+// idleProbeSlots is how many slots of the baseline one probe window covers, which is the pace
+// of the idle probes an idle namespace keeps. It is a whole number of slots, so the windows
+// line up with the slots the day is measured in, and each of them is filled by the probes that
+// fall in it.
+const idleProbeSlots uint8 = 1
+
+// idleProbePeriod is how often an idle namespace is probed. It is the pace of the scheduler,
+// not the resolution of the baseline: a probe lands in one slot of the day, and the slots it
+// does not land in describe the day through the checks a group in use collects anyway.
+const idleProbePeriod = time.Duration(idleProbeSlots) * baselineSlot
+
+// idleProbeWindowStart returns the start of the probe window the time belongs to, which is
+// what an idle namespace is probed once in.
+func idleProbeWindowStart(now time.Time) time.Time {
+	period := int64(idleProbePeriod / time.Second)
+	return time.Unix(now.Unix()/period*period, 0)
 }
 
-// idleProbeCandidatesForSlot returns idle-objective namespaces that have not
-// already been checked in the current slot.
-func (h *HealthCheck) idleProbeCandidatesForSlot(now time.Time) []string {
+// nextIdleProbeTime chooses a random instant in the current or a later probe window.
+// nextWindow is the earliest window start allowed; zero means there is no lower bound.
+// It returns both the probe time and the start of the window containing that time.
+func nextIdleProbeTime(now time.Time, nextWindow time.Time) (time.Time, time.Time) {
+	windowStart := idleProbeWindowStart(now)
+	// Never schedule before the next unvisited window.
+	if nextWindow.After(windowStart) {
+		windowStart = nextWindow
+	}
+	probeStart := now
+	if probeStart.Before(windowStart) {
+		probeStart = windowStart
+	}
+	remaining := windowStart.Add(idleProbePeriod).Sub(probeStart)
+	if remaining <= time.Nanosecond {
+		windowStart = windowStart.Add(idleProbePeriod)
+		probeStart = windowStart
+		remaining = idleProbePeriod
+	}
+	// Choose a future instant within the remaining part of the window, not the elapsed part.
+	probeAt := probeStart.Add(time.Duration(rand.Int63n(int64(remaining-time.Nanosecond))) + time.Nanosecond)
+	return probeAt, windowStart
+}
+
+// idleProbeCandidates returns idle-objective namespaces that have not been checked in the
+// current probe window, which is what keeps an idle group to one probe per period.
+func (h *HealthCheck) idleProbeCandidates(now time.Time) []string {
 	if h.options.IdleTimeout <= 0 {
 		return nil
 	}
-	currentSlot := baselineWindowStart(now)
+	currentWindow := idleProbeWindowStart(now)
 	idleTimeout := time.Duration(h.options.IdleTimeout)
 	h.idleMu.Lock()
 	defer h.idleMu.Unlock()
@@ -677,7 +695,7 @@ func (h *HealthCheck) idleProbeCandidatesForSlot(now time.Time) []string {
 			continue
 		}
 		lastCheck := h.lastCheck[namespace]
-		if !lastCheck.IsZero() && baselineWindowStart(lastCheck).Equal(currentSlot) {
+		if !lastCheck.IsZero() && idleProbeWindowStart(lastCheck).Equal(currentWindow) {
 			continue
 		}
 		h.lastCheck[namespace] = now
