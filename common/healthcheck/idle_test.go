@@ -54,11 +54,12 @@ func TestActiveNamespaces(t *testing.T) {
 			wantAll:    true,
 		},
 		{
-			name:       "never used",
+			// without an idle timeout the checks never pause, so there is nothing to wait for
+			name:       "no idle timeout, never used",
 			idle:       0,
 			lastActive: map[string]time.Time{},
-			wantRun:    false,
-			wantCount:  0,
+			wantRun:    true,
+			wantAll:    true,
 		},
 		{
 			name:       "all active",
@@ -125,6 +126,20 @@ func TestIdleNamespacesAreCheckedOncePerProbeWindow(t *testing.T) {
 
 	if namespaces = checker.idleProbeCandidates(now.Add(idleProbePeriod)); len(namespaces) != 1 || namespaces[0] != "idle" {
 		t.Fatalf("namespaces = %v, want [idle] in the next window", namespaces)
+	}
+}
+
+func TestIdleNamespacesAreProbedWithoutBeingUsed(t *testing.T) {
+	// The idle objective ranks on what the probes measure, and a group is most in need of it
+	// while it is not in use: a namespace that was never used is a probe candidate.
+	checker := newIdleTestChecker(time.Minute, time.Minute)
+	checker.SetIdleProbe("group", true)
+
+	if namespaces := checker.idleProbeCandidates(time.Now()); len(namespaces) != 1 || namespaces[0] != "group" {
+		t.Fatalf("namespaces = %v, want [group]", namespaces)
+	}
+	if namespaces := checker.idleProbeCandidates(time.Now()); len(namespaces) != 0 {
+		t.Fatalf("namespaces = %v, want no second probe in the same window", namespaces)
 	}
 }
 
@@ -199,13 +214,13 @@ func TestTouchCatchesUpOnlyWhenStale(t *testing.T) {
 	waitIdle(t, checker, "group")
 }
 
-func TestTouchWithoutIdleTimeoutDoesNotCatchUp(t *testing.T) {
+func TestTouchDoesNotCatchUpAFreshNamespace(t *testing.T) {
 	checker := newIdleTestChecker(0, time.Minute)
 	markUsed(checker, "group", time.Now().Add(-2*time.Hour))
 	checker.markChecked(nil)
 	checker.Touch("group")
 	if _, inFlight := checker.checking["group"]; inFlight {
-		t.Fatal("a checker without idle timeout must not catch up on use")
+		t.Fatal("a namespace checked within the interval must not catch up on use")
 	}
 }
 
@@ -217,10 +232,10 @@ func TestSetProvidersDefersChecks(t *testing.T) {
 	}
 	time.Sleep(20 * time.Millisecond)
 	checker.loopMu.Lock()
-	started := checker.loopStarted
+	running := checker.loopCtx != nil
 	checker.loopMu.Unlock()
-	if started {
-		t.Fatal("registering providers must not start the periodic loop")
+	if running {
+		t.Fatal("registering providers must not start the checker")
 	}
 	checker.idleMu.Lock()
 	lastCheck := checker.lastCheck["group"]
@@ -234,7 +249,7 @@ func TestSetProvidersDefersChecks(t *testing.T) {
 	}
 }
 
-func TestCheckLoopStartsLazily(t *testing.T) {
+func TestSchedulerRunsWithoutTheGroupBeingUsed(t *testing.T) {
 	checker := newIdleTestChecker(time.Hour, 10*time.Millisecond)
 	err := checker.Start()
 	if err != nil {
@@ -242,17 +257,44 @@ func TestCheckLoopStartsLazily(t *testing.T) {
 	}
 	defer checker.Close()
 	checker.loopMu.Lock()
-	started := checker.loopStarted
+	running := checker.loopCtx != nil
 	checker.loopMu.Unlock()
-	if started {
-		t.Fatal("the check loop must not run before the group is used")
+	if !running {
+		t.Fatal("the scheduler must run from the start")
 	}
-	checker.Touch("group")
-	checker.loopMu.Lock()
-	started = checker.loopStarted
-	checker.loopMu.Unlock()
-	if !started {
-		t.Fatal("the check loop must start once the group is used")
+	time.Sleep(50 * time.Millisecond)
+	checker.idleMu.Lock()
+	lastCheck := checker.lastCheck["group"]
+	_, used := checker.lastActive["group"]
+	checker.idleMu.Unlock()
+	if !lastCheck.IsZero() {
+		t.Fatal("a group that was never used must not have a regular round")
+	}
+	if used {
+		t.Fatal("the scheduler must not mark a namespace as used")
+	}
+}
+
+func TestSchedulerChecksWithoutTheGroupBeingUsedWithoutIdleTimeout(t *testing.T) {
+	// idle_timeout = 0 means the checks never pause: there is nothing to wait for, so a round
+	// runs without a group being used.
+	checker := newIdleTestChecker(0, 10*time.Millisecond)
+	checked := make(chan struct{}, 1)
+	checker.RegisterPostCheckListener(func() {
+		select {
+		case checked <- struct{}{}:
+		default:
+		}
+	})
+	err := checker.Start()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer checker.Close()
+	select {
+	case <-checked:
+	case <-time.After(3 * time.Second):
+		t.Fatal("a checker without an idle timeout must run rounds without the group being used")
 	}
 }
 
@@ -289,9 +331,9 @@ func TestSchedulerWaitsWhenIdleAndResumesOnTouch(t *testing.T) {
 		return checker.lastCheck["group"].After(lastCheck)
 	}, "touch did not trigger a catch-up check after idle")
 	checker.loopMu.Lock()
-	started := checker.loopStarted
+	running := checker.loopCtx != nil
 	checker.loopMu.Unlock()
-	if !started {
+	if !running {
 		t.Fatal("scheduler stopped after the namespace became idle")
 	}
 }
@@ -393,8 +435,8 @@ func TestIsActive(t *testing.T) {
 		{name: "never used", idle: 30 * time.Minute, want: false},
 		{name: "idle", idle: 30 * time.Minute, lastActive: now.Add(-time.Hour), want: false},
 		{name: "active", idle: 30 * time.Minute, lastActive: now, want: true},
-		// without an idle timeout the loop checks every namespace each round
-		{name: "no idle timeout, never used", idle: 0, want: false},
+		// without an idle timeout the loop checks every namespace each round, used or not
+		{name: "no idle timeout, never used", idle: 0, want: true},
 		{name: "no idle timeout, used", idle: 0, lastActive: now.Add(-24 * time.Hour), want: true},
 	}
 	for _, testCase := range tests {

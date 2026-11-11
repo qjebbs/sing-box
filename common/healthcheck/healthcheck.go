@@ -47,10 +47,11 @@ type HealthCheck struct {
 	detourScope   *adapter.Scope
 	globalHistory *urltest.HistoryStorage
 
-	loopCtx     context.Context
-	loopStarted bool
-	loopWake    chan struct{}
-	loopMu      sync.Mutex
+	loopCtx  context.Context
+	loopWake chan struct{}
+	// loopMu guards the two. The scheduler runs from the start of the checker until it is
+	// closed: nothing else starts it.
+	loopMu sync.Mutex
 
 	// idleMu guards the per-namespace activity and idle-probe registrations.
 	idleMu              sync.Mutex
@@ -244,9 +245,15 @@ func (h *HealthCheck) Start() error {
 	ctx, cancel := context.WithCancel(context.Background())
 	h.cancel = cancel
 	h.loopCtx = ctx
+	if h.loopWake == nil {
+		h.loopWake = make(chan struct{}, 1)
+	}
 	h.startHealthState()
 	go h.cleanupLoop(ctx, 8*time.Hour)
-	// The check loop is only started when a group is used, see Touch.
+	// The scheduler runs from the start: the probes a group with an idle objective ranks on have
+	// to happen while the group is not in use, which is exactly when it has nothing to rank. The
+	// regular rounds of a namespace begin when it is used, see Touch.
+	go h.checkLoop(ctx, h.loopWake)
 	return nil
 }
 
@@ -259,7 +266,6 @@ func (h *HealthCheck) Close() error {
 		h.cancel = nil
 	}
 	h.loopCtx = nil
-	h.loopStarted = false
 	stateCancel := h.stateCancel
 	h.stateCancel = nil
 	h.loopMu.Unlock()
@@ -378,10 +384,15 @@ func (h *HealthCheck) isClosed() bool {
 // IsActive reports whether the namespace was in use within the idle timeout, so its
 // health checks are running and its statistics are current. A namespace that was
 // never used, or has been idle for longer, is not checked, so its statistics would
-// only describe the past.
+// only describe the past. Without an idle timeout the checks never pause, so every
+// namespace is current.
 func (h *HealthCheck) IsActive(namespace string) bool {
 	if h == nil {
 		return false
+	}
+	idleTimeout := time.Duration(h.options.IdleTimeout)
+	if idleTimeout <= 0 {
+		return true
 	}
 	h.idleMu.Lock()
 	lastActive := h.lastActive[namespace]
@@ -389,16 +400,13 @@ func (h *HealthCheck) IsActive(namespace string) bool {
 	if lastActive.IsZero() {
 		return false
 	}
-	idleTimeout := time.Duration(h.options.IdleTimeout)
-	if idleTimeout <= 0 {
-		// without an idle timeout the loop checks every namespace each round
-		return true
-	}
 	return time.Since(lastActive) < idleTimeout
 }
 
-// Touch records that the namespace is in use and wakes the scheduler. A stale
-// namespace gets a catch-up check, since its statistics may no longer be current.
+// Touch records that the namespace is in use and wakes the scheduler. A stale namespace catches
+// up at once, since its statistics may no longer be current: the first use of a group has no
+// round of its own to rely on, and one that comes back from idle has to know where it stands
+// before it selects.
 func (h *HealthCheck) Touch(namespace string) {
 	if h == nil {
 		return
@@ -406,16 +414,6 @@ func (h *HealthCheck) Touch(namespace string) {
 	now := time.Now()
 	h.idleMu.Lock()
 	h.lastActive[namespace] = now
-	h.idleMu.Unlock()
-	if h.startLoop() {
-		// The first round of the scheduler covers this namespace.
-		return
-	}
-	if h.options.IdleTimeout <= 0 {
-		h.wakeLoop()
-		return
-	}
-	h.idleMu.Lock()
 	catchUp := false
 	if now.Sub(h.lastCheck[namespace]) >= time.Duration(h.options.Interval) {
 		if _, inFlight := h.checking[namespace]; !inFlight {
@@ -461,23 +459,6 @@ func (h *HealthCheck) checkNamespace(namespace string) {
 	}
 }
 
-// startLoop starts the scheduler on first use. It returns true when the scheduler
-// was started, in which case its first round covers the namespaces in use right away.
-func (h *HealthCheck) startLoop() bool {
-	h.loopMu.Lock()
-	defer h.loopMu.Unlock()
-	if h.loopCtx == nil || h.loopStarted {
-		return false
-	}
-	if h.loopWake == nil {
-		h.loopWake = make(chan struct{}, 1)
-	}
-	h.loopStarted = true
-	h.logger.Debug("health check started")
-	go h.checkLoop(h.loopCtx, h.loopWake)
-	return true
-}
-
 func (h *HealthCheck) wakeLoop() {
 	h.loopMu.Lock()
 	wake := h.loopWake
@@ -490,19 +471,21 @@ func (h *HealthCheck) wakeLoop() {
 	}
 }
 
-// activeNamespaces returns the namespaces that are still in use. A nil result
-// means all namespaces.
+// activeNamespaces returns the namespaces that are still in use, a nil result meaning all of
+// them. Without an idle timeout nothing pauses the checks, so every namespace is checked
+// whether a group has been used or not; with one, the regular rounds wait for a namespace to be
+// used, which is when they have something to describe.
 func (h *HealthCheck) activeNamespaces() (namespaces []string, run bool) {
 	now := time.Now()
-	h.idleMu.Lock()
-	defer h.idleMu.Unlock()
-	if len(h.lastActive) == 0 {
-		// Nothing has ever been used, keep the checks lazy.
-		return nil, false
-	}
 	idleTimeout := time.Duration(h.options.IdleTimeout)
 	if idleTimeout <= 0 {
 		return nil, true
+	}
+	h.idleMu.Lock()
+	defer h.idleMu.Unlock()
+	if len(h.lastActive) == 0 {
+		// Nothing has been used yet, keep the regular rounds lazy.
+		return nil, false
 	}
 	for namespace, lastActive := range h.lastActive {
 		if now.Sub(lastActive) < idleTimeout {
@@ -537,12 +520,15 @@ func (h *HealthCheck) hasIdleProbeNamespaces() bool {
 	return len(h.idleProbeNamespaces) > 0
 }
 
+// checkLoop is the scheduler of both kinds of checks. It runs from the start of the checker, so
+// the probes of an idle group happen while the group is not in use; a namespace that was never
+// used has no regular round at all, see activeNamespaces.
 func (h *HealthCheck) checkLoop(ctx context.Context, wake <-chan struct{}) {
-	// Check once on first use; subsequent regular rounds are interval-based.
-	h.scheduledCheck(ctx)
-	nextRegular := time.Now().Add(time.Duration(h.options.Interval))
+	h.logger.Debug("health check started")
 	var (
-		// nextIdle is the random probe time; idleWindow is the probe window it belongs to.
+		// nextRegular is the next round of the namespaces in use, zero while there is none.
+		nextRegular time.Time
+		// nextIdle is the random probe time; idleWindowStart is the probe window it belongs to.
 		nextIdle        time.Time
 		idleWindowStart time.Time
 	)
@@ -687,11 +673,10 @@ func (h *HealthCheck) idleProbeCandidates(now time.Time) []string {
 	h.idleMu.Lock()
 	defer h.idleMu.Unlock()
 	var namespaces []string
-	for namespace, lastActive := range h.lastActive {
-		if _, enabled := h.idleProbeNamespaces[namespace]; !enabled {
-			continue
-		}
-		if now.Sub(lastActive) < idleTimeout {
+	for namespace := range h.idleProbeNamespaces {
+		// A namespace that was never used is idle: the group has ranked nothing yet, and the
+		// probes are what give it a floor to rank on once it is used.
+		if lastActive, used := h.lastActive[namespace]; used && now.Sub(lastActive) < idleTimeout {
 			continue
 		}
 		lastCheck := h.lastCheck[namespace]
