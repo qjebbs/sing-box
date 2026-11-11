@@ -135,11 +135,11 @@ func TestRestoredFloorIsUsedBeforeTheWindowFills(t *testing.T) {
 	}
 }
 
-func TestRestoredFloorIsReadBeforeTheWindowHasTwoChecks(t *testing.T) {
+func TestRestoredFloorWinsOverTheFirstCheck(t *testing.T) {
 	t.Parallel()
-	// A round of one check sets no baseline of its own, but a floor a restart restored is
-	// already there: the report prices the node from its first check instead of calling it
-	// unknown, which is the wait a restart must not have.
+	// A floor a restart restored is already there, and a check of this run does not replace it
+	// while it is the slower of the two: the report prices the node from its first check
+	// instead of calling it unknown, which is the wait a restart must not have.
 	now := time.Now()
 	store := &fakeStateStore{}
 	check := newStoredCheck(store)

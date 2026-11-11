@@ -145,21 +145,10 @@ func (s *Storage) refreshStats(now time.Time) {
 			delays = append(delays, history.Delay)
 		}
 	}
-	var floor RTT
-	if len(delays) >= 2 {
-		// The baseline is the fastest the node has been, so what goes into it is the
-		// fastest check of the round, not the median of the round: a minimum of medians
-		// says nothing about what the node can do, and in a quiet period every node is at
-		// its own median, which made every score zero and left nothing to rank.
-		//
-		// The round is written before it is read, because a minimum over real delays
-		// cannot make a score of zero: the baseline can never be above the median of the
-		// round that just set it.
-		s.baseline.Put(now, minOf(delays))
-	}
-	// The floor outlives the window, so it is read even when the window is too short to set
-	// one: a restored floor is what a restart must not wait for.
-	floor, _ = s.baseline.RTT(now)
+	// The baseline is filled by the checks themselves, see Storage.Put: what the window holds
+	// is the statistics, and the floor outlives it. It is read even when the window is too
+	// short to describe the node, because a restored floor is what a restart must not wait for.
+	floor, _ := s.baseline.RTT(now)
 	s.stats = statsOf(len(delays)+fail, fail, latest.Delay, expiresAt, delays, floor, s.failures.rate())
 	s.stats.Suspended = s.suspended
 }
@@ -208,17 +197,6 @@ func statsOf(all int, fail int, latest RTT, expires time.Time, delays []RTT, flo
 // twice the fastest the node has been, the wait has not grown by a jitter, it has been
 // doubled.
 const badCheckMultiple = 2
-
-// minOf returns the smallest of the values.
-func minOf(values []RTT) RTT {
-	min := RTT(math.MaxUint16)
-	for _, value := range values {
-		if min > value {
-			min = value
-		}
-	}
-	return min
-}
 
 // countAbove returns how many of the values are greater than limit.
 func countAbove(values []RTT, limit RTT) int {

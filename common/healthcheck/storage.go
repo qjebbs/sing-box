@@ -125,6 +125,15 @@ func (s *Storage) Put(d RTT) {
 	s.failures.observe(at, d == Failed)
 	if d != Failed {
 		s.suspended = false
+		// The baseline is filled here, from the check itself, and not from a round of them
+		// read later: an idle node is probed once a window, so a round of it holds this one
+		// check and nothing else, and it would set no floor at all. A slot keeps the fastest
+		// check of its own window either way, so filling it a check at a time leaves the day
+		// with the same minimum as filling it once a round.
+		//
+		// Writing it before the statistics are read keeps the floor at or below the fastest
+		// check of the window: a minimum over real delays cannot make a score of zero.
+		s.baseline.Put(at, d)
 	}
 	// statistics is not valid any more
 	s.stats = Stats{}
@@ -143,6 +152,9 @@ func (s *Storage) Update(d RTT) {
 	// a check the connections asked for is evidence about the node like any other: it is
 	// the second half of what a failed connection already said
 	s.failures.observe(at, d == Failed)
+	if d != Failed {
+		s.baseline.Put(at, d)
+	}
 	s.suspended = d == Failed
 	// statistics is not valid any more
 	s.stats = Stats{}

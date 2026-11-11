@@ -34,7 +34,7 @@ BAD      = #{xᵢ > 2 × FLOOR} / ALL + max(FAIL / ALL, FAILR)  # the share that
 
 These formulas assume at least two successful checks. With only one, there is nothing to say about variation, so `JIT` and `DEV` both take half of that delay — better to assume variation than to read "not enough samples" as "no variation at all". At that point `FLOOR` is that single check, and both ratios are out of reach, so `idle` ranks by the delay itself (halved). With no successful check at all, there are no delay statistics.
 
-- `SLOT` follows the wall clock: `k` is which 30 minutes of the day it is. A new slot is filled with the fastest check of the round, and after that only the smallest of the slot is kept. After 24 hours the same slot is overwritten by the next record, and the old value is gone on its own.
+- `SLOT` follows the wall clock: `k` is which 30 minutes of the day it is. A check fills the slot it was measured in, and only the smallest one in the slot is kept. After 24 hours the same slot is overwritten by the next record, and the old value is gone on its own.
 - **`MED`** is the delay level. A median rather than an average, so one very slow check cannot pull it.
 - **`JIT`** is **how much the delay usually moves**. A few spikes do not move it; `1.4826` is the factor that converts a median deviation into a standard deviation under a normal distribution.
 - **`DEV`** is **how much it moves overall**. Every check counts, and spikes add up only when there are many. It shows up in reports to help diagnose, and takes no part in ranking.
@@ -248,8 +248,6 @@ BAD      = (#{xᵢ > 2 × FLOOR} + FAIL) / ALL
 ```
 
 Writing first does not zero the score: a slot holds a minimum, so after the write `FLOOR ≤ MIN ≤ MED`, `PRES` is still a non-negative ratio and `BAD` still a share. Computing first and writing after would only delay a node that got faster by one round, for nothing.
-
-With fewer than two successful checks the slot is left alone: the single result may be luck, or the probe may not have settled, and it should not decide the floor for the rest of the day. That round takes `PRES` from half of that delay, see [Statistics](#statistics-from-successful-checks-only).
 
 **Expiring.** There is no separate expiry step: after 24 hours the same slot is overwritten by the next round and the old record is gone with it. So the baseline always comes from times **actually measured**, and never treats present congestion as a fastest level the way "reset to the current value on expiry" would. A slot that stays congested rises slowly while the others stay as they were; only congestion that lasts everywhere raises the baseline as a whole, which amounts to admitting "this node is simply this slow".
 

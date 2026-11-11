@@ -75,6 +75,29 @@ func TestStorageStats(t *testing.T) {
 	assertStats(t, "Stats() - All Fail", want, s.Stats())
 }
 
+func TestASingleCheckSetsTheFloor(t *testing.T) {
+	t.Parallel()
+	// An idle node is probed once a window, and the window the statistics read is shorter than
+	// the gap between two probes: its round holds that one check and nothing else. The floor has
+	// to come from it all the same, or a group that is never used would never get one.
+	s := healthcheck.NewStorage(healthcheck.StorageOptions{Sampling: 10, Validity: 22 * time.Minute})
+	s.Put(150)
+	if got := s.Stats().Floor; got != 150 {
+		t.Fatalf("want the floor of the single check, 150, got %d", got)
+	}
+}
+
+func TestTheFloorIsWrittenByTheCheckNotByTheRead(t *testing.T) {
+	t.Parallel()
+	// A check fills its slot when it is measured, so the floor is there even when nothing read
+	// the statistics while the check was still inside the window: an idle group is not read.
+	s := healthcheck.NewStorage(healthcheck.StorageOptions{Sampling: 10, Validity: time.Nanosecond})
+	s.Put(150)
+	if got := s.Stats().Floor; got != 150 {
+		t.Fatalf("want the floor of the check once its window expired, 150, got %d", got)
+	}
+}
+
 func TestStorageStatsFirstCheckFailed(t *testing.T) {
 	t.Parallel()
 	// A node that only failed has no delay to report, and the zero of a missing value
