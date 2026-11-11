@@ -122,7 +122,8 @@ func (s *Storages) Stats(tag string) Stats {
 	return s.storages[tag].Stats()
 }
 
-// Floors returns the current baseline values by wall-clock slot for the tag.
+// Floors returns the current baseline values by slot of the local day for the tag, the first
+// one at the local midnight, see Storage.Floors.
 func (s *Storages) Floors(tag string) []uint16 {
 	s.access.RLock()
 	defer s.access.RUnlock()

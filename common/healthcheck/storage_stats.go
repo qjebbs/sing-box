@@ -86,17 +86,33 @@ func (s *Storage) Stats() Stats {
 	return s.stats
 }
 
-// Floors returns the current baseline values by wall-clock slot, with zero for an
-// unmeasured slot. It returns nil when no baseline is available.
+// Floors returns the current baseline values by slot of the local day, with zero for an
+// unmeasured slot and the first value at the local midnight. It returns nil when no baseline is
+// available.
+//
+// The storage keeps the slots of the wall clock of UTC, see baselineSlotOf: a record has to
+// stay where it was measured. The rotation is done here because the report is read by a client
+// that lives in one time zone, so the day it describes is that one, not the day of the machine
+// the state was written on. A day whose offset is not a whole number of slots starts in the
+// slot that holds its midnight, which is the one the array begins with.
 func (s *Storage) Floors() []uint16 {
 	if s == nil {
 		return nil
 	}
-	values, _, filled := s.baseline.export(now())
+	current := now()
+	values, _, filled := s.baseline.export(current)
 	if !filled {
 		return nil
 	}
-	return values
+	shift := baselineSlotOf(dayStartOf(current))
+	if shift == 0 {
+		return values
+	}
+	local := make([]uint16, len(values))
+	for index := range values {
+		local[index] = values[(index+shift)%len(values)]
+	}
+	return local
 }
 
 func (s *Storage) refreshStats(now time.Time) {

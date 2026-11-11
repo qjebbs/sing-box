@@ -63,16 +63,41 @@ func TestStoragesFloorsReturnsCurrentSlots(t *testing.T) {
 	if len(floors) != baselineSlots {
 		t.Fatalf("want %d floor slots, got %d", baselineSlots, len(floors))
 	}
-	if got := floors[baselineSlotOf(now)]; got != 90 {
+	// the values are read as the day of the client, which starts at its own midnight
+	current := (baselineSlotOf(now) - baselineSlotOf(dayStartOf(now)) + baselineSlots) % baselineSlots
+	if got := floors[current]; got != 90 {
 		t.Fatalf("want current slot floor 90, got %d", got)
 	}
 	for index, floor := range floors {
-		if index != baselineSlotOf(now) && floor != 0 {
+		if index != current && floor != 0 {
 			t.Fatalf("want stale floor omitted and other slots empty, got slot %d = %d", index, floor)
 		}
 	}
 	if floors := storages.Floors("unknown"); floors != nil {
 		t.Fatalf("want no floors for unknown node, got %v", floors)
+	}
+}
+
+func TestFloorsStartAtTheLocalMidnight(t *testing.T) {
+	t.Parallel()
+	// The slots are measured in the wall clock of UTC, and the report is read by a client that
+	// lives in one time zone: the array it gets starts at its own midnight, whatever the offset
+	// of its day is.
+	now := time.Now()
+	storages := NewStorages(StorageOptions{Sampling: 2, Validity: time.Hour})
+	storages.storageOf("node").baseline.Put(dayStartOf(now), 70)
+
+	floors := storages.Floors("node")
+	if len(floors) != baselineSlots {
+		t.Fatalf("want %d floor slots, got %d", baselineSlots, len(floors))
+	}
+	if floors[0] != 70 {
+		t.Fatalf("want the local midnight slot first, got %d", floors[0])
+	}
+	for index, floor := range floors[1:] {
+		if floor != 0 {
+			t.Fatalf("want the other slots empty, got slot %d = %d", index+1, floor)
+		}
 	}
 }
 

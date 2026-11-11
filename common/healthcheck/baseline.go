@@ -90,6 +90,12 @@ func baselineWindowStart(now time.Time) time.Time {
 	return time.Unix(now.Unix()/slot*slot, 0)
 }
 
+// dayStartOf returns the midnight of the day of at, in the time zone of at.
+func dayStartOf(at time.Time) time.Time {
+	year, month, day := at.Date()
+	return time.Date(year, month, day, 0, 0, 0, 0, at.Location())
+}
+
 // export returns the values of the slots still within a day of now, the window of the day they
 // were read in, and whether there is one of them. A slot that holds nothing is zero, which no
 // delay is.
