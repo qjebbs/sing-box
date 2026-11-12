@@ -106,9 +106,9 @@ type HealthNode struct {
 	// Floor is the fastest the node has been, the reference the idle objective measures
 	// against, absent until there is a baseline.
 	Floor *uint16 `json:"floor,omitempty"`
-	// Floors holds one minimum delay per 30-minute slot of the local day of the client, the
-	// first one at its local midnight. A zero means the slot has no measurement; absent when
-	// no baseline is available.
+	// Floors holds one minimum delay per 30-minute slot of the local day of the machine
+	// serving the report, the first one at its local midnight. A zero means the slot has no
+	// measurement; absent when no baseline is available.
 	Floors []uint16 `json:"floors,omitempty"`
 	// Bad is how many of the checks came out slower than twice the floor, the frequency
 	// the idle objective counts next to the depth.

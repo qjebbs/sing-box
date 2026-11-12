@@ -63,7 +63,7 @@ func TestStoragesFloorsReturnsCurrentSlots(t *testing.T) {
 	if len(floors) != baselineSlots {
 		t.Fatalf("want %d floor slots, got %d", baselineSlots, len(floors))
 	}
-	// the values are read as the day of the client, which starts at its own midnight
+	// the values are read as the local day of the machine, which starts at its own midnight
 	current := (baselineSlotOf(now) - baselineSlotOf(dayStartOf(now)) + baselineSlots) % baselineSlots
 	if got := floors[current]; got != 90 {
 		t.Fatalf("want current slot floor 90, got %d", got)
@@ -79,11 +79,17 @@ func TestStoragesFloorsReturnsCurrentSlots(t *testing.T) {
 }
 
 func TestFloorsStartAtTheLocalMidnight(t *testing.T) {
-	t.Parallel()
-	// The slots are measured in the wall clock of UTC, and the report is read by a client that
-	// lives in one time zone: the array it gets starts at its own midnight, whatever the offset
-	// of its day is.
-	now := time.Now()
+	// The slots are measured in the wall clock of UTC, and the report is served by a machine
+	// whose system states one time zone: the array it gets starts at its local midnight,
+	// whatever the offset of its day is. The zone is stated here rather than taken from the
+	// machine, so the test holds a day that does not begin at the midnight of UTC wherever it
+	// runs.
+	local := time.FixedZone("CST", 8*int(time.Hour/time.Second))
+	restore := time.Local
+	time.Local = local
+	defer func() { time.Local = restore }()
+
+	now := time.Now().In(local)
 	storages := NewStorages(StorageOptions{Sampling: 2, Validity: time.Hour})
 	storages.storageOf("node").baseline.Put(dayStartOf(now), 70)
 

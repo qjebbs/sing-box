@@ -91,10 +91,10 @@ func (s *Storage) Stats() Stats {
 // available.
 //
 // The storage keeps the slots of the wall clock of UTC, see baselineSlotOf: a record has to
-// stay where it was measured. The rotation is done here because the report is read by a client
-// that lives in one time zone, so the day it describes is that one, not the day of the machine
-// the state was written on. A day whose offset is not a whole number of slots starts in the
-// slot that holds its midnight, which is the one the array begins with.
+// stay where it was measured. The rotation is done here because the day the report states is
+// the local day of the machine serving it, the one its system is set to, whatever zone the
+// state was written on. A day whose offset is not a whole number of slots starts in the slot
+// that holds its midnight, which is the one the array begins with.
 func (s *Storage) Floors() []uint16 {
 	if s == nil {
 		return nil
