@@ -45,7 +45,7 @@ func urlTestObjective(options option.ProviderURLTestOptions) (string, error) {
 		)
 	}
 	if options.Objective == "" {
-		return selection.ObjectiveQuick, nil
+		return selection.ObjectiveIdle, nil
 	}
 	return options.Objective, nil
 }
