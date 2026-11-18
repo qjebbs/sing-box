@@ -18,7 +18,7 @@ import (
 )
 
 var commandPing = &cobra.Command{
-	Use:   "ping [flags] [tag_or_links]",
+	Use:   "ping [flags] tag_or_links",
 	Short: "Link prober",
 	Long: `sing-box link prober.
 It sends HTTP HEAD requests to the destination via the outbound / outbounds chain,
@@ -29,13 +29,13 @@ The outbounds can be specified by tags (of configuration file) or links.
 Example: 
 
 # ping via the outbound from the configuration file
-> sing-box ping -c conifg.json outbound_tag
+> sing-box tools ping -c config.json outbound_tag
 
 # ping via the outbound from link
-> sing-box ping vmess://...
+> sing-box tools ping vmess://...
 
 # ping via an outbounds chain
-> sing-box ping -c conifg.json outbound_tag vmess://...
+> sing-box tools ping -c config.json entry_tag_or_link exit_tag_or_link
 `,
 }
 
@@ -67,7 +67,7 @@ func init() {
 	// 	})
 	// 	c.Parent().HelpFunc()(c, s)
 	// })
-	mainCommand.AddCommand(commandPing)
+	commandTools.AddCommand(commandPing)
 }
 
 func runPing() (*ping.Statistics, error) {
@@ -95,18 +95,26 @@ func runPing() (*ping.Statistics, error) {
 		if err != nil {
 			return nil, err
 		}
-		o.Outbounds = append(o.Outbounds, linkOutbounds...)
 		options = o
-	} else {
-		options = option.Options{
-			Outbounds: linkOutbounds,
-		}
+	}
+	options.Outbounds = append(options.Outbounds, linkOutbounds...)
+	instance, err := newPreStartedClient(dialOnlyOptions(options))
+	if err != nil {
+		return nil, err
+	}
+	defer instance.Close()
+	for _, provider := range instance.Provider().Providers() {
+		provider.Wait()
+	}
+	dialer, err := createDialer(instance, detour)
+	if err != nil {
+		return nil, err
 	}
 
 	client := &ping.Client{
 		Count:    commandPingFlagCount,
 		Interval: commandPingFlagInteval,
-		Options:  options,
+		Dialer:   dialer,
 	}
 
 	ctx, cancel := context.WithCancel(globalCtx)
@@ -125,10 +133,10 @@ func runPing() (*ping.Statistics, error) {
 	}()
 
 	os.Stdout.WriteString(fmt.Sprintf(
-		"sing-box ping (version %s)\n",
+		"sing-box tools ping (version %s)\n",
 		C.Version,
 	))
-	stat, err := client.Ping(ctx, detour, commandPingFlagDest)
+	stat, err := client.Ping(ctx, commandPingFlagDest)
 	cancel()
 	if err != nil {
 		return nil, err
@@ -143,4 +151,19 @@ rtt min/avg/max = %d/%d/%d ms
 	)
 	os.Stdout.WriteString(statistics)
 	return stat, nil
+}
+
+// dialOnlyOptions returns the options a tool needs to dial. Inbounds, routing and
+// experimental features are dropped: they would bind ports and load rule-sets
+// without changing a single dial.
+func dialOnlyOptions(options option.Options) option.Options {
+	return option.Options{
+		Log: &option.LogOptions{
+			Disabled: true,
+		},
+		HealthChecks: options.HealthChecks,
+		Providers:    options.Providers,
+		Outbounds:    options.Outbounds,
+		Endpoints:    options.Endpoints,
+	}
 }

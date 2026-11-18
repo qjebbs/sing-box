@@ -152,24 +152,16 @@ func runPortProbe(cmd *cobra.Command, args []string) (int, error) {
 // only read when an outbound tag is referenced, so a link-only run stays fast and
 // does not start providers or bind ports.
 func portProbeOptions(requireConfig bool, linkOutbounds []option.Outbound) (option.Options, error) {
-	var configured option.Options
+	var options option.Options
 	if requireConfig {
-		loaded, err := readConfigAndMerge()
+		configured, err := readConfigAndMerge()
 		if err != nil {
 			return option.Options{}, err
 		}
-		configured = loaded
+		options = configured
 	}
-	// Dialing only needs outbounds, so inbounds, routing and experimental
-	// features are dropped: they would bind ports, load rule-sets and slow the
-	// probe down without changing a single dial.
-	return option.Options{
-		Log:          &option.LogOptions{Disabled: true},
-		HealthChecks: configured.HealthChecks,
-		Providers:    configured.Providers,
-		Outbounds:    append(configured.Outbounds, linkOutbounds...),
-		Endpoints:    configured.Endpoints,
-	}, nil
+	options.Outbounds = append(options.Outbounds, linkOutbounds...)
+	return dialOnlyOptions(options), nil
 }
 
 func portProbeExitCode(report *portprobe.Report) int {

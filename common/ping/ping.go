@@ -5,32 +5,21 @@ import (
 	"fmt"
 	"time"
 
-	box "github.com/sagernet/sing-box"
 	"github.com/sagernet/sing-box/common/urltest"
 	C "github.com/sagernet/sing-box/constant"
-	"github.com/sagernet/sing-box/option"
+	N "github.com/sagernet/sing/common/network"
 )
 
 // Client is the ping client
 type Client struct {
 	Count    uint
 	Interval time.Duration
-	Options  option.Options
+	// Dialer is the outbound the requests are sent through.
+	Dialer N.Dialer
 }
 
-// Ping pings the destination
-func (c *Client) Ping(ctx context.Context, tag string, destination string) (*Statistics, error) {
-	instance, err := newInstance(ctx, c.Options)
-	if err != nil {
-		return nil, err
-	}
-	defer instance.Close()
-
-	detour, found := instance.Outbound().Outbound(tag)
-	if !found {
-		return nil, fmt.Errorf("outbound not found: %s", tag)
-	}
-
+// Ping pings the destination through the client dialer
+func (c *Client) Ping(ctx context.Context, destination string) (*Statistics, error) {
 	startAt := time.Now()
 	rtts := make([]uint16, 0)
 	round := uint(0)
@@ -41,7 +30,7 @@ L:
 		go func() {
 			testCtx, cancel := context.WithTimeout(ctx, C.TCPTimeout)
 			defer cancel()
-			delay, err := urltest.URLTest(testCtx, destination, detour)
+			delay, err := urltest.URLTest(testCtx, destination, c.Dialer)
 			if ctx.Err() != nil {
 				// if context is canceled, ignore the test
 				return
@@ -73,33 +62,4 @@ L:
 		}
 	}
 	return getStatistics(startAt, round, rtts), nil
-}
-
-func newInstance(ctx context.Context, options option.Options) (*box.Box, error) {
-	// Pick option sections required for ping.
-	// Inbounds / Experimental are not needed for ping,
-	// they may require extra permission / resources to run,
-	// e.g. tun requires root permission, and clash_api requires a port to listen on.
-	options = option.Options{
-		Log: &option.LogOptions{
-			Disabled: true,
-		},
-		HealthChecks: options.HealthChecks,
-		Providers:    options.Providers,
-		Outbounds:    options.Outbounds,
-		Endpoints:    options.Endpoints,
-	}
-	options.Inbounds = nil
-	instance, err := box.New(box.Options{
-		Context: ctx,
-		Options: options,
-	})
-	if err != nil {
-		return nil, err
-	}
-	err = instance.Start()
-	if err != nil {
-		return nil, err
-	}
-	return instance, nil
 }
