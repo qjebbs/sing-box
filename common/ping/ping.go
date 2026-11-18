@@ -84,9 +84,10 @@ func newInstance(ctx context.Context, options option.Options) (*box.Box, error) 
 		Log: &option.LogOptions{
 			Disabled: true,
 		},
-		Providers: options.Providers,
-		Outbounds: options.Outbounds,
-		Endpoints: options.Endpoints,
+		HealthChecks: options.HealthChecks,
+		Providers:    options.Providers,
+		Outbounds:    options.Outbounds,
+		Endpoints:    options.Endpoints,
 	}
 	options.Inbounds = nil
 	instance, err := box.New(box.Options{
