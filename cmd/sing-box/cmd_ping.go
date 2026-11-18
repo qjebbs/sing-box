@@ -3,14 +3,11 @@ package main
 import (
 	"context"
 	"fmt"
-	"net/url"
 	"os"
 	"os/signal"
-	"strings"
 	"syscall"
 	"time"
 
-	"github.com/sagernet/sing-box/common/link"
 	"github.com/sagernet/sing-box/common/ping"
 	C "github.com/sagernet/sing-box/constant"
 	"github.com/sagernet/sing-box/option"
@@ -77,54 +74,19 @@ func runPing() (*ping.Statistics, error) {
 	if commandPing.Flags().NArg() == 0 {
 		return nil, E.New("no destination specified")
 	}
-	var (
-		tags          []string
-		requireConf   bool
-		linkOutbounds []option.Outbound
-		detour        string
-	)
-	for i, arg := range commandPing.Flags().Args() {
-		uri, err := url.Parse(arg)
-		if err != nil || uri.Scheme == "" {
-			// a tag
-			requireConf = true
-			tags = append(tags, arg)
-			continue
-		}
-		link, err := link.Parse(arg)
-		if err != nil {
-			return nil, err
-		}
-		out, err := link.Outbound(option.ProviderOutboundsOptions{})
-		if err != nil {
-			return nil, err
-		}
-		if out.Tag == "" {
-			out.Tag = fmt.Sprintf("outbound%d", i+1)
-		}
-		tags = append(tags, out.Tag)
-		linkOutbounds = append(linkOutbounds, *out)
-		encoder := json.NewEncoder(os.Stdout)
-		encoder.SetIndent("", "  ")
-		encoder.Encode(out)
-		os.Stdout.WriteString("\n")
+	tags, linkOutbounds, requireConf, err := parseLinkOutbounds(commandPing.Flags().Args())
+	if err != nil {
+		return nil, err
 	}
-	if len(tags) == 1 {
-		detour = tags[0]
-	} else {
-		detour = strings.Join(tags, " => ")
-		chain := option.Outbound{
-			Tag:  detour,
-			Type: C.TypeRelay,
-			Options: &option.RelayOptions{
-				Outbounds: tags,
-			},
-		}
-		encoder := json.NewEncoder(os.Stdout)
-		encoder.SetIndent("", "  ")
-		encoder.Encode(&chain)
+	detour, chain := chainOutbounds(tags)
+	if chain != nil {
+		linkOutbounds = append(linkOutbounds, *chain)
+	}
+	encoder := json.NewEncoder(os.Stdout)
+	encoder.SetIndent("", "  ")
+	for i := range linkOutbounds {
+		encoder.Encode(&linkOutbounds[i])
 		os.Stdout.WriteString("\n")
-		linkOutbounds = append(linkOutbounds, chain)
 	}
 
 	var options option.Options
