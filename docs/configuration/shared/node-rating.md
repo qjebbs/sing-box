@@ -1,6 +1,6 @@
 # Node Rating
 
-### Goals: Absolute Speed and Relative Quality
+## Goals: Absolute Speed and Relative Quality
 
 There are two objectives a group can score a node by:
 
@@ -9,7 +9,7 @@ There are two objectives a group can score a node by:
 
 The units differ, and that matters. `quick` compares actual delay, `idle` compares degradation. Measure degradation with actual delay and a distant node is always at a disadvantage: you end up comparing distance instead of condition. So `idle` uses ratios throughout, and stays independent of distance.
 
-### Statistics: From Successful Checks Only
+## Statistics: From Successful Checks Only
 
 A failed check carries no delay — it says nothing about how fast the node is when it works. Failures and the total count are recorded separately, to decide whether a node qualifies and to price failures for `quick`.
 
@@ -43,7 +43,7 @@ These formulas assume at least two successful checks. With only one, there is no
 - **`BAD`** is **how often** it queues: the share of checks above twice its floor, plus the share of failures. It is compared with its own floor too, so distance does not matter; one extreme check counts once. The failure term is the larger of the measured share and `FAILR`.
 - **`FAILR`** is the **long-run failure rate**. Old records weigh less and less, so it describes how things have been lately; it ignores the window, and a window that happens to be clean does not reset it.
 
-### Scores: Delay and Queueing
+## Scores: Delay and Queueing
 
 The two objectives have different formulas, because a failure sits in a different place in each.
 
@@ -80,13 +80,13 @@ There is a conversion, but a light one: every 10% of `BAD` adds 50ms, so **a 10%
 
 `idle` needs at least two successful checks for both ratios. With only one, `FLOOR` is that check, both ratios are zero, every node ties at the lowest score and the group just picks at random; for that round `idle` falls back to ranking by delay. If every check failed, the successful delay is unknown and both objectives score `TIMEOUT`; if no check has run yet, there is no score.
 
-### Noise: How Uncertain a Score Is
+## Noise: How Uncertain a Score Is
 
 A score comes from a finite number of checks, not from "what this node really is"; when comparing, take the measurement error into account.
 
 Check again and both the score and the ranking can move. Here `n` is the number of successes, while the failure share is over `ALL`.
 
-#### Noise of One Node
+### Noise of One Node
 
 A standard error says how much an estimate usually moves when you measure again. For a mean, the sample standard deviation over `√n` estimates it; for a median, and for anything measured from an estimated centre, the distribution matters too. These are the approximations used here:
 
@@ -104,7 +104,11 @@ The two terms of `quick` are the errors of `MED` and of `JIT`. `idle`'s two term
 
 These estimates assume the checks are independent of each other and that the distribution stays roughly stable within the window; with few samples or a clear trend they can easily be off.
 
-#### The Noise in a Difference
+**The shape of the distribution.** The coefficients above come from a normal approximation, and the measured delays are not normal: skewness is usually 3–4, excess kurtosis in the teens, and the tail is thick and long. The two formulas are therefore only approximations — on this data they overstate the `quick` noise by about 15%, the `idle` noise by about 28%, and the `JIT` term by about 70%.
+
+To avoid assuming a distribution, one can **resample** (bootstrap): draw the window's checks with replacement 128 times, price the whole score on each draw, and take the standard deviation of those 128 scores. Whether that works can be checked by generating data from a known distribution and noise: with the true noise known, the ratio of the resampled estimate to it has a median of 0.8–1.1 across normal, lognormal, exponential, uniform, triangular `f(x)=x`, Cauchy and heavy-tailed mixtures. It costs about 20µs per node per ranking rebuild (about 0.7ms for 35 nodes); the current implementation does not use it and keeps the closed form.
+
+### The Noise in a Difference
 
 If the errors of two nodes are unrelated, the variance of the difference is their sum:
 
@@ -114,7 +118,7 @@ SD(score_node − score_best) ≈ √(SE_node² + SE_best²)
 
 If they share a probe target or a stretch of line, the errors are correlated and a `2·Cov` term belongs in the difference; taking it as zero is a simplification. Note that it is squares added and then rooted — not the two errors added up — and it does not mean the noise is cancelled.
 
-#### Why Noise Cannot Be "Subtracted" from a Score
+### Why Noise Cannot Be "Subtracted" from a Score
 
 Noise says how much an estimate moves; it is not a fixed bias, so there is no general number to subtract from a score. The errors also move in their own ways: those of `MED` and `BAD` shrink with `1/√n`, while `FLOOR` does not move at all within the window. So selection uses a **tolerance band** to absorb the uncertainty instead of deducting from the score.
 
@@ -133,7 +137,7 @@ cut  = score_best + band
 
 Every node scoring at or below `cut` stays a candidate. The more samples, the smaller the `1/√n` term, so `band` comes closer to `tolerance` — but never below it. With fewer than two successes no noise term is added, and `band` is just `tolerance`.
 
-#### Why the `quick` Margin Uses `JIT_best`
+### Why the `quick` Margin Uses `JIT_best`
 
 At comparison time the candidate is unknown, and so is how well it has been measured, so assume it is measured as well as the best one:
 
@@ -147,7 +151,7 @@ Why `JIT_best`:
 - **Not `DEV_best`.** `DEV` is the average deviation, in which one spike only takes its own share; estimating the margin from it would make a node that "stalls once in a while" look steadier than it is. `JIT` is the median deviation, which a few outliers cannot move.
 - **Not the full score noise.** It contains squared deviations, so one slow probe inflates it; widen the band and clearly worse nodes come in too. This is a safe trade, not a mathematical lower bound.
 
-#### Why the `idle` Margin Is Calculated This Way
+### Why the `idle` Margin Is Calculated This Way
 
 `idle` scores two terms, but only the depth decides how wide the band is.
 
@@ -190,7 +194,7 @@ For `idle`, the `SE` estimates the error of `PRES` from the full `sd(x)`, while 
 
 Connection retention and node selection are two separate decisions: one decides whether to cut existing connections, the other which nodes new connections may use.
 
-### Design Choice: Why Not Rank by Standard Deviation
+## Design Choice: Why Not Rank by Standard Deviation
 
 The sample standard deviation is the usual measure of spread, but it does not work as a node's variation score, for three reasons:
 
@@ -204,7 +208,7 @@ Both ratios of `idle` are linear or counted, with no squares: `PRES` is a ratio,
 
 The standard deviation is not banished: `quick` still uses it to estimate score noise, it just is not the ranking score itself.
 
-### Design Choice: Why Trends Are Not Part of the Score
+## Design Choice: Why Trends Are Not Part of the Score
 
 The samples in a window have an order, yet none of the statistics above look at it: shuffle them however you like and `MED`, `PRES`, `BAD`, `JIT` and `DEV` come out the same. So a node that has been getting worse for ten minutes reads exactly like a node that has always been that way, as long as the distribution matches.
 
@@ -216,7 +220,7 @@ It also has to be used with care: at `sampling` 10, two bad samples in a row can
 
 Window length is the same trade: while the delay distribution holds roughly steady, a longer window is smoother and less noisy; but old samples weigh more, and the score follows a node that changes more slowly. A shorter window follows faster and is more easily pushed around by chance. Less noise and keeping up with change are the two ends of one choice of window.
 
-### Design Choice: Why the Baseline Is a Ring of Slots
+## Design Choice: Why the Baseline Is a Ring of Slots
 
 The baseline records "the best this node ever looks like", and it is pulled by two opposing demands: **it must remember long enough**, because idle time only appears at the daily trough and too short a memory takes a congested level for an idle one; **and it must forget**, because a node with the same name may have a new line or a new machine, and the old baseline is then simply wrong.
 
@@ -236,7 +240,7 @@ The number of slots sets the time resolution, and how many probes each slot hold
 
 **The cost.** The floor is a minimum of per-slot minima — still a minimum, so it leans towards the most optimistic reading. That matches its purpose (an idle level is exactly what is wanted), but it means that once in a while a lucky probe lowers the floor slightly and every node's `PRES` reads a little higher, see [Derivations](#derivations). The bias is **the same for everyone** and does not change the ranking; it only moves how strict `tolerance` is.
 
-#### Updating, Expiring, Starting Up
+### Updating, Expiring, Starting Up
 
 **Updating.** Each round writes the slots first and computes scores after, so the round takes effect immediately:
 
@@ -255,7 +259,7 @@ Writing first does not zero the score: a slot holds a minimum, so after the writ
 
 **Starting up.** The first round writes its fastest check, so `FLOOR` is `MIN` from the start and needs no fallback. The floor then fills one slot at a time and takes 24 hours to cover a day. With the cache file on, a restart carries on with the whole day of slots and the long-run failure rate; without it (not enabled, the target or path changed, the record expired) a restart starts from zero as it always did. While it fills, each slot covers fewer times of day and the floor tends to read high — the cost of forgetting old data; the ranking still works, see [Why Both Parts Are Ratios](#design-choice-why-both-parts-are-ratios).
 
-### Design Choice: Why Only the Floor and the Failure Rate Are Cached
+## Design Choice: Why Only the Floor and the Failure Rate Are Cached
 
 Only two pieces of state live outside the window: the baseline and the long-run failure rate. The window holds `sampling` checks (`sampling × interval`), while one of them looks back 24 hours and the other `τ = 45` minutes. A restart is therefore very lopsided: the window rebuilds in minutes, `FLOOR` waits for the next daily trough, and `FAILR` has no evidence until the node **fails again**.
 
@@ -265,7 +269,7 @@ The samples of the window are not kept — twenty minutes rebuilds them, while h
 
 A record only matters for 24 hours, which is how long the floor lives; records older than that are dropped, so a node that is no longer checked does not hold a place forever.
 
-### Design Choice: Why the Threshold Is Two and the Weight Is 0.5
+## Design Choice: Why the Threshold Is Two and the Weight Is 0.5
 
 `BAD` counts a check as bad when it is twice as slow as the node's own best, and the weight `0.5` puts a node that doubles every time at 500 on the scale. Neither number was fitted; each has its own reason.
 
@@ -285,7 +289,7 @@ The two parts **have to stay separate**, because they catch different faults:
 
 Keep only one of them and the other kind of fault slips through.
 
-### Design Choice: Why Both Parts Are Ratios
+## Design Choice: Why Both Parts Are Ratios
 
 `idle` answers "how far is this node from its own best", and "how far" can be written two ways: as a difference (`MED − FLOOR`) or as a ratio (`(MED − FLOOR) / FLOOR`). The ratio is not a preference; it is the only form that removes distance.
 
@@ -297,7 +301,9 @@ The ranking only moves when the floors of **different nodes** are off by disprop
 
 **Where the limit is.** The more the floor errs, the worse the ratio form fares: once the denominator is inflated by noise enough, it is no better than the difference. A new machine or a new line invalidates an old floor outright, and that is exactly what the 24 hour ring handles. One coupling is worth noting: a node that varies more has its floor pushed lower and its `PRES` lifted — variation is itself a fault, so the direction agrees with the intent, but it means `PRES` carries some variation information and overlaps with `BAD`. The overlap points the same way, so a quiet node never gains by looking variable.
 
-### Derivations
+## Derivations
+
+### Noise Formula Derivations
 
 This section explains the formulas, constants and assumptions behind the noise estimates. First, the notation:
 
@@ -460,7 +466,7 @@ SD(D)  ≈ √(SE_node² + SE_best²)
 
 `score_node` and `score_best` are already fixed values in the current window; calling them random quantities is asking "if this were measured again, how far apart could they be".
 
-#### The Long-Run Failure Rate
+### The Long-Run Failure Rate
 
 `max_fail` defaults to `0`, so only nodes with no failure in the current window become candidates. That makes `FAIL / ALL` zero in both score formulas: the failure term only acts after a node has been excluded, and says nothing about the risk a candidate still carries.
 
@@ -513,7 +519,7 @@ The table assumes enough history before it, so the prior has long faded: the fir
 
 **How many checks it is worth.** The weights sum to `1/(1 − c) ≈ τ/Δt`, so it is roughly worth the last `τ/Δt` checks: about 45 at a `1m` interval, 22 at `2m`, 9 at `5m`. The longer the interval, the fewer checks the same `τ` covers and the coarser the estimate, so `τ` cannot be too short.
 
-### Debugging
+## Debugging
 
 To check these estimates against your own lines and load, ask the API directly (URL-encode the group name if it is not ASCII):
 
