@@ -72,6 +72,19 @@ func NewNode(
 	}
 }
 
+// String returns the head of a node line: the node itself and the measurements every
+// objective is read with, whatever it ranks by.
+//
+// LAST and MED are those. Every objective falls back to a worse class of node when the
+// better one is gone, and the latest delay is what says how the node is doing now, while
+// the median is what the limit max_rtt is compared with. The average is not printed: a
+// single spike moves it, so it says less about what the node usually costs.
+//
+// The failures are the third measurement every objective is read with, but they are read
+// outside the score, see nodeLine, so they end the line instead of opening it. What an
+// objective reads beyond these is appended by the objective itself, see Printer: the line
+// is read at a glance, so a statistic no decision is made on is left out rather than
+// crowded in.
 func (n *Node) String() string {
 	if n == nil {
 		return "nil"
@@ -80,35 +93,41 @@ func (n *Node) String() string {
 	if n.Outbound != nil {
 		tag = n.Outbound.Tag()
 	}
-	// The average is not printed: the median is the typical delay, and the average is
-	// moved by a single spike, so it says less about what the node usually costs.
-	//
-	// The two spreads are the same distances measured two ways, and each objective ranks
-	// by one of them: JIT is what a node typically costs on top of its median, DEV is what
-	// it strayed from it in total. LAST and MED come first because they are what was
-	// measured, the spreads are worked out from them.
 	return fmt.Sprintf(
-		"#%d %s [%s] LAST=%s MED=%s FLOOR=%s JIT=%s DEV=%s FAIL=%d/%d",
-		n.Index, n.Status, tag,
-		n.latestString(), n.medianString(), n.floorString(), n.jitterString(), n.meanDeviationString(),
-		n.Fail, n.All,
+		"#%d %s [%s] LAST=%s MED=%s",
+		n.Index, n.Status, tag, n.latestString(), n.medianString(),
 	)
 }
 
-// nodeLine returns the line of a node: its statistics and, when the objective scores the
-// nodes, its score.
+// countString returns a count of checks against all of them, e.g. the failure record of
+// the node.
+func (n *Node) countString(count int) string {
+	return fmt.Sprintf("%d/%d", count, n.All)
+}
+
+// nodeLine returns the line of a node: the measurements every objective is read with, the
+// ones this objective reads on its own, the score when the objective has one, and the
+// failures.
 func nodeLine(objective Objective, node *Node) string {
 	line := node.String()
-	scorer, isScorer := objective.(Scorer)
-	if !isScorer {
-		return line
+	if printer, isPrinter := objective.(Printer); isPrinter {
+		if stats := printer.PrintStats(node); stats != "" {
+			line += " " + stats
+		}
 	}
-	if score := scorer.Score(node); score != healthcheck.Failed {
-		return line + " SCORE=" + score.String()
+	if scorer, isScorer := objective.(Scorer); isScorer {
+		if score := scorer.Score(node); score != healthcheck.Failed {
+			line += " SCORE=" + score.String()
+		} else {
+			// healthcheck.Failed means there is no score to show, printing 0ms would read
+			// as the best possible result.
+			line += " SCORE=None"
+		}
 	}
-	// healthcheck.Failed means there is no score to show, printing 0ms would read as the
-	// best possible result.
-	return line + " SCORE=None"
+	// The failures are not part of any score: they are what max_fail is compared with, and
+	// what a fallback class is read from when the better one is gone. They come last so
+	// that the numbers a node is ranked by stay together.
+	return line + " FAIL=" + node.countString(node.Fail)
 }
 
 // selectedMark is appended to the line of a node the selection returned.
@@ -133,22 +152,14 @@ func NodeLines(objective Objective, ranked, selected []*Node) []string {
 	return lines
 }
 
-// jitterString returns the jitter to show. A node that never worked has no stability
+// jitterString returns the jitter to show, the statistic quick adds to the median and the
+// one both score objectives size their band by. A node that never worked has no stability
 // to speak of: the zero of a missing value reads as the best possible result.
 func (n *Node) jitterString() string {
 	if n.Stats.Succeeded() == 0 {
 		return "None"
 	}
 	return n.formatRTT(n.Jitter)
-}
-
-// meanDeviationString returns the mean deviation to show. Like the jitter, it describes
-// how much the node varied, so a node that never worked has nothing to say.
-func (n *Node) meanDeviationString() string {
-	if n.Stats.Succeeded() == 0 {
-		return "None"
-	}
-	return n.formatRTT(n.MeanDeviation)
 }
 
 // medianString returns the median to show, there is none without a successful check.
@@ -159,8 +170,8 @@ func (n *Node) medianString() string {
 	return n.formatRTT(n.Median)
 }
 
-// floorString is the fastest the node has been, the reference idle measures against. It is
-// printed before the spreads because it is a measurement, not one worked out from them.
+// floorString is the fastest the node has been, the reference idle measures against, and
+// the only measurement of a node that outlives its window.
 func (n *Node) floorString() string {
 	if n.Stats.Floor == 0 {
 		return "None"

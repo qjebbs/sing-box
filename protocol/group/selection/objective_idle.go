@@ -2,6 +2,7 @@ package selection
 
 import (
 	"math"
+	"strconv"
 
 	"github.com/sagernet/sing-box/common/healthcheck"
 	"github.com/sagernet/sing-box/option"
@@ -95,6 +96,25 @@ func IdleTerms(node *Node) (pressure float32, badShare float32) {
 	return float32(idlePressure(node)), float32(idleBadShare(node))
 }
 
+// idleStats is what idle reads beyond the statistics every objective shares, see Printer:
+// the floor the queueing is measured against, the jitter its band is sized by, and how
+// often the checks fell short.
+//
+// The share is the one the score counts, see idleBadShare: the bad checks of the window
+// plus the failed ones, or the long-run failure rate where that is larger. It is printed
+// as a share rather than as a count because that is what the score reads, and because the
+// failures the node's record remembers are not in the window: no count of the window could
+// state them.
+func idleStats(node *Node) string {
+	return "JIT=" + node.jitterString() + " FLOOR=" + node.floorString() + " BAD=" + idleBadShareString(node)
+}
+
+// idleBadShareString returns the share of idleBadShare as a percentage, the form in which
+// a share of the checks is compared from one node to the next.
+func idleBadShareString(node *Node) string {
+	return strconv.FormatFloat(idleBadShare(node)*100, 'f', 0, 64) + "%"
+}
+
 // idleNoise is the scale one round of the score can be off by, see band: the error of the
 // depth term, which is the error of a median divided by the floor. The frequency term is
 // left out on purpose, see NewIdleObjective.
@@ -161,5 +181,6 @@ func NewIdleObjective(options option.LoadBalancePickOptions) *ScoreObjective {
 	objective.scoreFunc = idleScore
 	objective.noiseFunc = idleNoise
 	objective.errorFunc = idleError
+	objective.statsFunc = idleStats
 	return objective
 }

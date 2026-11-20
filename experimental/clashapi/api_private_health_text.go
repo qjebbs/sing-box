@@ -70,9 +70,9 @@ type HealthTextReport struct {
 	// Summary states the selection, e.g.
 	// "quick/single, 36 nodes, tolerance 50ms, band 54ms".
 	Summary string `json:"summary"`
-	// Nodes is one line per node, in the order of the ranking, e.g.
-	// "#21 OK [tag] LAST=172ms MED=171ms JIT=4ms DEV=157ms FAIL=0/10 SCORE=175ms".
-	// The nodes the selection returned are marked with a trailing " SELECTED".
+	// Nodes is one line per node, in the order of the ranking. A line states the
+	// measurements, the statistics the objective ranks by and its score, and ends with
+	// "SELECTED" for a node the selection returned.
 	Nodes []string `json:"nodes"`
 }
 

@@ -141,3 +141,17 @@ type Keeper interface {
 	// best to keep its existing connections. See ScoreObjective.Keep.
 	Keep(node *Node, best *Node) bool
 }
+
+// Printer is an optional interface for objectives that are read with statistics of their
+// own: it states the ones the line of a node shows after the statistics every objective
+// shares, see Node.String.
+//
+// A line that states everything a node has is a line that states nothing: the reader is
+// left to work out which of the numbers the objective was decided on, and the numbers that
+// are never read push out the ones that are. Each objective therefore prints what it ranks
+// by, and an objective that ranks nothing beyond the shared statistics is not a Printer.
+type Printer interface {
+	// PrintStats returns the statistics of the node this objective reads, in the order it
+	// reads them, e.g. "JIT=57ms", empty when it reads none.
+	PrintStats(node *Node) string
+}

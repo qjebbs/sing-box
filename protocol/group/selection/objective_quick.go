@@ -28,6 +28,14 @@ func quickScore(node *Node) healthcheck.RTT {
 	return node.Stats.Cost(medianRTT(node), jitterRTT(node))
 }
 
+// quickStats is what quick reads beyond the statistics every objective shares, see
+// Printer: the jitter, the second half of its score and the scale its band is sized by.
+// The median and the failures are part of that shared line, and the mean deviation is not
+// printed: it is the same distances as the jitter, read in total, and nothing ranks by it.
+func quickStats(node *Node) string {
+	return "JIT=" + node.jitterString()
+}
+
 // quickError is the error of quickScore: the median and the jitter are two estimates of
 // the same samples, each with its own error, combined by their variance.
 func quickError(node *Node) float64 {
@@ -48,5 +56,6 @@ func NewQuickObjective(options option.LoadBalancePickOptions) *ScoreObjective {
 	objective.scoreFunc = quickScore
 	objective.noiseFunc = jitterRTT
 	objective.errorFunc = quickError
+	objective.statsFunc = quickStats
 	return objective
 }

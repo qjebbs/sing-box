@@ -14,6 +14,7 @@ var (
 	_ Bander    = (*ScoreObjective)(nil)
 	_ Keeper    = (*ScoreObjective)(nil)
 	_ Clusterer = (*ScoreObjective)(nil)
+	_ Printer   = (*ScoreObjective)(nil)
 )
 
 const (
@@ -57,11 +58,19 @@ type ScoreObjective struct {
 	// errorFunc is the standard error of scoreFunc, i.e. how wrong the score of a known
 	// node may be, see scoreStandardError and Keep.
 	errorFunc func(node *Node) float64
+	// statsFunc is what the objective reads beyond the statistics every objective shares,
+	// see Printer.
+	statsFunc func(node *Node) string
 }
 
 // Name implements Objective.
 func (o *ScoreObjective) Name() string {
 	return o.name
+}
+
+// PrintStats implements Printer.
+func (o *ScoreObjective) PrintStats(node *Node) string {
+	return o.statsFunc(node)
 }
 
 func meanDeviationRTT(node *Node) healthcheck.RTT {
