@@ -7,6 +7,7 @@ import (
 	"strconv"
 
 	"github.com/sagernet/sing-box/adapter"
+	"github.com/sagernet/sing-box/common/healthcheck"
 	"github.com/sagernet/sing/common"
 )
 
@@ -107,6 +108,11 @@ func (s *Single) Select(ranked []*Node, previous string) ([]*Node, string) {
 	}
 	if previous != "" && previous != best.Tag() {
 		limit := bander.Limit(best)
+		if limit == healthcheck.Failed {
+			// The best node has no score, so the group has no band: a node is not kept on
+			// a comparison with a value that does not exist.
+			return []*Node{best}, best.Tag()
+		}
 		for _, node := range ranked {
 			if node.Tag() != previous {
 				continue

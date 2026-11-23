@@ -261,6 +261,11 @@ func SelectCluster(
 // then the spread the standard error is made of, then the variation the node cost in
 // total, then how far it is above its own floor, then how evenly that variation spreads
 // over the checks.
+//
+// The record of the node comes last of the measurements, and it is the one that decides a
+// window that holds nothing: a node not checked yet has none of the statistics above, and
+// an equal value is then an absent one, so without it the group would take the head of the
+// list at random and could hand the connections to the node its record says never answered.
 func SortByLeast(nodes []*Node, rttFunc func(*Node) healthcheck.RTT) {
 	sort.Slice(nodes, func(i, j int) bool {
 		left := nodes[i]
@@ -278,6 +283,13 @@ func SortByLeast(nodes []*Node, rttFunc func(*Node) healthcheck.RTT) {
 			if less, decided := lessRTT(statistic(left), statistic(right)); decided {
 				return less
 			}
+		}
+		// The share of the attempts that failed, which the scores are priced by and which
+		// outlives the window. It is what a node is known by when nothing is measured: with
+		// no window at all every statistic above is absent, and only the record is left to
+		// tell the nodes apart.
+		if leftShare, rightShare := left.FailureShare(), right.FailureShare(); leftShare != rightShare {
+			return leftShare < rightShare
 		}
 		if left.Fail != right.Fail {
 			return left.Fail < right.Fail

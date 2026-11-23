@@ -36,7 +36,7 @@ var (
 // the selection, which would then have to break the tie itself.
 var urlTestObjectives = []string{selection.ObjectiveQuick, selection.ObjectiveIdle}
 
-// urlTestObjective validates the configured objective and returns it, defaulting to quick.
+// urlTestObjective validates the configured objective and returns it, defaulting to idle.
 func urlTestObjective(options option.ProviderURLTestOptions) (string, error) {
 	if options.Objective != "" && !slices.Contains(urlTestObjectives, options.Objective) {
 		return "", E.New(

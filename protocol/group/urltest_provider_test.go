@@ -16,7 +16,7 @@ func TestURLTestObjective(t *testing.T) {
 		want    string
 		wantErr bool
 	}{
-		{name: "default", options: option.ProviderURLTestOptions{}, want: "quick"},
+		{name: "default", options: option.ProviderURLTestOptions{}, want: "idle"},
 		{name: "quick", options: option.ProviderURLTestOptions{Objective: "quick"}, want: "quick"},
 		{name: "idle", options: option.ProviderURLTestOptions{Objective: "idle"}, want: "idle"},
 		// only the least* objectives limit the pick to max_nodes, the others would use
@@ -29,7 +29,7 @@ func TestURLTestObjective(t *testing.T) {
 		{
 			name:    "tolerance on the default",
 			options: option.ProviderURLTestOptions{Tolerance: badoption.Duration(50 * time.Millisecond)},
-			want:    "quick",
+			want:    "idle",
 		},
 		{
 			name: "tolerance on quick",

@@ -106,7 +106,7 @@ func IdleTerms(node *Node) (pressure float32, badShare float32) {
 // failures the node's record remembers are not in the window: no count of the window could
 // state them.
 func idleStats(node *Node) string {
-	return "JIT=" + node.jitterString() + " FLOOR=" + node.floorString() + " BAD=" + idleBadShareString(node)
+	return "FLOOR=" + node.floorString() + " JIT=" + node.jitterString() + " BAD=" + idleBadShareString(node)
 }
 
 // idleBadShareString returns the share of idleBadShare as a percentage, the form in which

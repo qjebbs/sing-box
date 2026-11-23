@@ -78,7 +78,7 @@ The same `50ms` means "not worth switching for that little" in both. Logs and re
 
 There is a conversion, but a light one: every 10% of `BAD` adds 50ms, so **a 10% failure rate is worth roughly 5% of constant queueing**. That is far lighter than the three-times penalty of `quick` — for `quick` the score *is* a delay, and a failure not priced at the timeout is drowned out; for `idle` the score is a ratio, and "failed once" and "was slow once" are the same kind of thing, so counting it once is enough.
 
-`idle` needs at least two successful checks for both ratios. With only one, `FLOOR` is that check, both ratios are zero, every node ties at the lowest score and the group just picks at random; for that round `idle` falls back to ranking by delay. If every check failed, the successful delay is unknown and both objectives score `TIMEOUT`; if no check has run yet, there is no score.
+`idle` needs at least two successful checks for both ratios. With only one, `FLOOR` is that check, both ratios are zero, every node ties at the lowest score and the group just picks at random; for that round `idle` falls back to ranking by delay. If every check failed, the successful delay is unknown and both objectives score `TIMEOUT`; if no check has run yet, there is no score. Among nodes of one status, a node without a score ranks after the nodes that have one, and the nodes without one are ordered by their failure record: with nothing measured, the record is the only thing that is known, so a node whose record says it never answered is not picked ahead of one nothing is known about.
 
 ## Noise: How Uncertain a Score Is
 
@@ -190,7 +190,7 @@ For `idle`, the `SE` estimates the error of `PRES` from the full `sd(x)`, while 
 
 #### Single-Node Selection in `urltest`
 
-`urltest` picks one node at a time and has no connection retention on top, so hysteresis goes straight into the selection: the node in use is kept while its score is no more than `Limit(best)`, which tolerates at most **one band**.
+`urltest` picks one node at a time and has no connection retention on top, so hysteresis goes straight into the selection: the node in use is kept while its score is no more than `Limit(best)`, which tolerates at most **one band**. When the best node has no score yet there is no band at all, and the node in use is not kept: a comparison with a missing value would keep whatever was chosen before, including a node whose record says it fails.
 
 Connection retention and node selection are two separate decisions: one decides whether to cut existing connections, the other which nodes new connections may use.
 
