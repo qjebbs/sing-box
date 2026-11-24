@@ -165,12 +165,13 @@ func (r *Router) routeConnection(ctx context.Context, conn net.Conn, metadata ad
 	}
 	ctx = interrupt.ContextWithIsExternalConnection(ctx, true)
 	if outboundHandler, isHandler := selectedOutbound.(adapter.ConnectionHandler); isHandler {
+		// The handler carries the connection itself, so the chain is complete here.
+		chain.Seal()
 		outboundHandler.NewConnection(ctx, conn, metadata, onClose)
 		return nil
 	}
 	r.connection.NewConnection(ctx, selectedOutbound, conn, metadata, onClose)
-	// The dial is over, so the outbounds that carried the connection have recorded
-	// themselves: this is the whole chain, as it is reported by the APIs.
+	// The chain is sealed by the connection manager once the dial is over.
 	r.logChain(ctx, chain)
 	return nil
 }
@@ -320,10 +321,13 @@ func (r *Router) routePacketConnection(ctx context.Context, conn N.PacketConn, m
 	}
 	ctx = interrupt.ContextWithIsExternalConnection(ctx, true)
 	if outboundHandler, isHandler := selectedOutbound.(adapter.PacketConnectionHandler); isHandler {
+		// The handler carries the connection itself, so the chain is complete here.
+		chain.Seal()
 		outboundHandler.NewPacketConnection(ctx, conn, metadata, onClose)
 		return nil
 	}
 	r.connection.NewPacketConnection(ctx, selectedOutbound, conn, metadata, onClose)
+	// The chain is sealed by the connection manager once the dial is over.
 	r.logChain(ctx, chain)
 	return nil
 }
@@ -538,6 +542,9 @@ func (r *Router) preMatchFlow(ctx context.Context, metadata *adapter.InboundCont
 	}
 	connectionChain := adapter.NewOutboundChain()
 	connectionChain.Set(chain)
+	// A flow is not dialed by the router, its node is the one resolved for it: the chain is
+	// complete before the flow starts.
+	connectionChain.Seal()
 	ctx = adapter.WithOutboundChain(ctx, connectionChain)
 	metadataCopy := *metadata
 	result.NewTracker = func() tun.FlowTracker {

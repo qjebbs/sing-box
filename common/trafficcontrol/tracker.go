@@ -28,7 +28,7 @@ type TrackerMetadata struct {
 	OutboundType string
 
 	// chain is the one the connection records into, see adapter.OutboundChain: it is filled
-	// while the connection is dialed, after the connection is tracked.
+	// while the connection is dialed, before the connection is tracked.
 	chain *adapter.OutboundChain
 }
 
@@ -45,7 +45,7 @@ func (m *Manager) RoutedConnection(ctx context.Context, conn net.Conn, metadata 
 		metadata:     m.newTrackerMetadata(ctx, metadata, matchedRule, matchOutbound, upload, download),
 		manager:      m,
 	}
-	m.join(tracker)
+	m.trackWhenSealed(tracker)
 	return tracker
 }
 
@@ -57,7 +57,7 @@ func (m *Manager) RoutedPacketConnection(ctx context.Context, conn N.PacketConn,
 		metadata:   m.newTrackerMetadata(ctx, metadata, matchedRule, matchOutbound, upload, download),
 		manager:    m,
 	}
-	m.join(tracker)
+	m.trackWhenSealed(tracker)
 	return tracker
 }
 
@@ -81,9 +81,8 @@ func (m *Manager) newTrackerMetadata(ctx context.Context, metadata adapter.Inbou
 	}
 }
 
-// fillChain reads the chain the connection is carried with. The outbound that carries it
-// records the chain when it dials, which happens after the connection is tracked, so it
-// is filled when the connection is read rather than when it is tracked.
+// fillChain reads the chain the connection is carried with, which the outbounds recorded
+// while they dialed.
 func (t *TrackerMetadata) fillChain() {
 	outbounds := t.chain.Outbounds()
 	if len(outbounds) == 0 {

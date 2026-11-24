@@ -76,6 +76,21 @@ func (m *Manager) UnSubscribeEvents(subscription observable.Subscription[Connect
 	m.eventObserver.UnSubscribe(subscription)
 }
 
+// trackWhenSealed tracks the connection once its chain is sealed, which the outbound that
+// carries it does when the dial is over. A connection that is still being dialed has no
+// chain to report and no traffic to count, so it is not tracked at all.
+func (m *Manager) trackWhenSealed(tracker Tracker) {
+	chain := tracker.Metadata().chain
+	if chain == nil {
+		// Nothing records the chain of this connection, so nothing would signal either.
+		m.join(tracker)
+		return
+	}
+	chain.WhenSealed(func() {
+		m.join(tracker)
+	})
+}
+
 func (m *Manager) join(tracker Tracker) {
 	metadata := tracker.Metadata()
 	m.connections.Store(metadata.ID, tracker)

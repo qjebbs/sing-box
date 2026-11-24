@@ -18,11 +18,62 @@ import (
 type OutboundChain struct {
 	access    sync.Mutex
 	outbounds []Outbound
+	sealed    bool
+	onSeal    []func()
 }
 
 // NewOutboundChain returns an empty chain.
 func NewOutboundChain() *OutboundChain {
 	return &OutboundChain{}
+}
+
+// WhenSealed calls f once the chain is sealed, right away when it already is. It is how a
+// connection is reported, see trafficcontrol.Manager: a connection is only tracked once the
+// evidence of what carries it is complete.
+func (c *OutboundChain) WhenSealed(f func()) {
+	if c == nil {
+		return
+	}
+	c.access.Lock()
+	if c.sealed {
+		c.access.Unlock()
+		f()
+		return
+	}
+	c.onSeal = append(c.onSeal, f)
+	c.access.Unlock()
+}
+
+// Seal marks the chain as complete: the connection is dialed, so the outbounds that carry
+// it have recorded themselves. A connection that is still being dialed holds only a part of
+// the path, and it is not tracked until then, see WhenSealed.
+func (c *OutboundChain) Seal() {
+	if c == nil {
+		return
+	}
+	c.access.Lock()
+	if c.sealed {
+		c.access.Unlock()
+		return
+	}
+	c.sealed = true
+	callbacks := c.onSeal
+	c.onSeal = nil
+	c.access.Unlock()
+	// The callbacks read the chain back, so they are called once the lock is released.
+	for _, callback := range callbacks {
+		callback()
+	}
+}
+
+// Sealed reports whether the chain is complete, see Seal.
+func (c *OutboundChain) Sealed() bool {
+	if c == nil {
+		return false
+	}
+	c.access.Lock()
+	defer c.access.Unlock()
+	return c.sealed
 }
 
 // Set replaces the chain, in the order the outbounds are entered.

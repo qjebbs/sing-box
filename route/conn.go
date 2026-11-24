@@ -128,6 +128,9 @@ func (m *ConnectionManager) NewConnection(ctx context.Context, this N.Dialer, co
 		m.logger.ErrorContext(ctx, err)
 		return
 	}
+	// The dial is over, so the outbounds that carry the connection have recorded themselves:
+	// this is the whole chain, and the connection is tracked from here, see trafficcontrol.
+	adapter.OutboundChainFrom(ctx).Seal()
 	err = N.ReportConnHandshakeSuccess(conn, remoteConn)
 	if err != nil {
 		err = E.Cause(err, "report handshake success")
@@ -234,6 +237,9 @@ func (m *ConnectionManager) NewPacketConnection(ctx context.Context, this N.Dial
 			return
 		}
 	}
+	// The connection is carried, so the outbounds have recorded themselves: this is the whole
+	// chain, and the connection is tracked from here, see trafficcontrol.
+	adapter.OutboundChainFrom(ctx).Seal()
 	err = N.ReportPacketConnHandshakeSuccess(conn, remotePacketConn)
 	if err != nil {
 		err = E.Cause(err, "report handshake success")
