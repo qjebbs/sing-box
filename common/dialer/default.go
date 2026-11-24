@@ -531,7 +531,7 @@ func (d *DefaultDialer) dialAttribution(ctx context.Context, destination M.Socks
 	}
 	attribution.Rule = metadata.RouteRule
 	attribution.Outbound = metadata.Outbound
-	attribution.Chain = common.Map(metadata.OutboundChain, adapter.Outbound.Tag)
+	attribution.Chain = adapter.OutboundChainFrom(ctx).Tags()
 	slices.Reverse(attribution.Chain)
 	if d.outboundManager != nil {
 		if metadata.Outbound != "" {

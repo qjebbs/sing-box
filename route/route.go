@@ -3,7 +3,6 @@ package route
 import (
 	"context"
 	"errors"
-	"io"
 	"net"
 	"net/netip"
 	"strings"
@@ -148,11 +147,6 @@ func (r *Router) routeConnection(ctx context.Context, conn net.Conn, metadata ad
 	if selectedRule == nil {
 		selectedOutbound = r.outbound.Default()
 	}
-	chain, err := resolveOutbound(selectedOutbound, N.NetworkTCP)
-	if err != nil {
-		buf.ReleaseMulti(buffers)
-		return err
-	}
 	for _, buffer := range buffers {
 		conn = bufio.NewCachedConn(conn, buffer)
 	}
@@ -160,29 +154,42 @@ func (r *Router) routeConnection(ctx context.Context, conn net.Conn, metadata ad
 		metadata.RouteRule = selectedRule.String()
 	}
 	metadata.RouteOutbound = selectedOutbound.Tag()
-	metadata.OutboundChain = chain
+	// The outbound the connection is routed to starts the chain, and the outbounds it passes
+	// through record the rest of it while they dial: a group records the node it picks, a
+	// relay records its hops.
+	chain := adapter.NewOutboundChain()
+	chain.Append(selectedOutbound)
+	ctx = adapter.WithOutboundChain(ctx, chain)
 	for _, tracker := range r.trackers {
 		conn = tracker.RoutedConnection(ctx, conn, metadata, selectedRule, selectedOutbound)
 	}
 	ctx = interrupt.ContextWithIsExternalConnection(ctx, true)
-	onClose = registerInterrupt(chain, conn, onClose)
-	outbound := chain[len(chain)-1]
-	if outboundHandler, isHandler := outbound.(adapter.ConnectionHandler); isHandler {
+	if outboundHandler, isHandler := selectedOutbound.(adapter.ConnectionHandler); isHandler {
 		outboundHandler.NewConnection(ctx, conn, metadata, onClose)
-	} else {
-		r.connection.NewConnection(ctx, outbound, conn, metadata, onClose)
+		return nil
 	}
+	r.connection.NewConnection(ctx, selectedOutbound, conn, metadata, onClose)
+	// The dial is over, so the outbounds that carried the connection have recorded
+	// themselves: this is the whole chain, as it is reported by the APIs.
+	r.logChain(ctx, chain)
 	return nil
 }
 
-func resolveOutbound(outbound adapter.Outbound, network string) ([]adapter.Outbound, error) {
+func resolveOutbound(outbound adapter.Outbound, network string, metadata *adapter.InboundContext) ([]adapter.Outbound, error) {
 	chain := []adapter.Outbound{outbound}
 	for {
 		group, isGroup := outbound.(adapter.OutboundGroup)
 		if !isGroup {
 			break
 		}
-		outbound = group.Selected(network)
+		// The pick is made with the metadata of the connection being resolved: a
+		// strategy that reads where the connection goes is only right with it, and the
+		// selection the group reports is not a pick.
+		if picker, isPicker := group.(adapter.OutboundPicker); isPicker {
+			outbound = picker.PickOutbound(network, metadata)
+		} else {
+			outbound = group.Selected(network)
+		}
 		if outbound == nil {
 			return nil, E.New(strings.ToUpper(network), " is not supported by outbound: ", group.Tag())
 		}
@@ -192,28 +199,6 @@ func resolveOutbound(outbound adapter.Outbound, network string) ([]adapter.Outbo
 		return nil, E.New(strings.ToUpper(network), " is not supported by outbound: ", outbound.Tag())
 	}
 	return chain, nil
-}
-
-func registerInterrupt(chain []adapter.Outbound, closer io.Closer, onClose N.CloseHandlerFunc) N.CloseHandlerFunc {
-	var removers []func()
-	// The chain ends at the outbound that dials, so the group binds the connection to
-	// the node it actually uses: a member that is a group resolves to the same one.
-	nodeTag := chain[len(chain)-1].Tag()
-	for _, outbound := range chain {
-		group, isGroup := outbound.(adapter.OutboundGroup)
-		if !isGroup {
-			continue
-		}
-		removers = append(removers, group.AttachConnection(closer, nodeTag))
-	}
-	if len(removers) == 0 {
-		return onClose
-	}
-	return N.AppendClose(onClose, func(it error) {
-		for _, remove := range removers {
-			remove()
-		}
-	})
 }
 
 func (r *Router) RoutePacketConnection(ctx context.Context, conn N.PacketConn, metadata adapter.InboundContext) error {
@@ -316,11 +301,6 @@ func (r *Router) routePacketConnection(ctx context.Context, conn N.PacketConn, m
 	if selectedRule == nil || selectReturn {
 		selectedOutbound = r.outbound.Default()
 	}
-	chain, err := resolveOutbound(selectedOutbound, N.NetworkUDP)
-	if err != nil {
-		N.ReleaseMultiPacketBuffer(packetBuffers)
-		return err
-	}
 	for _, buffer := range packetBuffers {
 		conn = bufio.NewCachedPacketConn(conn, buffer.Buffer, buffer.Destination)
 		N.PutPacketBuffer(buffer)
@@ -329,7 +309,9 @@ func (r *Router) routePacketConnection(ctx context.Context, conn N.PacketConn, m
 		metadata.RouteRule = selectedRule.String()
 	}
 	metadata.RouteOutbound = selectedOutbound.Tag()
-	metadata.OutboundChain = chain
+	chain := adapter.NewOutboundChain()
+	chain.Append(selectedOutbound)
+	ctx = adapter.WithOutboundChain(ctx, chain)
 	for _, tracker := range r.trackers {
 		conn = tracker.RoutedPacketConnection(ctx, conn, metadata, selectedRule, selectedOutbound)
 	}
@@ -337,14 +319,20 @@ func (r *Router) routePacketConnection(ctx context.Context, conn N.PacketConn, m
 		conn = newFakeIPNATPacketConn(bufio.NewNetPacketConn(conn), metadata.OriginDestination, metadata.Destination)
 	}
 	ctx = interrupt.ContextWithIsExternalConnection(ctx, true)
-	onClose = registerInterrupt(chain, conn, onClose)
-	outbound := chain[len(chain)-1]
-	if outboundHandler, isHandler := outbound.(adapter.PacketConnectionHandler); isHandler {
+	if outboundHandler, isHandler := selectedOutbound.(adapter.PacketConnectionHandler); isHandler {
 		outboundHandler.NewPacketConnection(ctx, conn, metadata, onClose)
-	} else {
-		r.connection.NewPacketConnection(ctx, outbound, conn, metadata, onClose)
+		return nil
 	}
+	r.connection.NewPacketConnection(ctx, selectedOutbound, conn, metadata, onClose)
+	r.logChain(ctx, chain)
 	return nil
+}
+
+// logChain prints the outbounds that carried the connection. The chain is the one the APIs
+// report, so a chain that looks wrong there can be compared with the one this line prints,
+// which is recorded while the connection is dialed.
+func (r *Router) logChain(ctx context.Context, chain *adapter.OutboundChain) {
+	r.logger.DebugContext(ctx, "outbound chain: ", chain)
 }
 
 func (r *Router) PreMatch(metadata adapter.InboundContext, firstPacket []byte) adapter.PreMatchResult {
@@ -494,7 +482,7 @@ func (r *Router) preMatchFlow(ctx context.Context, metadata *adapter.InboundCont
 			return continueResult
 		}
 	}
-	chain, err := resolveOutbound(outbound, metadata.Network)
+	chain, err := resolveOutbound(outbound, metadata.Network, metadata)
 	if err != nil {
 		return continueResult
 	}
@@ -548,7 +536,9 @@ func (r *Router) preMatchFlow(ctx context.Context, metadata *adapter.InboundCont
 	} else if metadata.Destination != packetDestination {
 		result.Destination = metadata.Destination.AddrPort()
 	}
-	metadata.OutboundChain = chain
+	connectionChain := adapter.NewOutboundChain()
+	connectionChain.Set(chain)
+	ctx = adapter.WithOutboundChain(ctx, connectionChain)
 	metadataCopy := *metadata
 	result.NewTracker = func() tun.FlowTracker {
 		r.logger.InfoContext(ctx, "pre-match: forward ", metadataCopy.Network, " connection from ", metadataCopy.Source.AddrString(), " to ", metadataCopy.Destination.AddrString(), " via outbound/", outbound.Type(), "[", outbound.Tag(), "]")

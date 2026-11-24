@@ -8,8 +8,7 @@ import (
 	"time"
 
 	"github.com/sagernet/sing-box/adapter"
-	"github.com/sagernet/sing-tun"
-	"github.com/sagernet/sing/common"
+	tun "github.com/sagernet/sing-tun"
 	"github.com/sagernet/sing/common/bufio"
 	N "github.com/sagernet/sing/common/network"
 
@@ -27,6 +26,10 @@ type TrackerMetadata struct {
 	Rule         adapter.Rule
 	Outbound     string
 	OutboundType string
+
+	// chain is the one the connection records into, see adapter.OutboundChain: it is filled
+	// while the connection is dialed, after the connection is tracked.
+	chain *adapter.OutboundChain
 }
 
 type Tracker interface {
@@ -39,7 +42,7 @@ func (m *Manager) RoutedConnection(ctx context.Context, conn net.Conn, metadata 
 	download := new(atomic.Int64)
 	tracker := &connTracker{
 		ExtendedConn: bufio.NewInt64CounterConn(conn, []*atomic.Int64{upload}, []*atomic.Int64{download}),
-		metadata:     m.newTrackerMetadata(metadata, matchedRule, matchOutbound, upload, download),
+		metadata:     m.newTrackerMetadata(ctx, metadata, matchedRule, matchOutbound, upload, download),
 		manager:      m,
 	}
 	m.join(tracker)
@@ -51,7 +54,7 @@ func (m *Manager) RoutedPacketConnection(ctx context.Context, conn N.PacketConn,
 	download := new(atomic.Int64)
 	tracker := &packetConnTracker{
 		PacketConn: bufio.NewInt64CounterPacketConn(conn, []*atomic.Int64{upload}, nil, []*atomic.Int64{download}, nil),
-		metadata:   m.newTrackerMetadata(metadata, matchedRule, matchOutbound, upload, download),
+		metadata:   m.newTrackerMetadata(ctx, metadata, matchedRule, matchOutbound, upload, download),
 		manager:    m,
 	}
 	m.join(tracker)
@@ -60,27 +63,41 @@ func (m *Manager) RoutedPacketConnection(ctx context.Context, conn N.PacketConn,
 
 func (m *Manager) RoutedFlow(ctx context.Context, metadata adapter.InboundContext, matchedRule adapter.Rule, matchOutbound adapter.Outbound) tun.FlowTracker {
 	return &flowTracker{
-		metadata: m.newTrackerMetadata(metadata, matchedRule, matchOutbound, new(atomic.Int64), new(atomic.Int64)),
+		metadata: m.newTrackerMetadata(ctx, metadata, matchedRule, matchOutbound, new(atomic.Int64), new(atomic.Int64)),
 		manager:  m,
 	}
 }
 
-func (m *Manager) newTrackerMetadata(metadata adapter.InboundContext, matchedRule adapter.Rule, matchOutbound adapter.Outbound, upload *atomic.Int64, download *atomic.Int64) TrackerMetadata {
+func (m *Manager) newTrackerMetadata(ctx context.Context, metadata adapter.InboundContext, matchedRule adapter.Rule, matchOutbound adapter.Outbound, upload *atomic.Int64, download *atomic.Int64) TrackerMetadata {
 	id, _ := uuid.NewV4()
-	chain := common.Map(metadata.OutboundChain, adapter.Outbound.Tag)
-	slices.Reverse(chain)
-	outbound := metadata.OutboundChain[len(metadata.OutboundChain)-1]
 	return TrackerMetadata{
-		ID:           id,
-		Metadata:     metadata,
-		CreatedAt:    time.Now(),
-		Upload:       upload,
-		Download:     download,
-		Chain:        chain,
-		Rule:         matchedRule,
-		Outbound:     outbound.Tag(),
-		OutboundType: outbound.Type(),
+		ID:        id,
+		Metadata:  metadata,
+		chain:     adapter.OutboundChainFrom(ctx),
+		CreatedAt: time.Now(),
+		Upload:    upload,
+		Download:  download,
+		Rule:      matchedRule,
 	}
+}
+
+// fillChain reads the chain the connection is carried with. The outbound that carries it
+// records the chain when it dials, which happens after the connection is tracked, so it
+// is filled when the connection is read rather than when it is tracked.
+func (t *TrackerMetadata) fillChain() {
+	outbounds := t.chain.Outbounds()
+	if len(outbounds) == 0 {
+		return
+	}
+	chain := make([]string, len(outbounds))
+	for i, outbound := range outbounds {
+		chain[i] = outbound.Tag()
+	}
+	slices.Reverse(chain)
+	carrier := outbounds[len(outbounds)-1]
+	t.Chain = chain
+	t.Outbound = carrier.Tag()
+	t.OutboundType = carrier.Type()
 }
 
 type connTracker struct {
@@ -90,6 +107,7 @@ type connTracker struct {
 }
 
 func (t *connTracker) Metadata() *TrackerMetadata {
+	t.metadata.fillChain()
 	return &t.metadata
 }
 
@@ -122,6 +140,7 @@ type flowTracker struct {
 }
 
 func (t *flowTracker) Metadata() *TrackerMetadata {
+	t.metadata.fillChain()
 	return &t.metadata
 }
 
@@ -162,6 +181,7 @@ type packetConnTracker struct {
 }
 
 func (t *packetConnTracker) Metadata() *TrackerMetadata {
+	t.metadata.fillChain()
 	return &t.metadata
 }
 

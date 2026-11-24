@@ -122,8 +122,8 @@ func (m *ConnectionManager) NewConnection(ctx context.Context, this N.Dialer, co
 			dialerString = " using outbound/" + outbound.Type() + "[" + outbound.Tag() + "]"
 		}
 		err = E.Cause(err, "open connection to ", remoteString, dialerString)
-		m.reportConnectionFailure(metadata.OutboundChain)
-		m.deleteURLTestHistory(metadata.OutboundChain)
+		m.reportDialFailure(this, adapter.OutboundChainFrom(ctx))
+		m.deleteURLTestHistory(adapter.OutboundChainFrom(ctx))
 		N.CloseOnHandshakeFailure(conn, onClose, err)
 		m.logger.ErrorContext(ctx, err)
 		return
@@ -155,7 +155,7 @@ func (m *ConnectionManager) NewConnection(ctx context.Context, this N.Dialer, co
 	if m.kickWriteHandshake(ctx, conn, remoteConn, serverFirst, false, &done, onClose) {
 		// The outbound handshake failed, so the node did not carry this connection even
 		// though the dial succeeded.
-		m.reportConnectionFailure(metadata.OutboundChain)
+		m.reportConnectionFailure(adapter.OutboundChainFrom(ctx))
 		return
 	}
 	if m.kickWriteHandshake(ctx, remoteConn, conn, serverFirst, true, &done, onClose) {
@@ -202,8 +202,8 @@ func (m *ConnectionManager) NewPacketConnection(ctx context.Context, this N.Dial
 				dialerString = " using outbound/" + outbound.Type() + "[" + outbound.Tag() + "]"
 			}
 			err = E.Cause(err, "open packet connection to ", remoteString, dialerString)
-			m.reportConnectionFailure(metadata.OutboundChain)
-			m.deleteURLTestHistory(metadata.OutboundChain)
+			m.reportDialFailure(this, adapter.OutboundChainFrom(ctx))
+			m.deleteURLTestHistory(adapter.OutboundChainFrom(ctx))
 			N.CloseOnHandshakeFailure(conn, onClose, err)
 			m.logger.ErrorContext(ctx, err)
 			return
@@ -227,8 +227,8 @@ func (m *ConnectionManager) NewPacketConnection(ctx context.Context, this N.Dial
 				dialerString = " using outbound/" + outbound.Type() + "[" + outbound.Tag() + "]"
 			}
 			err = E.Cause(err, "listen packet connection using ", dialerString)
-			m.reportConnectionFailure(metadata.OutboundChain)
-			m.deleteURLTestHistory(metadata.OutboundChain)
+			m.reportDialFailure(this, adapter.OutboundChainFrom(ctx))
+			m.deleteURLTestHistory(adapter.OutboundChainFrom(ctx))
 			N.CloseOnHandshakeFailure(conn, onClose, err)
 			m.logger.ErrorContext(ctx, err)
 			return
@@ -287,17 +287,29 @@ func (m *ConnectionManager) NewPacketConnection(ctx context.Context, this N.Dial
 	go m.packetConnectionCopy(ctx, destination, conn, true, &done, onClose)
 }
 
+// reportDialFailure reports the node a connection could not be dialed with. A group
+// reports every node it tries itself, see base.Group, so the connection is left to it:
+// only a connection carried by a single outbound, or by a group that does not report, is
+// reported here.
+func (m *ConnectionManager) reportDialFailure(this N.Dialer, chain *adapter.OutboundChain) {
+	if _, reports := this.(adapter.OutboundFailureReporter); reports {
+		return
+	}
+	m.reportConnectionFailure(chain)
+}
+
 // reportConnectionFailure tells the groups of the chain that the node they carried the
 // connection with failed it, so a node that passes its health checks and then drops the
 // connections it is asked to carry is checked again instead of being trusted until the
 // next scheduled round.
-func (m *ConnectionManager) reportConnectionFailure(chain []adapter.Outbound) {
-	if len(chain) < 2 {
+func (m *ConnectionManager) reportConnectionFailure(chain *adapter.OutboundChain) {
+	outbounds := chain.Outbounds()
+	if len(outbounds) < 2 {
 		// without a group, the connection belongs to a single node
 		return
 	}
-	node := chain[len(chain)-1]
-	for _, it := range chain[:len(chain)-1] {
+	node := outbounds[len(outbounds)-1]
+	for _, it := range outbounds[:len(outbounds)-1] {
 		reporter, isReporter := it.(adapter.OutboundFailureReporter)
 		if isReporter {
 			reporter.ReportConnectionFailure(node)
@@ -305,12 +317,16 @@ func (m *ConnectionManager) reportConnectionFailure(chain []adapter.Outbound) {
 	}
 }
 
-func (m *ConnectionManager) deleteURLTestHistory(chain []adapter.Outbound) {
-	if slices.ContainsFunc(chain, func(it adapter.Outbound) bool {
+func (m *ConnectionManager) deleteURLTestHistory(chain *adapter.OutboundChain) {
+	outbounds := chain.Outbounds()
+	if len(outbounds) == 0 {
+		return
+	}
+	if slices.ContainsFunc(outbounds, func(it adapter.Outbound) bool {
 		_, isURLTestGroup := it.(adapter.URLTestGroup)
 		return isURLTestGroup
 	}) {
-		m.urlTestHistory.DeleteURLTestHistory(chain[len(chain)-1].Tag())
+		m.urlTestHistory.DeleteURLTestHistory(outbounds[len(outbounds)-1].Tag())
 	}
 }
 

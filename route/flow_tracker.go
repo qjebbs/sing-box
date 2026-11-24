@@ -124,7 +124,8 @@ func newFlowInterrupter(chain []adapter.Outbound) *flowInterrupter {
 	if len(groups) == 0 {
 		return nil
 	}
-	// The chain ends at the outbound that dials, see registerInterrupt.
+	// The chain ends at the outbound that carries the flow: a flow is not dialed by the
+	// router, so the node is the one resolved for it when it was pre-matched.
 	return &flowInterrupter{groups: groups, nodeTag: chain[len(chain)-1].Tag()}
 }
 

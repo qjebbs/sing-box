@@ -95,12 +95,35 @@ func (s *Relay) Start(stage adapter.StartStage, scope *adapter.Scope) error {
 
 // DialContext implements the network.Dialer interface.
 func (s *Relay) DialContext(ctx context.Context, network string, destination M.Socksaddr) (net.Conn, error) {
-	return s.exit().DialContext(ctx, network, destination)
+	adapter.RecordOutboundChain(ctx, s)
+	conn, err := s.exit().DialContext(ctx, network, destination)
+	if err != nil {
+		return nil, err
+	}
+	s.recordHops(ctx)
+	return conn, nil
 }
 
 // ListenPacket implements the network.Dialer interface.
 func (s *Relay) ListenPacket(ctx context.Context, destination M.Socksaddr) (net.PacketConn, error) {
-	return s.exit().ListenPacket(ctx, destination)
+	adapter.RecordOutboundChain(ctx, s)
+	conn, err := s.exit().ListenPacket(ctx, destination)
+	if err != nil {
+		return nil, err
+	}
+	s.recordHops(ctx)
+	return conn, nil
+}
+
+// recordHops records the outbounds the connection passes through, in the order it passes
+// through them: the entrance first, the exit last.
+//
+// It is called once the exit carries the connection, because the exit is the one dialed
+// first and entered last: it reaches the target, and the hops before it are dialed as its
+// detours. What they recorded themselves is kept, so the entrance, which may be a group,
+// keeps its own nodes right after it.
+func (s *Relay) recordHops(ctx context.Context) {
+	adapter.RecordOutboundChain(ctx, s.outbounds...)
 }
 
 // exit returns the node the connection leaves from, which is the last one of the chain.

@@ -150,7 +150,9 @@ func (s *SelectorProvider) DialContext(ctx context.Context, network string, dest
 	if err := s.ensureSelected(); err != nil {
 		return nil, err
 	}
-	conn, err := s.selected.Load().DialContext(ctx, network, destination)
+	selected := s.selected.Load()
+	adapter.RecordOutboundChain(ctx, s, selected)
+	conn, err := selected.DialContext(ctx, network, destination)
 	if err != nil {
 		return nil, err
 	}
@@ -161,7 +163,9 @@ func (s *SelectorProvider) ListenPacket(ctx context.Context, destination M.Socks
 	if err := s.ensureSelected(); err != nil {
 		return nil, err
 	}
-	conn, err := s.selected.Load().ListenPacket(ctx, destination)
+	selected := s.selected.Load()
+	adapter.RecordOutboundChain(ctx, s, selected)
+	conn, err := selected.ListenPacket(ctx, destination)
 	if err != nil {
 		return nil, err
 	}

@@ -31,7 +31,12 @@ func (g *Group) PickNode(ctx context.Context, network string, destination M.Sock
 	if metadata == nil {
 		metadata = &adapter.InboundContext{}
 	}
-	metadata.Destination = destination
+	if !metadata.Destination.IsValid() {
+		// The destination of the connection is what the strategy decides with, unless the
+		// caller has none: a domain the router already resolved is preferred over the
+		// address this dial happens to use.
+		metadata.Destination = destination
+	}
 	all, selected, _ := g.selection(network)
 	return g.pick.Pick(all, selected, metadata)
 }

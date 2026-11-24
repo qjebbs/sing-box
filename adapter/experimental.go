@@ -154,14 +154,28 @@ func (s *SavedBinary) UnmarshalBinary(data []byte) error {
 type OutboundGroup interface {
 	Outbound
 	All() []string
+	// Selected is the node the group serves from: it describes the group, and asking
+	// for it does not pick one. A node that serves one connection is picked by
+	// PickOutbound, see OutboundPicker.
 	Selected(network string) Outbound
 	// AttachConnection registers a connection carried with the group, so it can be
 	// interrupted when the node it uses is no longer selected. outboundTag is the node
-	// the router resolved for this connection, the same tag the health checks are
+	// the router picked for this connection, the same tag the health checks are
 	// stored by.
 	AttachConnection(closer io.Closer, outboundTag string) (detach func())
 	Outbounds() []Outbound
 	Outbound(tag string) (Outbound, bool)
+}
+
+// OutboundPicker is implemented by a group that can pick the node serving a connection
+// from the metadata of that connection.
+//
+// The router resolves a group with PickOutbound instead of Selected, so the pick sees
+// where the connection goes: a strategy that hashes the destination, or one that reads
+// the domain, is only right with the metadata of the connection it decides for.
+// Selected says which node the group serves from, it is not a pick.
+type OutboundPicker interface {
+	PickOutbound(network string, metadata *InboundContext) Outbound
 }
 
 type URLTestGroup interface {
