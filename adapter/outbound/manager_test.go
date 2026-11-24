@@ -4,10 +4,12 @@ import (
 	"context"
 	"errors"
 	"net"
+	"strings"
 	"testing"
 
 	"github.com/sagernet/sing-box/adapter"
 	"github.com/sagernet/sing-box/adapter/endpoint"
+	C "github.com/sagernet/sing-box/constant"
 	"github.com/sagernet/sing-box/log"
 	"github.com/sagernet/sing-box/option"
 	M "github.com/sagernet/sing/common/metadata"
@@ -66,6 +68,9 @@ func newCaptureManager(t *testing.T) *Manager {
 	Register[testOptions](registry, "capture", func(ctx context.Context, router adapter.Router, logger log.ContextLogger, tag string, options testOptions) (adapter.Outbound, error) {
 		return &captureOutbound{tag: tag, detour: options.DetourDialer, value: options.Value}, nil
 	})
+	Register[testOptions](registry, C.TypeDirect, func(ctx context.Context, router adapter.Router, logger log.ContextLogger, tag string, options testOptions) (adapter.Outbound, error) {
+		return &captureOutbound{tag: tag, detour: options.DetourDialer, value: options.Value}, nil
+	})
 	Register[groupOptions](registry, "group", func(ctx context.Context, router adapter.Router, logger log.ContextLogger, tag string, options groupOptions) (adapter.Outbound, error) {
 		return &captureOutbound{tag: tag}, nil
 	})
@@ -117,6 +122,23 @@ func TestCreateDetourReportsAnOutboundWithoutDialFields(t *testing.T) {
 	}
 	if noDialFields.OutboundType != "group" {
 		t.Fatalf("want the type of the outbound reported, got %q", noDialFields.OutboundType)
+	}
+}
+
+func TestCreateDetourRefusesADirectOutbound(t *testing.T) {
+	t.Parallel()
+	manager := newCaptureManager(t)
+	ctx := context.Background()
+	logger := log.NewNOPFactory().Logger()
+	if err := manager.Create(ctx, nil, logger, "node", C.TypeDirect, &testOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	_, err := manager.CreateDetour(ctx, nil, logger, "node", &stubDialer{id: "detour"}, adapter.NewScope(ctx, logger))
+	if err == nil {
+		t.Fatal("want an error for a direct outbound, a detour is not supported in direct context")
+	}
+	if !strings.Contains(err.Error(), "not supported in direct context") {
+		t.Fatalf("want the reason of the refusal reported, got %v", err)
 	}
 }
 

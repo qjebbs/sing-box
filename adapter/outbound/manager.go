@@ -8,6 +8,7 @@ import (
 	"sync"
 
 	"github.com/sagernet/sing-box/adapter"
+	C "github.com/sagernet/sing-box/constant"
 	"github.com/sagernet/sing-box/log"
 	"github.com/sagernet/sing-box/option"
 	"github.com/sagernet/sing/common"
@@ -360,6 +361,12 @@ func (m *Manager) CreateDetour(ctx context.Context, router adapter.Router, logge
 	}
 	if detour == nil {
 		return nil, E.New("missing detour for [", tag, "]")
+	}
+	// A direct outbound dials by itself: a detour would only repeat what the hop before it
+	// already did, so the chain is rejected the way the direct outbound rejects a configured
+	// detour.
+	if conf.typ == C.TypeDirect {
+		return nil, E.New("[", tag, "] is a direct outbound, which cannot be chained: `detour` is not supported in direct context, use a relay or a rule instead")
 	}
 	options, err := conf.detourOptions(detour)
 	if err != nil {
