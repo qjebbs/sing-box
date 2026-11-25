@@ -10,7 +10,6 @@ import (
 func TestNodeStatus(t *testing.T) {
 	t.Parallel()
 	var maxRTT healthcheck.RTT = healthcheck.Second
-	var maxFailRate float32 = 0.2
 	testCases := []struct {
 		name   string
 		status Status
@@ -27,41 +26,42 @@ func TestNodeStatus(t *testing.T) {
 			},
 		},
 		{
-			"@max_rtt", StatusQualified, healthcheck.Stats{
-				All: 10, Fail: 0, Latest: healthcheck.Second, Average: healthcheck.Second, Median: healthcheck.Second,
+			"clean", StatusQualified, healthcheck.Stats{
+				All: 10, Fail: 0, FailureWeight: 0, Latest: healthcheck.Second, Average: healthcheck.Second, Median: healthcheck.Second,
 			},
 		},
 		{
-			"@max_fail", StatusQualified, healthcheck.Stats{
-				All: 10, Fail: 2, Latest: healthcheck.Second, Average: healthcheck.Second, Median: healthcheck.Second,
+			"below one failure", StatusQualified, healthcheck.Stats{
+				All: 10, Fail: 1, FailureWeight: 0.99, Latest: healthcheck.Second, Average: healthcheck.Second, Median: healthcheck.Second,
 			},
 		},
 		{
-			"@max_fail_2", StatusQualified, healthcheck.Stats{
-				All: 5, Fail: 1, Latest: healthcheck.Second, Average: healthcheck.Second, Median: healthcheck.Second,
+			// a fresh failure weighs one, and the gate is below one
+			"one failure", StatusAlive, healthcheck.Stats{
+				All: 10, Fail: 1, FailureWeight: 1, Latest: healthcheck.Second, Average: healthcheck.Second, Median: healthcheck.Second,
 			},
 		},
 		{
-			// one failure of ten is within max_fail, and the delay describes the nine
-			// that worked: a single failed check is scored, it doesn't kill the node
-			"latest_fail", StatusQualified, healthcheck.Stats{
-				All: 10, Fail: 1, Latest: healthcheck.Failed, Average: healthcheck.Second, Median: healthcheck.Second,
+			// a failure on the latest check is a failure like any other: the delay
+			// describes the checks that worked, it does not excuse the one that did not
+			"latest_fail", StatusAlive, healthcheck.Stats{
+				All: 10, Fail: 1, FailureWeight: 1, Latest: healthcheck.Failed, Average: healthcheck.Second, Median: healthcheck.Second,
+			},
+		},
+		{
+			"a burst", StatusAlive, healthcheck.Stats{
+				All: 10, Fail: 2, FailureWeight: 2, Latest: healthcheck.Second, Average: healthcheck.Second, Median: healthcheck.Second,
 			},
 		},
 		{
 			// nothing ever worked: there is no delay to rank and nothing to fall back on
 			"never succeeded", StatusDead, healthcheck.Stats{
-				All: 10, Fail: 10, Latest: healthcheck.Failed,
-			},
-		},
-		{
-			"over max_fail", StatusAlive, healthcheck.Stats{
-				All: 5, Fail: 2, Latest: healthcheck.Second, Average: healthcheck.Second, Median: healthcheck.Second,
+				All: 10, Fail: 10, FailureWeight: 10, Latest: healthcheck.Failed,
 			},
 		},
 		{
 			"over max_rtt", StatusAlive, healthcheck.Stats{
-				All: 10, Fail: 0, Latest: healthcheck.Second, Average: 2 * healthcheck.Second, Median: 2 * healthcheck.Second,
+				All: 10, Fail: 0, FailureWeight: 0, Latest: healthcheck.Second, Average: 2 * healthcheck.Second, Median: 2 * healthcheck.Second,
 			},
 		},
 	}
@@ -69,7 +69,7 @@ func TestNodeStatus(t *testing.T) {
 		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			got := calcStatus(&tc.stats, maxRTT, maxFailRate)
+			got := calcStatus(&tc.stats, maxRTT)
 			if got != tc.status {
 				t.Errorf("want: %s, got: %s", tc.status, got)
 			}

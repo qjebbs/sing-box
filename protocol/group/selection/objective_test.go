@@ -57,8 +57,8 @@ func TestNodeLinesStats(t *testing.T) {
 			want:      "#0 OK [probe] LAST=332ms MED=336ms FAIL=0/9",
 		},
 		{
-			// qualified is decided by max_rtt and max_fail, which are compared with the
-			// median and the failures the line already states
+			// qualified is decided by max_rtt and the recent failure weight, which are
+			// compared with the median and the failures the line already states
 			name:      "qualified",
 			objective: selection.NewQualifiedObjective(),
 			want:      "#0 OK [probe] LAST=332ms MED=336ms FAIL=0/9",
@@ -108,7 +108,7 @@ func TestNodeLinesShowsTheFrequencyIdleCounts(t *testing.T) {
 			// nothing worked: the whole window fell short
 			name:   "never answered",
 			status: selection.StatusDead,
-			stats:  healthcheck.Stats{All: 9, Fail: 9, Floor: 184},
+			stats:  healthcheck.Stats{All: 9, Fail: 9, FailureWeight: 9, Floor: 184},
 			want:   "[probe] LAST=None MED=None FLOOR=184ms JIT=None BAD=100% SCORE=15.00s FAIL=9/9 SELECTED",
 		},
 		{

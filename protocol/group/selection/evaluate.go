@@ -228,9 +228,7 @@ type measuredNode struct {
 	future healthcheck.RTT
 	// later is the node priced by the checks after the window: the band of the future
 	// selection is sized by that window, not by the one being measured.
-	later     Node
-	fail      int
-	laterFail int
+	later Node
 }
 
 // measureAt prices every node over the window at offset and over the checks that follow
@@ -255,13 +253,11 @@ func (o *ScoreObjective) measureAt(series []WindowSeries, size WindowSize, offse
 		later := current
 		later.Stats = future
 		measured = append(measured, measuredNode{
-			index:     index,
-			node:      current,
-			score:     o.Score(&current),
-			future:    o.Score(&later),
-			later:     later,
-			fail:      stats.Fail,
-			laterFail: future.Fail,
+			index:  index,
+			node:   current,
+			score:  o.Score(&current),
+			future: o.Score(&later),
+			later:  later,
 		})
 	}
 	return measured
@@ -287,7 +283,6 @@ func (o *ScoreObjective) measuredWindowAt(series []WindowSeries, size WindowSize
 			index: index,
 			node:  current,
 			score: o.Score(&current),
-			fail:  stats.Fail,
 		})
 	}
 	return measured
@@ -334,36 +329,38 @@ func (s WindowSeries) longRunAt(offset int) float64 {
 // the two moments. A node is identified by its position in measured, which is the same in
 // both readings.
 func (o *ScoreObjective) poolMembers(measured []measuredNode) (window, future map[int]struct{}) {
-	window = o.poolOf(measured, func(node measuredNode) (Node, healthcheck.RTT, int) {
-		return node.node, node.score, node.fail
+	window = o.poolOf(measured, func(node measuredNode) (Node, healthcheck.RTT) {
+		return node.node, node.score
 	})
-	future = o.poolOf(measured, func(node measuredNode) (Node, healthcheck.RTT, int) {
-		return node.later, node.future, node.laterFail
+	future = o.poolOf(measured, func(node measuredNode) (Node, healthcheck.RTT) {
+		return node.later, node.future
 	})
 	return window, future
 }
 
-// poolOf returns the nodes the band around the best one would let through: the nodes with
-// no failure behind them whose score is within the limit of the best node, as view reads
-// both out of a measured node. The nodes are keyed by the position they hold in the series,
-// so the pools of two offsets of the same history can be compared.
+// poolOf returns the nodes the band around the best one would let through: the nodes whose
+// recent failure weight is below one full failure, and whose score is within the limit of
+// the best node, as view reads both out of a measured node. The evaluation measures the
+// window rather than a configured allowance, so the strictest gate is the one it prices.
+// The nodes are keyed by the position they hold in the series, so the pools of two offsets
+// of the same history can be compared.
 func (o *ScoreObjective) poolOf(
-	measured []measuredNode, view func(measuredNode) (Node, healthcheck.RTT, int),
+	measured []measuredNode, view func(measuredNode) (Node, healthcheck.RTT),
 ) map[int]struct{} {
 	best := 0
 	var bestScore healthcheck.RTT
 	for i := range measured {
-		_, score, _ := view(measured[i])
+		_, score := view(measured[i])
 		if i == 0 || score < bestScore {
 			best, bestScore = i, score
 		}
 	}
-	node, _, _ := view(measured[best])
+	node, _ := view(measured[best])
 	limit := o.Limit(&node)
 	members := make(map[int]struct{}, len(measured))
 	for _, each := range measured {
-		_, score, fail := view(each)
-		if fail == 0 && score <= limit {
+		candidate, score := view(each)
+		if candidate.Stats.FailureWeight < failureWeightLimit && score <= limit {
 			members[each.index] = struct{}{}
 		}
 	}
@@ -389,10 +386,10 @@ func jaccardOf(a, b map[int]struct{}) float64 {
 // averaged over the reactions the history holds.
 //
 // A check is bad when it is slower than twice the node's floor, the rule the statistics
-// count as Bad. A failure is not a reaction: the pool already requires a window with no
-// failure in it, so a node is dropped on the check that fails, whatever the window holds.
-// What a longer window can do is keep serving a node that merely got slower, and that is
-// what this measures.
+// count as Bad. A failure is not a reaction: the pool requires the recent failure weight
+// to be below one full failure, so a node is dropped on the check that fails, whatever the
+// window holds. What a longer window can do is keep serving a node that merely got slower,
+// and that is what this measures.
 //
 // The event is read from the window that does not hold the bad check yet, which has to
 // include the node, so the answer is about a node that was being served. A node still in
@@ -440,10 +437,10 @@ func (o *ScoreObjective) reactionOf(
 // it: the node has to have been served when it turned bad, so the answer is about a node
 // the group had and lost, not about the many nodes that were never in the pool. Both a
 // failure and a slow run count as turning bad, because both cost checks: a failure leaves
-// the pool at once, but it has to leave the window before the node can come back, which is
-// what makes a single failed check cost as many checks as the window holds. That is why the
-// horizon here is the window rather than the prediction: ahead checks are not enough to see
-// a node come back from a failure.
+// the pool at once, and it comes back when its recent weight decays below the threshold,
+// which is a few checks rather than the whole window. The horizon is still the window: a
+// burst can take that long to decay, and the window is the bound after which the failure
+// stops being counted at all.
 func (o *ScoreObjective) recoveryOf(
 	series []WindowSeries, size WindowSize, ahead int, longest int,
 ) (float64, int) {
@@ -451,9 +448,9 @@ func (o *ScoreObjective) recoveryOf(
 	if limit < 1 {
 		return 0, 0
 	}
-	// the horizon is the whole window: a failure has to leave the window before the node
-	// can come back, so a return measured over the horizon of the prediction would report
-	// the window itself as the answer
+	// the horizon is the whole window: a burst takes a few checks to decay, and the window
+	// is the bound after which the failure stops being counted at all, so a return measured
+	// over the horizon of the prediction would truncate a long burst
 	horizon := max(ahead, size.Samples*size.Stride)
 	if horizon > limit {
 		return 0, 0

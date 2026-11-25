@@ -121,6 +121,10 @@ type HealthNode struct {
 	// FailureRate is how often the node has failed over the last few hours, which outlives
 	// the window: it is the prior a clean window is read with, see healthcheck.Stats.
 	FailureRate *float32 `json:"failure_rate,omitempty"`
+	// FailureWeight is the recent failure weight of the window: a failure that just
+	// happened is 1, and it decays with age, see healthcheck.Stats. It is what the failure
+	// gate is compared with; the score reads it as FailureWeight / FailureWeightTotal.
+	FailureWeight *float32 `json:"failure_weight,omitempty"`
 	// FailureShare is the share of attempts the score priced as failed: the window's own
 	// share or FailureRate, whichever is larger.
 	FailureShare *float32 `json:"failure_share,omitempty"`

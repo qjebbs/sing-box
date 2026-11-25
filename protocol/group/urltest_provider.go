@@ -2,7 +2,6 @@ package group
 
 import (
 	"context"
-	"math"
 	"slices"
 	"strings"
 
@@ -89,12 +88,9 @@ func (s *URLTestProvider) Start(stage adapter.StartStage, scope *adapter.Scope) 
 		objective.Name() == selection.ObjectiveIdle,
 		selection.NewSingle(objective),
 		selection.NodeOptions{
-			// The failures are already priced into the score of a node, in its own
-			// scale, see healthcheck.Stats.Cost. Qualifying on them would rank a node
-			// that failed once below one that never failed and is several times
-			// slower, which is what max_fail is not for here.
-			MaxFail: math.MaxUint32,
-			// A url test group has no upper limit on the round-trip time.
+			// A url test group has no upper limit on the round-trip time. The recent
+			// failure weight still gates it: a node that just failed is not a candidate
+			// until a check passes, which is how a failed test removed a node upstream.
 			MaxRTT: 0,
 		},
 	)

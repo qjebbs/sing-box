@@ -17,8 +17,6 @@ type LoadBalancePickOptions struct {
 	Objective string `json:"objective,omitempty"`
 	// pick strategy
 	Strategy string `json:"strategy,omitempty"`
-	// max acceptable failures
-	MaxFail uint `json:"max_fail,omitempty"`
 	// max acceptable rtt. defalut 0
 	MaxRTT badoption.Duration `json:"max_rtt,omitempty"`
 	// tolerance is the maximum absolute difference to the best node, for the objectives

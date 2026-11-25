@@ -4,7 +4,7 @@
 {
   "type": "urltest",
   "tag": "auto",
-  
+
   "outbounds": [
     "proxy-a",
     "proxy-b",
@@ -62,17 +62,16 @@ The objective of the choice. Default is `quick`.
 | `idle`    | the node that queues the least |
 
 The objectives rank the nodes the same way as the
-[load balance `objective`](/configuration/outbound/loadbalance/#objective) field, without
-the notion of a qualified node.
+[load balance `objective`](/configuration/outbound/loadbalance/#objective) field, but there is no
+`max_rtt`; a recent failure still temporarily demotes a node to alive, using the same failure gate
+as load balancing.
 
-The reasoning behind the statistics, the scores and the tolerance is on the
-[Node Rating](/configuration/shared/node-rating/) page.
+For design details, see the [Node Rating](/configuration/shared/node-rating/) page.
 
 #### tolerance
 
-The maximum **absolute** difference to the best node, default is `50ms` for `quick` and `10ms` for
-`idle`, i.e. a node whose score is at most this far above the best one still counts as equally
-good. The two scores are of different magnitudes, which is why the defaults differ.
+The maximum **absolute** difference to the best node, default is `50ms`: a node whose score is at
+most this far above the best one still counts as equally good.
 
 The node in use keeps its place while its score is within this band of the best one, so a
 difference that is not worth the switch keeps the connections where they are. The band also carries

@@ -20,7 +20,6 @@
   "pick": {
     "objective": "alive",
     "strategy": "random",
-    "max_fail": 0,
     "max_rtt": "1000ms",
     "tolerance": "50ms",
     "min_nodes": 1,
@@ -80,7 +79,7 @@ The objective of load balancing. Default is `alive`.
 | Objective   | Description                                                |
 | ----------- | ---------------------------------------------------------- |
 | `alive`     | prefer alive nodes                                         |
-| `qualified` | prefer qualified nodes (`max_rtt`, `max_fail`)             |
+| `qualified` | prefer qualified nodes                                     |
 | `quick`     | the nodes that typically cost the least: delay plus jitter |
 | `idle`      | the nodes that queue the least         |
 
@@ -88,7 +87,7 @@ Load balancing divides nodes into three classes:
 
 1. Failed Nodes, that cannot be connected
 2. Alive Nodes, that pass the health check
-3. Qualified Nodes, that are alive and meet the constraints (`max_rtt`, `max_fail`)
+3. Qualified Nodes, that are alive and meet the constraints (`max_rtt` and failure eligibility)
 
 It tries to pick from the class that the objective is targeting (see the table above). If there is no node for current class, it falls back to the next class. For example, the behavior of `idle` could be:
 
@@ -98,33 +97,9 @@ It tries to pick from the class that the objective is targeting (see the table a
 
 Generally speaking, use `idle`, `quick` for better network quality; use `alive` for more quantity of outbound nodes.
 
-Both `idle` and `quick` rank the nodes by a score, lower is better:
+Both `idle` and `quick` rank the nodes by a score, lower is better.
 
-```
-MED     = median(x₁ … xₙ)
-JIT     = 1.4826 * median(|xᵢ − MED|)
-DEV     = (1/n) * Σ|xᵢ − MED|
-cost    = MED + JIT        # quick
-failure = min(TIMEOUT, 3 * cost)
-standing= MED - BASELINE   # idle: over the node's own best
-
-score   = (ALL - FAIL) / ALL * cost + FAIL / ALL * failure   # quick
-score   = min(TIMEOUT, standing)                             # idle
-```
-
-`MED`, `JIT` and `DEV` describe the **successful** checks only, so the successes and the
-failures are mixed in by their shares.
-
-- `MED` is how far the node is: the median delay, what a check usually costs.
-- `JIT` is the **typical** deviation of the checks from that median, which one slow check
-  cannot move. `1.4826` turns the median of the absolute deviations into an estimate of the
-  standard deviation (`MAD ≈ 0.6745σ` for normal samples).
-- `DEV` is the **average** deviation: a spike is not ignored, and it describes the window as
-  a whole.
-- `TIMEOUT` is the timeout a failed check waits for, 15s.
-
-The reasoning behind the statistics, the scores and the tolerance is on the
-[Node Rating](/configuration/shared/node-rating/) page.
+For design details, see the [Node Rating](/configuration/shared/node-rating/) page.
 
 #### strategy
 
@@ -142,20 +117,14 @@ Note: `consistenthash` requires a relatively stable quantity of nodes, it's avai
 
 The maximum round-trip time of health check that is acceptable for qulified nodes. The median RTT of the successful checks is compared, so a single spike doesn't disqualify an otherwise good node. Default is `0`, which accepts any round-trip time.
 
-#### max_fail
-
-The maximum number of health check failures for qulified nodes, default is `0`, i.e. no failures allowed.
+> **Failure eligibility**: a qualified node also requires the near-term failure weight `FAILW` to be below `1`. A fresh failure weighs `1`, so the most recent failure makes the node temporarily unqualified; on the next successful check the failure has decayed to `exp(−interval / 5min)` and the node returns to the candidates. The gate is fixed and needs no configuration. At a 2 minute interval a single failure costs one round; consecutive failures add up — three in a row take about 4 minutes after the last failure, nine about 6 minutes, to fall back below the gate.
 
 #### tolerance
 
 > Only used by the `quick` and `idle` objectives: `alive` and `qualified` have no score, so
 > setting it has no effect
 
-The maximum **absolute** difference to the best node, default is `50ms` for `quick` and `10ms` for
-`idle`, i.e. nodes whose score is at most this far above the best one are selected with it. The
-two scores are of different magnitudes, which is why the defaults differ: the score of `quick` is a
-delay of hundreds of milliseconds, the one of `idle` the queueing it adds on top of its own
-best, which is of the same order.
+The maximum **absolute** difference to the best node, default is `50ms`.
 
 The band also carries a **resolution margin** that shrinks with the sample count and grows with the
 jitter of the best node, so it is never narrower than this value.
@@ -182,7 +151,7 @@ The picking bias of load balancing. Default is empty.
 
 When the node tag matches the condition in `biases`,
 its round-trip time (or the spread it is ranked by) will be multiplied by `rtt_scale` for comparison when picking.
-The default value of `rtt_scale` is `1`, and the larger it is, the less preferred the node is. 
+The default value of `rtt_scale` is `1`, and the larger it is, the less preferred the node is.
 For example, `rtt_scale: 10` means that when the node's round-trip time is `100ms`, it will be treated as `1000ms` for comparison.
 
 - `contains` means matching when the node tag contains a keyword.

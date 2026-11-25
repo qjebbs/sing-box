@@ -22,6 +22,24 @@ const failurePrior = 10
 // that failed for the better part of an hour is clean again about that much later.
 const failureTimeConstant = 45 * time.Minute
 
+// failureWeightTimeConstant is how far back the recent failure weight looks. It is the
+// short half of the failure memory: a failure stops counting as a whole one after about
+// this long, and a burst adds up, so a long outage keeps the node out longer than a single
+// failure. It is a wall-clock duration like failureTimeConstant, not a number of checks:
+// the same five minutes cover a different count at 1m and at 5m, and the gate is meant to
+// describe how recently the node failed rather than how often it was checked.
+const failureWeightTimeConstant = 5 * time.Minute
+
+// recentFailureWeightAt returns the weight of a failed check at now: exp(-(now-at)/τ_F).
+// A clock that stepped backwards has not aged the check, so its weight stays one.
+func recentFailureWeightAt(at time.Time, now time.Time) float64 {
+	age := now.Sub(at)
+	if age < 0 {
+		age = 0
+	}
+	return math.Exp(-age.Seconds() / failureWeightTimeConstant.Seconds())
+}
+
 // failureRate is how often the node has failed over the last few failureTimeConstant, as a
 // continuous-time exponential estimate. It outlives the window: a window can be clean while
 // the node is not reliable, and the checks it holds cannot tell a node that fails in bursts

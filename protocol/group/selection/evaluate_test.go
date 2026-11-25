@@ -222,10 +222,11 @@ func TestEvaluateWindowsMeasuresTheReaction(t *testing.T) {
 
 func TestEvaluateWindowsDropsAFailureAtOnceAndTakesItBackSlowly(t *testing.T) {
 	t.Parallel()
-	// A failure is not a slow check: the pool already requires a window with no failure in
-	// it, so the node leaves on the check that fails and there is nothing to react to.
-	// Coming back is the expensive direction: the failure has to leave the window first, so
-	// a single failed check costs as many checks as the window holds.
+	// A failure is not a slow check: the pool requires the recent failure weight to be
+	// below one full failure, so the node leaves on the check that fails and there is
+	// nothing to react to. Coming back is the expensive direction: the failures have to
+	// decay below that gate. With one-minute checks the last failure of the burst is below
+	// it on the third check, so the node is back before the four-check window edge.
 	failed := make([]healthcheck.RTT, 16)
 	for i := range failed {
 		failed[i] = 150
@@ -253,8 +254,46 @@ func TestEvaluateWindowsDropsAFailureAtOnceAndTakesItBackSlowly(t *testing.T) {
 	if size.Recoveries != 1 {
 		t.Fatalf("want one node that turned good again, got %d", size.Recoveries)
 	}
-	if size.Recovery != 4 {
-		t.Fatalf("want the failure to hold it out for the whole window, got %v", size.Recovery)
+	if size.Recovery != 3 {
+		t.Fatalf("want the burst to hold it out for three checks, got %v", size.Recovery)
+	}
+}
+
+func TestEvaluateWindowsRecoversBeforeTheWindowEdge(t *testing.T) {
+	t.Parallel()
+	// A single failed check is forgiven when its recent weight decays below the half-life
+	// slack, not when it leaves the window: a ten-check window at one-minute checks is
+	// wider than that, so the node has to come back before the edge.
+	failed := make([]healthcheck.RTT, 30)
+	for i := range failed {
+		failed[i] = 150
+	}
+	// in the middle of the history, so the window before it and the window after it both
+	// fit and the recovery can be measured inside the horizon
+	failed[15] = healthcheck.Failed
+	objective := selection.NewQuickObjective(option.LoadBalancePickOptions{})
+	evaluation := objective.EvaluateWindows(
+		seriesOfChecks(
+			failed,
+			steadyChecks(30, 160),
+			steadyChecks(30, 170),
+			steadyChecks(30, 180),
+		),
+		selection.WindowOptions{Ahead: 4, Sizes: []selection.WindowSize{{Stride: 1, Samples: 10}}},
+	)
+	if len(evaluation.Sizes) != 1 {
+		t.Fatalf("want one measured window, got %d", len(evaluation.Sizes))
+	}
+	size := evaluation.Sizes[0]
+	if size.Recoveries != 1 {
+		t.Fatalf("want one node that turned good again, got %d", size.Recoveries)
+	}
+	if size.Recovery >= float64(size.Samples) {
+		t.Fatalf("want the weight to bring the node back before the window edge, got %v over %d samples",
+			size.Recovery, size.Samples)
+	}
+	if size.Recovery > 6 {
+		t.Fatalf("want a single failure to cost about four checks at one a minute, got %v", size.Recovery)
 	}
 }
 
@@ -326,30 +365,26 @@ func TestEvaluateWindowsNeedsHistory(t *testing.T) {
 	}
 }
 
-func TestNodeBuilderFollowsTheWindow(t *testing.T) {
+func TestNodeBuilderFollowsTheFailureGate(t *testing.T) {
 	t.Parallel()
-	// max_fail is a number of checks, so it is judged as a share of the window it is read
-	// against: a limit of two in ten must not stand for two in thirty, where one failure is
-	// already past it. The window comes from the caller, so nothing has to be told about a
-	// change to it.
-	builder, err := selection.NewNodeBuilder(selection.NodeOptions{MaxFail: 2})
+	// A load balance node is qualified while its recent failure weight is below one full
+	// failure: the failure is not a share of the sampling window, and a burst adds up.
+	builder, err := selection.NewNodeBuilder(selection.NodeOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	stats := healthcheck.Stats{All: 10, Fail: 1, Median: 100, Floor: 100}
-	node := func(sampling int) selection.Status {
-		return builder.NewNode(tagOutbound("node"), 0, sampling, stats).Status
+	stats := healthcheck.Stats{All: 10, Fail: 2, Median: 100, Floor: 100}
+	node := func(weight float64) selection.Status {
+		stats.FailureWeight = weight
+		return builder.NewNode(tagOutbound("node"), 0, stats).Status
 	}
-	if status := node(10); status != selection.StatusQualified {
-		t.Fatalf("one failure in ten is within two, got %v", status)
+	if status := node(0.99); status != selection.StatusQualified {
+		t.Fatalf("a weight below one failure is qualified, got %v", status)
 	}
-	if status := node(3); status != selection.StatusQualified {
-		t.Fatalf("one failure is well within two in three, got %v", status)
+	if status := node(1); status != selection.StatusAlive {
+		t.Fatalf("one full failure is over the gate, got %v", status)
 	}
-	if status := node(30); status == selection.StatusQualified {
-		t.Fatalf("one failure is past two in thirty, got %v", status)
-	}
-	if status := node(10); status != selection.StatusQualified {
-		t.Fatalf("the window came back and so should the limit, got %v", status)
+	if status := node(2); status != selection.StatusAlive {
+		t.Fatalf("a burst is over the gate, got %v", status)
 	}
 }

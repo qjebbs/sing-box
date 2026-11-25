@@ -30,7 +30,8 @@ sampled as the interval made them.
 
 That check is also the one that decides whether the node is used right now. A failed
 connection can be the client, the destination or the network, which is why a few of them
-are needed and why a failed scheduled check on its own never removes a node; but a node
+are needed; a failed scheduled check on its own does not mark the node failed or suspend
+it, but it still temporarily demotes the node by its near-term failure weight. A node
 whose own connections were already failing, and whose check then failed too, is suspended:
 it is not selected for new connections until a check passes. A suspended node ranks with
 the nodes that are alive but not qualified, so it is still used when nothing better is
@@ -113,8 +114,9 @@ Configuring this item can also avoid the server from hijacking the test request,
 
 ### Recommended configuration
 
-The `quick` and `idle` objectives rank the nodes by the most recent `sampling` checks, over a
-window of `interval × sampling`. Recommended:
+The `quick` and `idle` objectives base their delay statistics on the most recent `sampling`
+checks, over a window of `interval × sampling`; failure eligibility is decided separately by the
+5 minute near-term weight and does not use this window. Recommended:
 
 | Case | `interval` | `sampling` | Span |
 | --- | --- | --- | --- |
@@ -139,8 +141,12 @@ about 1.4 times wider, and it sees any change up to two minutes later: the inter
 granularity. Beyond 10 minutes of span, the node a window picks stops matching how it behaves
 afterwards.
 
-Keep `max_fail` at `0`: it says "not one failure in this window" and stops an unstable node
-earlier and harder than a score can. Raised to `1` or more, a single failure is worth only 50
-points of `idle` at ten samples, which does not move a node out of the band, and what is left to
-stop it is the long-run failure rate — evidence that builds up slowly. Leave `tolerance` at its
-default.
+Failure eligibility needs no configuration: a qualified node requires the near-term failure
+weight `FAILW` to be below `1` (a fresh failure weighs 1 and decays with a 5 minute time
+constant), so the most recent failure makes the node temporarily unqualified; on the next
+successful check the failure has decayed to `exp(−interval / 5min)` and the node returns to the
+candidates. The first failure still demotes the node immediately, so the peak-time reaction is
+unchanged; a sporadic failure in a quiet period costs one round (about 2 minutes at a 2 minute
+interval). Consecutive failures add up: at a 2 minute interval, three in a row take about 4
+minutes after the last failure, and nine about 6 minutes, to fall back below the gate, so a long
+outage no longer drags the node through the whole window. Leave `tolerance` at its default.

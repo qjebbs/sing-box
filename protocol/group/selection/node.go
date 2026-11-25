@@ -80,8 +80,8 @@ func NewNode(
 // the median is what the limit max_rtt is compared with. The average is not printed: a
 // single spike moves it, so it says less about what the node usually costs.
 //
-// The failures are the third measurement every objective is read with, but they are read
-// outside the score, see nodeLine, so they end the line instead of opening it. What an
+// The failure record is the third measurement every objective is read with, but it is the
+// raw observation, see nodeLine, so it ends the line instead of opening it. What an
 // objective reads beyond these is appended by the objective itself, see Printer: the line
 // is read at a glance, so a statistic no decision is made on is left out rather than
 // crowded in.
@@ -201,8 +201,15 @@ func (n *Node) ScaleRTT(rtt healthcheck.RTT) healthcheck.RTT {
 	return applyFactorToRTT(rtt, n.RTTSacale)
 }
 
-// calcStatus tells if a node is alive or qualified according to the healthcheck statistics
-func calcStatus(s *healthcheck.Stats, maxRTT healthcheck.RTT, maxFailRate float32) Status {
+// failureWeightLimit is the recent failure weight a node may carry and stay qualified: one
+// full failure. A failed check weighs one, so a node leaves on the check that fails and is
+// back on the next one that succeeds, unless it fails again and the weights add up.
+const failureWeightLimit = 1.0
+
+// calcStatus tells if a node is alive or qualified according to the healthcheck statistics.
+// A recent failure keeps the node alive until its weight decays below one full failure, see
+// failureWeightLimit.
+func calcStatus(s *healthcheck.Stats, maxRTT healthcheck.RTT) Status {
 	if s.All == 0 {
 		// untetsted
 		return StatusUnknown
@@ -218,7 +225,7 @@ func calcStatus(s *healthcheck.Stats, maxRTT healthcheck.RTT, maxFailRate float3
 		// the checks that are in it say nothing about the node now.
 		return StatusAlive
 	}
-	if s.Fail > 0 && float32(s.Fail)/float32(s.All) > maxFailRate {
+	if s.FailureWeight >= failureWeightLimit {
 		return StatusAlive
 	}
 	// don't apply RTT scale to maxRTT, because it's a threshold, not a score
@@ -241,9 +248,6 @@ type NodeOptions struct {
 	// MaxRTT is the highest median delay a node may have and stay qualified, 0 for no
 	// limit.
 	MaxRTT healthcheck.RTT
-	// MaxFail is how many checks of the sampling window may fail before a node is only
-	// alive, 0 for any failure.
-	MaxFail uint
 	// Biases scale the score of the nodes they match.
 	Biases []option.LoadBalancePickBias
 }
@@ -254,9 +258,8 @@ type NodeOptions struct {
 // a ranking is being built, so it is passed with each node rather than kept here, and the
 // builder stays safe to read from anywhere.
 type NodeBuilder struct {
-	maxRTT  healthcheck.RTT
-	maxFail uint
-	biases  []bias
+	maxRTT healthcheck.RTT
+	biases []bias
 }
 
 type bias struct {
@@ -267,8 +270,7 @@ type bias struct {
 // NewNodeBuilder returns the builder of the nodes of a group.
 func NewNodeBuilder(options NodeOptions) (*NodeBuilder, error) {
 	builder := &NodeBuilder{
-		maxRTT:  options.MaxRTT,
-		maxFail: options.MaxFail,
+		maxRTT: options.MaxRTT,
 	}
 	for _, optionBias := range options.Biases {
 		var re *regexp.Regexp
@@ -287,22 +289,11 @@ func NewNodeBuilder(options NodeOptions) (*NodeBuilder, error) {
 	return builder, nil
 }
 
-// NewNode returns the node of the outbound with the health it reports. sampling is how many
-// checks the window holds now, which MaxFail is a number of: the limit is judged as a share,
-// so it moves with the window rather than being a second, unrelated count.
-func (b *NodeBuilder) NewNode(outbound adapter.Outbound, index int, sampling int, stats healthcheck.Stats) *Node {
+// NewNode returns the node of the outbound with the health it reports.
+func (b *NodeBuilder) NewNode(outbound adapter.Outbound, index int, stats healthcheck.Stats) *Node {
 	scale := calcFactor(outbound.Tag(), b.biases)
-	status := calcStatus(&stats, b.maxRTT, failureRateOf(b.maxFail, sampling))
+	status := calcStatus(&stats, b.maxRTT)
 	return NewNode(outbound, index, scale, stats, status)
-}
-
-// failureRateOf returns the share of the window a limit of maxFail checks is worth.
-func failureRateOf(maxFail uint, sampling int) float32 {
-	if sampling <= 0 {
-		// no window, so no share to allow: a failure is not tolerated
-		return 0
-	}
-	return float32(maxFail) / float32(sampling)
 }
 
 func calcFactor(tag string, biases []bias) float32 {

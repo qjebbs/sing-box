@@ -244,6 +244,8 @@ func (g *Group) nodeReport(node *selection.Node, selected bool) adapter.HealthNo
 	// record there is, and leaving it out would read as no record at all.
 	failureRate := node.Stats.FailureRate
 	report.FailureRate = &failureRate
+	failureWeight := float32(node.Stats.FailureWeight)
+	report.FailureWeight = &failureWeight
 	failureShare := float32(node.Stats.FailureShare())
 	report.FailureShare = &failureShare
 	if !node.Expires.IsZero() {

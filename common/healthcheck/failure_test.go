@@ -132,12 +132,12 @@ func TestFailureShareLetsTheWindowWin(t *testing.T) {
 		stats healthcheck.Stats
 		want  float64
 	}{
-		{"window has failures", healthcheck.Stats{All: 10, Fail: 3, FailureRate: 0.05}, 0.3},
-		{"window is clean", healthcheck.Stats{All: 10, Fail: 0, FailureRate: 0.2}, 0.2},
-		{"both agree", healthcheck.Stats{All: 10, Fail: 2, FailureRate: 0.2}, 0.2},
+		{"window has failures", healthcheck.Stats{All: 10, Fail: 3, FailureWeight: 3, FailureWeightTotal: 4, FailureRate: 0.05}, 0.75},
+		{"window is clean", healthcheck.Stats{All: 10, Fail: 0, FailureWeight: 0, FailureWeightTotal: 4, FailureRate: 0.2}, 0.2},
+		{"the estimate wins", healthcheck.Stats{All: 10, Fail: 2, FailureWeight: 2, FailureWeightTotal: 4, FailureRate: 0.8}, 0.8},
 		{"no window", healthcheck.Stats{FailureRate: 0.4}, 0.4},
 		{"nothing known", healthcheck.Stats{}, 0},
-		{"capped at one", healthcheck.Stats{All: 10, Fail: 10, FailureRate: 0.9}, 1},
+		{"capped at one", healthcheck.Stats{All: 10, Fail: 10, FailureWeight: 10, FailureWeightTotal: 2, FailureRate: 0.9}, 1},
 	}
 	for _, testCase := range cases {
 		testCase := testCase

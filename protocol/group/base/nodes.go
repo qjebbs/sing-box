@@ -177,9 +177,7 @@ func (g *Group) Nodes(network string) []*selection.Node {
 				outbound = real
 			}
 			stats := g.HealthCheck.Storage.Stats(outbound.Tag())
-			// the same storage the statistics came from, so a limit of failures is read
-			// against the sampling it was measured over
-			all = append(all, g.nodes.NewNode(outbound, idx, g.HealthCheck.Storage.Sampling(), stats))
+			all = append(all, g.nodes.NewNode(outbound, idx, stats))
 		}
 	}
 	return all

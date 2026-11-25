@@ -43,6 +43,17 @@ type Stats struct {
 	// badCheckMultiple times the floor, the ones that are not merely noisy but queueing.
 	// Their share is the frequency the idle objective counts, next to the depth.
 	Bad int
+	// FailureWeight is the recent failure weight of the window: the sum of
+	// exp(-(t - tᵢ)/τ_F) over the failed checks, τ_F = 5 minutes. A failure that just
+	// happened is 1, it decays with age, and a burst adds up. It is the numerator of the
+	// window's share of attempts, see FailureShare, and what the failure gate is compared
+	// with. Unlike FailureRate it does not outlive the window: it is rebuilt from the checks.
+	FailureWeight float64
+	// FailureWeightTotal is the sum of the same age weights over every check in the
+	// window, success or failure: the weight FailureWeight would have if they had all
+	// failed. It is the denominator of the window's failure share, so a window whose checks
+	// all failed reads one, see FailureShare.
+	FailureWeightTotal float64
 	// FailureRate is how often the node has failed over the last few hours, estimated in
 	// wall-clock time and outliving the window, see failureRate. Fail over All describes
 	// the checks the sampling read; this describes the node. It is read through
@@ -129,6 +140,7 @@ func (s *Storage) refreshStats(now time.Time) {
 	delays := make([]RTT, 0, s.history.Length())
 	var expiresAt time.Time
 	fail := 0
+	var failureWeight, failureWeightTotal float64
 	for i := 0; i < s.history.Length() && uint(i) < s.options.Sampling; i++ {
 		// from latest to oldest, up to the sampling the statistics read
 		history, _ := s.history.At(i)
@@ -139,8 +151,11 @@ func (s *Storage) refreshStats(now time.Time) {
 		}
 		// the time when the oldest item expires
 		expiresAt = itemExpiresAt
+		weight := recentFailureWeightAt(history.Time, now)
+		failureWeightTotal += weight
 		if history.Delay == Failed {
 			fail++
+			failureWeight += weight
 		} else {
 			delays = append(delays, history.Delay)
 		}
@@ -149,7 +164,7 @@ func (s *Storage) refreshStats(now time.Time) {
 	// is the statistics, and the floor outlives it. It is read even when the window is too
 	// short to describe the node, because a restored floor is what a restart must not wait for.
 	floor, _ := s.baseline.RTT(now)
-	s.stats = statsOf(len(delays)+fail, fail, latest.Delay, expiresAt, delays, floor, s.failures.rate())
+	s.stats = statsOf(len(delays)+fail, fail, latest.Delay, expiresAt, delays, floor, s.failures.rate(), failureWeight, failureWeightTotal)
 	s.stats.Suspended = s.suspended
 }
 
@@ -169,18 +184,25 @@ func StatsOf(checks []*History, floor RTT, expires time.Time, longRun float64) S
 	}
 	delays := make([]RTT, 0, len(checks))
 	fail := 0
+	var failureWeight, failureWeightTotal float64
+	// The window is read as of its newest check: the age of every failure is measured from
+	// there, which is what the group did when the check was current.
+	at := checks[0].Time
 	for _, check := range checks {
+		weight := recentFailureWeightAt(check.Time, at)
+		failureWeightTotal += weight
 		if check.Delay == Failed {
 			fail++
+			failureWeight += weight
 		} else {
 			delays = append(delays, check.Delay)
 		}
 	}
-	return statsOf(len(checks), fail, checks[0].Delay, expires, delays, floor, longRun)
+	return statsOf(len(checks), fail, checks[0].Delay, expires, delays, floor, longRun, failureWeight, failureWeightTotal)
 }
 
 // statsOf builds the statistics of a window of checks from the delays that succeeded.
-func statsOf(all int, fail int, latest RTT, expires time.Time, delays []RTT, floor RTT, longRun float64) Stats {
+func statsOf(all int, fail int, latest RTT, expires time.Time, delays []RTT, floor RTT, longRun float64, failureWeight float64, failureWeightTotal float64) Stats {
 	var bad int
 	if floor > 0 {
 		// Counted before newStats, which replaces the delays with their distances to the
@@ -189,6 +211,8 @@ func statsOf(all int, fail int, latest RTT, expires time.Time, delays []RTT, flo
 	}
 	stats := newStats(all, fail, latest, expires, delays)
 	stats.Floor, stats.Bad = floor, bad
+	stats.FailureWeight = failureWeight
+	stats.FailureWeightTotal = failureWeightTotal
 	stats.FailureRate = float32(longRun)
 	return stats
 }
@@ -343,14 +367,25 @@ func (s Stats) Succeeded() int {
 // FailureShare returns the share of the attempts that failed: the window's own share, or
 // the long-run estimate, whichever is larger.
 //
+// The window's share is FailureWeight over FailureWeightTotal, the weight the same checks
+// would have if they had all failed, not over All: the failures are weighted by their age,
+// so the share decays as they get older instead of staying at full weight until the window
+// drops them, and a window whose checks all failed reads one. A failure that just happened
+// is worth its own weight over the window's total, not 1/All.
+//
 // The window is what the node is doing now and the estimate is what it does when the window
 // happens to be clean, so the larger of the two is the cautious reading of the same
 // question. With no window at all there is nothing to weigh the estimate against, and the
 // estimate stands alone.
 func (s Stats) FailureShare() float64 {
 	share := float64(s.FailureRate)
-	if s.All > 0 {
-		if window := float64(s.Fail) / float64(s.All); window > share {
+	total := s.FailureWeightTotal
+	if total <= 0 {
+		// Statistics built by hand carry no total; the count is the only window they have.
+		total = float64(s.All)
+	}
+	if total > 0 {
+		if window := s.FailureWeight / total; window > share {
 			share = window
 		}
 	}

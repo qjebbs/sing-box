@@ -8,8 +8,8 @@ import (
 	"github.com/sagernet/sing-box/protocol/group/selection"
 )
 
-// cleanWindow is a node whose window holds no failure: with max_fail at its default, that is
-// every node a group can select, whatever the window says about the rest of its record.
+// cleanWindow is a node whose window holds no failure: that is what the failure gate asks
+// of every node a group can select, whatever the window says about the rest of its record.
 func cleanWindow() healthcheck.Stats {
 	return healthcheck.Stats{All: 10, Median: 150, Floor: 140, Jitter: 5, Bad: 0}
 }
@@ -66,6 +66,8 @@ func TestLongRunFailureRateYieldsToTheWindow(t *testing.T) {
 	// priced by its record: the larger share is the cautious reading of the two.
 	recovering := cleanWindow()
 	recovering.Fail = 2
+	recovering.FailureWeight = 2
+	recovering.FailureWeightTotal = 10
 	if share := recovering.FailureShare(); share != 0.2 {
 		t.Fatalf("want the window share, got %v", share)
 	}

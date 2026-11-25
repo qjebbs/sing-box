@@ -9216,10 +9216,6 @@
         "strategy": {
           "type": "string"
         },
-        "max_fail": {
-          "type": "integer",
-          "minimum": 0
-        },
         "max_rtt": {
           "$ref": "#/$defs/Duration"
         },
@@ -9266,10 +9262,6 @@
         },
         "strategy": {
           "type": "string"
-        },
-        "max_fail": {
-          "type": "integer",
-          "minimum": 0
         },
         "max_rtt": {
           "$ref": "#/$defs/Duration"

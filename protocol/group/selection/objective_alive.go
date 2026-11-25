@@ -7,9 +7,9 @@ var _ Objective = (*AliveObjective)(nil)
 // AliveObjective is the alive nodes objective
 //
 // It is not a Printer: the statistics it is read with are the ones every objective shares,
-// see Node.String. The status it ranks by is decided by max_rtt and max_fail, which are
-// compared with the median and the failures of the node, and the latest delay is what says
-// how the node is doing now.
+// see Node.String. The status it ranks by is decided by max_rtt and the recent failure
+// weight, which are compared with the median and the failures of the node, and the latest
+// delay is what says how the node is doing now.
 type AliveObjective struct{}
 
 // NewAliveObjective returns a new AliveObjective
