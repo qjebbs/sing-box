@@ -152,7 +152,11 @@ func (f *defaultFactory) output(ctx context.Context, level Level, tag string, me
 		if level == LevelPanic {
 			panic(formatted)
 		}
-		f.writer.Write([]byte(formatted))
+		if levelWriter, isLevelWriter := f.writer.(LevelWriter); isLevelWriter {
+			_, _ = levelWriter.WriteLevel(level, []byte(formatted))
+		} else {
+			_, _ = f.writer.Write([]byte(formatted))
+		}
 		if level == LevelFatal {
 			os.Exit(1)
 		}

@@ -31,9 +31,11 @@ func New(options Options) (Factory, error) {
 
 	switch logOptions.Output {
 	case "":
+		// Unspecified: warnings and above go to stderr, so a supervisor that only
+		// captures stderr still records serious messages.
 		logWriter = options.DefaultWriter
 		if logWriter == nil {
-			logWriter = os.Stderr
+			logWriter = LevelSplitWriter{Stdout: os.Stdout, Stderr: os.Stderr}
 		}
 	case "stderr":
 		logWriter = os.Stderr
