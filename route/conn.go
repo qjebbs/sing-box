@@ -298,6 +298,9 @@ func (m *ConnectionManager) NewPacketConnection(ctx context.Context, this N.Dial
 // only a connection carried by a single outbound, or by a group that does not report, is
 // reported here.
 func (m *ConnectionManager) reportDialFailure(this N.Dialer, chain *adapter.OutboundChain) {
+	// The dial never carried the connection, so the chain has no path to report. It is what
+	// tells the routing that the chain is meant to stay unsealed, see Router.warnUnsealedChain.
+	chain.Fail()
 	if _, reports := this.(adapter.OutboundFailureReporter); reports {
 		return
 	}

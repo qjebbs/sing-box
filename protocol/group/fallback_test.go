@@ -172,3 +172,28 @@ func TestDialFirstReportsTheFailure(t *testing.T) {
 		t.Fatalf("want the failed node reported, got %v", observed)
 	}
 }
+
+// TestFallbackRecordsTheNodeThatCarriesTheConnection pins that the fallback records the node
+// the connection is carried with, and only that one: a node that was tried and failed is not
+// part of the path.
+func TestFallbackRecordsTheNodeThatCarriesTheConnection(t *testing.T) {
+	t.Parallel()
+	fallback := &stubOutbound{tag: "fallback"}
+	nodes := []adapter.Outbound{
+		&stubOutbound{tag: "first", err: E.New("dial failed")},
+		&stubOutbound{tag: "second"},
+	}
+	chain := adapter.NewOutboundChain()
+	ctx := adapter.WithOutboundChain(context.Background(), chain)
+	_, err := dialFirst(ctx, log.NewNOPFactory().Logger(), nodes, nil, func(node adapter.Outbound) (net.Conn, error) {
+		return dialAndRecord(ctx, fallback, node, func() (net.Conn, error) {
+			return node.DialContext(ctx, N.NetworkTCP, M.Socksaddr{})
+		})
+	})
+	if err != nil {
+		t.Fatalf("want no error, got %v", err)
+	}
+	if want := []string{"fallback", "second"}; !slices.Equal(chain.Tags(), want) {
+		t.Fatalf("want %v, got %v", want, chain.Tags())
+	}
+}

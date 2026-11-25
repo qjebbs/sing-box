@@ -110,7 +110,9 @@ func (f *Fallback) DialContext(ctx context.Context, network string, destination 
 		return nil, E.New("no outbound available for ", network)
 	}
 	return dialFirst(ctx, f.logger, nodes, f.reportConnectionFailure, func(node adapter.Outbound) (net.Conn, error) {
-		return node.DialContext(ctx, network, destination)
+		return dialAndRecord(ctx, f, node, func() (net.Conn, error) {
+			return node.DialContext(ctx, network, destination)
+		})
 	})
 }
 
@@ -121,8 +123,21 @@ func (f *Fallback) ListenPacket(ctx context.Context, destination M.Socksaddr) (n
 		return nil, E.New("no outbound available for ", N.NetworkUDP)
 	}
 	return dialFirst(ctx, f.logger, nodes, f.reportConnectionFailure, func(node adapter.Outbound) (net.PacketConn, error) {
-		return node.ListenPacket(ctx, destination)
+		return dialAndRecord(ctx, f, node, func() (net.PacketConn, error) {
+			return node.ListenPacket(ctx, destination)
+		})
 	})
+}
+
+// dialAndRecord dials through node and records it in the chain of the connection when the
+// dial succeeds: the node carries the connection only once it accepted it, so a node that
+// was tried and failed is not part of the path.
+func dialAndRecord[T any](ctx context.Context, fallback adapter.Outbound, node adapter.Outbound, dial func() (T, error)) (T, error) {
+	value, err := dial()
+	if err == nil {
+		adapter.RecordOutboundChain(ctx, fallback, node)
+	}
+	return value, err
 }
 
 // candidates returns the outbounds that may be used for the network, in the order they

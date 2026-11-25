@@ -14,9 +14,9 @@ import (
 	C "github.com/sagernet/sing-box/constant"
 	"github.com/sagernet/sing-box/log"
 	R "github.com/sagernet/sing-box/route/rule"
-	"github.com/sagernet/sing-mux"
-	"github.com/sagernet/sing-tun"
-	"github.com/sagernet/sing-vmess"
+	mux "github.com/sagernet/sing-mux"
+	tun "github.com/sagernet/sing-tun"
+	vmess "github.com/sagernet/sing-vmess"
 	"github.com/sagernet/sing/common"
 	"github.com/sagernet/sing/common/buf"
 	"github.com/sagernet/sing/common/bufio"
@@ -165,13 +165,15 @@ func (r *Router) routeConnection(ctx context.Context, conn net.Conn, metadata ad
 	}
 	ctx = interrupt.ContextWithIsExternalConnection(ctx, true)
 	if outboundHandler, isHandler := selectedOutbound.(adapter.ConnectionHandler); isHandler {
-		// The handler carries the connection itself, so the chain is complete here.
-		chain.Seal()
+		// The handler carries the connection itself, so there is no dial to wait for and the
+		// chain is complete here.
+		chain.HandOver()
 		outboundHandler.NewConnection(ctx, conn, metadata, onClose)
 		return nil
 	}
 	r.connection.NewConnection(ctx, selectedOutbound, conn, metadata, onClose)
 	// The chain is sealed by the connection manager once the dial is over.
+	r.warnUnsealedChain(ctx, chain)
 	r.logChain(ctx, chain)
 	return nil
 }
@@ -321,22 +323,39 @@ func (r *Router) routePacketConnection(ctx context.Context, conn N.PacketConn, m
 	}
 	ctx = interrupt.ContextWithIsExternalConnection(ctx, true)
 	if outboundHandler, isHandler := selectedOutbound.(adapter.PacketConnectionHandler); isHandler {
-		// The handler carries the connection itself, so the chain is complete here.
-		chain.Seal()
+		// The handler carries the connection itself, so there is no dial to wait for and the
+		// chain is complete here.
+		chain.HandOver()
 		outboundHandler.NewPacketConnection(ctx, conn, metadata, onClose)
 		return nil
 	}
 	r.connection.NewPacketConnection(ctx, selectedOutbound, conn, metadata, onClose)
 	// The chain is sealed by the connection manager once the dial is over.
+	r.warnUnsealedChain(ctx, chain)
 	r.logChain(ctx, chain)
 	return nil
 }
 
-// logChain prints the outbounds that carried the connection. The chain is the one the APIs
-// report, so a chain that looks wrong there can be compared with the one this line prints,
-// which is recorded while the connection is dialed.
+// warnUnsealedChain reports a chain the dial did not end. The connection manager seals the
+// chain when the dial succeeds, and fails it when the dial fails, so a chain that is neither
+// was dialed by a path that does not report the connection it carries: the connection never
+// reaches the API, and that is worth a warning rather than silence.
+func (r *Router) warnUnsealedChain(ctx context.Context, chain *adapter.OutboundChain) {
+	if chain.Sealed() || chain.Failed() {
+		return
+	}
+	r.logger.WarnContext(ctx, "outbound chain is not sealed after the dial, and the connection is not reported: ", chain)
+}
+
+// logChain prints the outbounds that carried the connection, when it passes through more than
+// one: the chain is the one the APIs report, so a chain that looks wrong there can be compared
+// with the one this line prints, which is recorded while the connection is dialed. A single
+// outbound is the one the connection was routed to, and it is already in the metadata.
 func (r *Router) logChain(ctx context.Context, chain *adapter.OutboundChain) {
-	r.logger.DebugContext(ctx, "outbound chain: ", chain)
+	if chain.Len() <= 1 {
+		return
+	}
+	r.logger.InfoContext(ctx, "outbound chain: ", chain)
 }
 
 func (r *Router) PreMatch(metadata adapter.InboundContext, firstPacket []byte) adapter.PreMatchResult {
@@ -542,9 +561,9 @@ func (r *Router) preMatchFlow(ctx context.Context, metadata *adapter.InboundCont
 	}
 	connectionChain := adapter.NewOutboundChain()
 	connectionChain.Set(chain)
-	// A flow is not dialed by the router, its node is the one resolved for it: the chain is
-	// complete before the flow starts.
-	connectionChain.Seal()
+	// A flow is not dialed by the router, its node is the one resolved for it: there is no
+	// dial to wait for and the chain is complete before the flow starts.
+	connectionChain.HandOver()
 	ctx = adapter.WithOutboundChain(ctx, connectionChain)
 	metadataCopy := *metadata
 	result.NewTracker = func() tun.FlowTracker {

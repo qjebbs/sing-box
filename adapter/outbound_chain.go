@@ -19,6 +19,7 @@ type OutboundChain struct {
 	access    sync.Mutex
 	outbounds []Outbound
 	sealed    bool
+	failed    bool
 	onSeal    []func()
 }
 
@@ -44,10 +45,37 @@ func (c *OutboundChain) WhenSealed(f func()) {
 	c.access.Unlock()
 }
 
-// Seal marks the chain as complete: the connection is dialed, so the outbounds that carry
-// it have recorded themselves. A connection that is still being dialed holds only a part of
-// the path, and it is not tracked until then, see WhenSealed.
+// Seal marks the chain as complete because the dial of the connection is over: the
+// outbounds that carry it have recorded themselves. A connection that is still being dialed
+// holds only a part of the path, and it is not tracked until then, see WhenSealed.
+//
+// The dial is over when the dialer the connection was handed to returns, not when a hop of
+// the path returns: the hops record themselves on the way back, and the connection is only
+// carried once the outermost one is.
 func (c *OutboundChain) Seal() {
+	c.seal()
+}
+
+// HandOver marks the chain as complete for a connection that is handed over without a dial
+// of its own, to an outbound that carries it itself: there is no dial to wait for, and the
+// outbounds have recorded everything they will. See Seal for the dialed case.
+func (c *OutboundChain) HandOver() {
+	c.seal()
+}
+
+// Fail marks the chain as never complete: the dial failed, so the connection is not carried
+// by anything and there is no path to report. It is what tells a dial that failed apart from
+// a dial path that does not report the connection it carries, see Router.warnUnsealedChain.
+func (c *OutboundChain) Fail() {
+	if c == nil {
+		return
+	}
+	c.access.Lock()
+	c.failed = true
+	c.access.Unlock()
+}
+
+func (c *OutboundChain) seal() {
 	if c == nil {
 		return
 	}
@@ -66,7 +94,7 @@ func (c *OutboundChain) Seal() {
 	}
 }
 
-// Sealed reports whether the chain is complete, see Seal.
+// Sealed reports whether the chain is complete, see Seal and HandOver.
 func (c *OutboundChain) Sealed() bool {
 	if c == nil {
 		return false
@@ -74,6 +102,16 @@ func (c *OutboundChain) Sealed() bool {
 	c.access.Lock()
 	defer c.access.Unlock()
 	return c.sealed
+}
+
+// Failed reports whether the dial of the connection failed, see Fail.
+func (c *OutboundChain) Failed() bool {
+	if c == nil {
+		return false
+	}
+	c.access.Lock()
+	defer c.access.Unlock()
+	return c.failed
 }
 
 // Set replaces the chain, in the order the outbounds are entered.
@@ -95,6 +133,16 @@ func (c *OutboundChain) Outbounds() []Outbound {
 	c.access.Lock()
 	defer c.access.Unlock()
 	return slices.Clone(c.outbounds)
+}
+
+// Len returns the number of outbounds in the chain, without copying it.
+func (c *OutboundChain) Len() int {
+	if c == nil {
+		return 0
+	}
+	c.access.Lock()
+	defer c.access.Unlock()
+	return len(c.outbounds)
 }
 
 // Tags returns the tags of the chain, in the order it was recorded.
