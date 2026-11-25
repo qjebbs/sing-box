@@ -9316,6 +9316,9 @@
         },
         "timestamp": {
           "type": "boolean"
+        },
+        "disable_color": {
+          "type": "boolean"
         }
       },
       "additionalProperties": false
@@ -11842,34 +11845,6 @@
           "type": "object",
           "properties": {
             "type": {
-              "const": "relay"
-            },
-            "tag": {
-              "type": "string"
-            },
-            "_tag": {
-              "type": "string"
-            },
-            "_order": {
-              "type": "integer"
-            },
-            "outbounds": {
-              "type": "array",
-              "items": {
-                "type": "string",
-                "x-tag-reference": "outbound"
-              }
-            }
-          },
-          "required": [
-            "type"
-          ],
-          "additionalProperties": false
-        },
-        {
-          "type": "object",
-          "properties": {
-            "type": {
               "const": "direct"
             },
             "tag": {
@@ -11979,6 +11954,53 @@
             },
             "fallback_delay": {
               "$ref": "#/$defs/Duration"
+            }
+          },
+          "required": [
+            "type"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "const": "fallback"
+            },
+            "tag": {
+              "type": "string"
+            },
+            "_tag": {
+              "type": "string"
+            },
+            "_order": {
+              "type": "integer"
+            },
+            "outbounds": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "x-tag-reference": "outbound"
+              }
+            },
+            "providers": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "x-tag-reference": "provider"
+              }
+            },
+            "all_providers": {
+              "type": "boolean"
+            },
+            "exclude": {
+              "type": "string"
+            },
+            "include": {
+              "type": "string"
+            },
+            "health_check": {
+              "$ref": "#/$defs/HealthCheckReference"
             }
           },
           "required": [
@@ -12929,6 +12951,34 @@
             },
             "tls": {
               "$ref": "#/$defs/OutboundTLSOptions"
+            }
+          },
+          "required": [
+            "type"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "type": {
+              "const": "relay"
+            },
+            "tag": {
+              "type": "string"
+            },
+            "_tag": {
+              "type": "string"
+            },
+            "_order": {
+              "type": "integer"
+            },
+            "outbounds": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "x-tag-reference": "outbound"
+              }
             }
           },
           "required": [

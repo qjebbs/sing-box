@@ -8,7 +8,8 @@
     "disabled": false,
     "level": "info",
     "output": "box.log",
-    "timestamp": true
+    "timestamp": true,
+    "disable_color": false
   }
 }
 
@@ -35,3 +36,9 @@
 #### timestamp
 
 添加时间到每行。
+
+#### disable_color
+
+禁用日志颜色。
+
+[`output`](#output) 为文件时也会禁用颜色。

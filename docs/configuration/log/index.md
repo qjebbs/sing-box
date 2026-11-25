@@ -8,7 +8,8 @@
     "disabled": false,
     "level": "info",
     "output": "box.log",
-    "timestamp": true
+    "timestamp": true,
+    "disable_color": false
   }
 }
 
@@ -35,3 +36,9 @@ If empty, the stream is chosen by level: `warn`, `error`, `fatal` and `panic` ar
 #### timestamp
 
 Add time to each line.
+
+#### disable_color
+
+Disable colored log output.
+
+Colors are also disabled when [`output`](#output) is a file.
