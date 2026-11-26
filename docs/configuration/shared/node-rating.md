@@ -1,89 +1,293 @@
 # Node Rating
 
-## Scoring Formulas
+## Formulas
 
-There are two objectives a group can score a node by:
+Scoring:
 
-- `quick`: **How fast is it usually?** A 170ms node is simply slower than a 40ms node. This is absolute time, in milliseconds.
-- `idle`: **How far is it from its own best?** A node that usually takes 200ms and stays at 600ms through the evening may not look slow, but it is running at four times its best and holds up every bit of traffic at that time.
-
-The formulas are:
-
-```
+```sh
+ALL         = the number of checks in the window
 MED         = median(x₁ … xₙ)
-JIT         = 1.4826 × median(|xᵢ − MED|)
-DEV         = (1/n) × Σ|xᵢ − MED|
+dᵢ          = |xᵢ − MED|                     # deviation of check i from the median
+JIT         = 1.4826 × median(dᵢ)
+DEV         = (1/n) × Σdᵢ
 SLOT        = the day cut into 48 slots of 30 minutes
 SLOT[k]     = the fastest check seen in slot k
 FLOOR       = min(the slots of the last 24 hours)  # how fast it can be at its best
-FAILW       = Σ exp(−(t − tᵢ) / τ_F)         # failed checks only, τ_F = 5 minutes
-FAILW_TOTAL = Σ exp(−(t − tᵢ) / τ_F)         # all checks in the window, i.e. FAILW if all failed
-FAILR       = a longer-run failure rate, older checks weigh less
-ALL         = the number of checks in the window
+fᵢ          = 1 failed / 0 succeeded         # failure indicator of check i
+wᵢ(τ)       = exp(−(t − tᵢ) / τ)             # weight by age
+S(τ)        = Σ wᵢ(τ)·fᵢ                     # weighted failures
+W(τ)        = Σ wᵢ(τ)                        # weighted checks
+F(τ)        = S(τ) / W(τ)                    # weighted failure rate, 0…1
+FAIL_NEAR   = S(τ_N)                         # near-term failure weight (absolute), what the gate compares
+FAILR_NEAR  = F(τ_N)                         # recent failure rate, in the window, τ_N = 5 minutes
+FAILR_LONG  = F(τ_L)                         # long-run failure rate, across windows, τ_L = 45 minutes
+FAILR       = max(FAILR_NEAR, FAILR_LONG)    # failure rate, the larger of the two horizons
 PRES        = max(0, MED − FLOOR) / FLOOR
-BAD         = min(1, #{xᵢ > 2 × FLOOR} / ALL + max(FAILW / FAILW_TOTAL, FAILR))
-cost        = MED + JIT        # quick
-failure     = min(TIMEOUT, 3 × cost)
-p           = max(FAILW / FAILW_TOTAL, FAILR)
+BAD         = min(1, #{xᵢ > 2 × FLOOR} / ALL + FAILR)
+COST        = MED + JIT
+FAIL_COST   = min(TIMEOUT, 3 × COST)
 
-score       = (1 - p) × cost + p × failure    # quick
-score       = 1000 × (PRES + 0.5 × BAD)       # idle
+idle_score  = 1000 × (PRES + 0.5 × BAD)
+quick_score = (1 - FAILR) × COST + FAILR × FAIL_COST
 ```
 
-`quick` compares actual delay, `idle` compares degradation. Measure degradation with actual delay and a distant node is always at a disadvantage: you end up comparing distance instead of condition. So `idle` uses ratios throughout, and stays independent of distance.
+Tolerance band (the noise of a score is its reading error, taken at the best-scoring node):
 
-A failed check carries no delay — it says nothing about how fast the node is when it works. Failures are recorded separately and weighted by age into a near-term failure weight `FAILW`: a fresh failure weighs 1, and older ones weigh less. `FAILW` alone decides whether the node qualifies, and prices failures for both objectives; `FAILR` records a longer horizon with the same mechanism.
+```sh
+n         = the number of successful checks
+SCORE_NOISE ≈ JIT / √n                                         # quick
+SCORE_NOISE ≈ 1000 × 1.2533 × JIT / (FLOOR × √n)               # idle
+BAND        = tolerance + 2 × √(SCORE_NOISE² + SCORE_NOISE²)   # the candidate is unknown, assumed as accurate as the best
+            = tolerance + 2√2 × SCORE_NOISE                    # no noise term below two successes
+```
 
-These formulas assume at least two successful checks. With only one, there is nothing to say about variation or pressure, so the objective falls back to delay.
+Hysteresis:
+
+```sh
+sd(x)       = √(Σ(xᵢ − mean(x))² / (n − 1))            # sample standard deviation, what a standard error is estimated from
+sd(d)       = √(Σ(dᵢ − mean(d))² / (n − 1))            # standard deviation of the deviations
+SCORE_SE    = √( (1.2533 × sd(x)/√n)² + (1.858 × sd(d)/√n)² )                          # full score noise of quick
+SCORE_SE    = 1000 × √( (1.2533 × sd(x)/(FLOOR × √n))² + 0.5² × BAD × (1 − BAD)/ALL )  # full score noise of idle
+NOISE_DIFF  = 2 × √(SCORE_SE_node² + SCORE_SE_best²)   # error of the difference of two scores (2 × SD(D))
+ALLOWANCE   = BAND + min(BAND, NOISE_DIFF)             # how far hysteresis lets a node exceed the band, at most two bands
+```
+
+## Scoring
+
+There are two objectives a group can score a node by:
+
+- `quick` compares actual delay: a 570ms node is simply slower than a 400ms node.
+- `idle` compares degradation: a node that is usually 200ms and 400ms at the evening peak — 400ms may still be lower than a distant node — is already running at twice its own time. So an `idle` score is a ratio in essence, with nothing to do with distance.
+
+Scoring assumes at least two successful checks. With only one, there is nothing to say about variation or pressure, so the objective falls back to delay.
 
 `SLOT` follows the wall clock: `k` is which 30 minutes of the day it is. A check fills the slot it was measured in, and only the smallest one in the slot is kept. After 24 hours the same slot is overwritten by the next record, and the old value is gone on its own.
 
-- **`MED`** is the delay level. A median rather than an average, so one very slow check cannot pull it.
-- **`JIT`** is **how much the delay usually moves**. A few spikes do not move it; `1.4826` is the factor that converts a median deviation into a standard deviation under a normal distribution.
-- **`DEV`** is **how much it moves overall**. Every check counts, and spikes add up only when there are many. It shows up in reports to help diagnose, and takes no part in ranking.
-- **`FLOOR`** is **the fastest check ever seen**, with no smoothing at all. One lucky probe lowers it and makes the node look perpetually queued; in return it reacts immediately to change.
-- **`PRES`** is **how deep** the queueing is: how much longer than its own best it usually waits, as a ratio. Dividing by its own floor cancels the propagation distance, so near and far nodes are comparable.
-- **`FAILW`** is **the near-term failure weight**: each failed check in the window contributes `exp(−(t − tᵢ) / τ_F)`, about 1 just after it happens, 0.67 after two minutes and 0.37 after five. It only sees failures inside the window, but the weights decay, so the window boundary is no longer a hard cut; consecutive failures add up.
-- **`BAD`** is **how often** it queues: the share of checks above twice its floor, plus the share of failures. It is compared with its own floor too, so distance does not matter; one extreme check counts once. The failure term is the larger of the recent share `FAILW / FAILW_TOTAL` and `FAILR`.
-- **`FAILR`** is the **long-run failure rate**. Old records weigh less and less, so it describes how things have been lately; it ignores the window, and a window that happens to be clean does not reset it. It and `FAILW` are two horizons of the same exponential weighting: `FAILW` covers the last few minutes as an absolute weight and decides whether the node can be used right now; `FAILR` covers tens of minutes as a ratio and decides whether it is still worth using later.
+**`MED`** is the delay level. A median rather than an average, so one very slow check cannot pull it.
+
+**`JIT`** is **how much the delay usually moves**. A few spikes do not move it. It takes the median of the absolute deviations as "typical variation", then multiplies by `1.4826` to put it on the same scale as a standard deviation:
+
+```sh
+Φ = the cumulative distribution function of the standard normal distribution
+q = median(|X − m|)
+P(|X − m| ≤ q) = 1/2
+```
+
+In a symmetric normal distribution, "within `q` of `m`" covers half the probability, so from the mean to `m+q` is a quarter, that is `Φ(q/σ) = 0.75`. Hence:
+
+```sh
+q      = Φ⁻¹(0.75) · σ ≈ 0.6745 · σ
+σ      ≈ q / 0.6745 ≈ 1.4826 · q
+1.4826 = 1 / Φ⁻¹(0.75)
+```
+
+That is, for normal data the median deviation is about `0.6745σ`, and multiplying by `1.4826` brings it back to the scale of a standard deviation. It is a conversion constant under normality; it does not mean real delays are normally distributed.
+
+**`DEV`** is **how much it moves overall**. Every check counts, and spikes add up only when there are many. It shows up in reports to help diagnose, and takes no part in ranking.
+
+**`FLOOR`** is **the fastest check ever seen**.
+
+**`PRES`** is **how deep** the queueing is: how much longer than its own best it waits, as a percentage. Dividing by its own floor cancels the propagation distance.
+
+**`F(τ)` is the weighted failure rate**: each failure contributes `exp(−(t − tᵢ) / τ)` by age, 1 at the moment it happens and decaying to 0; the sum is divided by the total weight.
+
+**`FAILR_NEAR`** is **the recent failure rate**, that is `F(τ_N)`: the failure rate in the window, with ages decaying at `τ_N`.
+
+**`FAILR_LONG`** is **the long-run failure rate**, that is `F(τ_L)`, with ages decaying at `τ_L`. It and `FAILR_NEAR` are two horizons of the same `F(τ)`: `FAILR_NEAR` covers the last few minutes and decides whether the node can be used right now; `FAILR_LONG` covers tens of minutes and decides whether it is still worth using later.
+
+**`BAD`** is **how often** it queues: the share of checks above twice its floor, plus the share of failures. It is compared with its own floor too, so distance does not matter; one extreme check counts once.
+
+---
+
+Why exponential weighting for the weighted failure rate?
+
+The weight depends only on elapsed time, and two spans can be joined: `w(a + b) = w(a) · w(b)` — `a` minutes followed by `b` minutes must equal `a+b` minutes at once.
+
+> This property is also what lets the weighted failure rate cache only its result, without keeping the whole history.
+
+Among continuous functions that are not identically zero, only the exponential satisfies this, so `w(t) = exp(−t/τ)`. Switch to linear decay, step decay, or a sliding window of fixed count, and the same `τ` no longer means the same span at `1m` and at `5m`.
+
+The near-term failure weight is still tied to eligibility, and the gate is fixed: `FAIL_NEAR < 1` is a necessary condition for a node to qualify.
+A fresh failure weighs 1, so the node is immediately disqualified; on the next successful check, if its weight has already fallen below 1, the node returns to the candidates.
+
+It is not simply "the last check": only a single failure comes back on the next round, while consecutive failures add up. At a 2 minute interval, two failures in a row still weigh `0.670 + 0.449 = 1.119` on the next success and need one more round; three in a row take about 4 minutes after the last failure, and nine take about 6 minutes, to fall back below the gate.
+It answers "is it still failing now", an order of magnitude shorter than `FAILR_LONG`. The first failure still demotes the node immediately, so the peak-time reaction is unchanged; a sporadic failure in a quiet period decays on its own if it does not recur. There is no need to recognise peak hours: whether the failure continues is the best signal.
+
+The long-run failure rate `FAILR_LONG` answers a different question: among the qualified candidates, which one is more likely to fail.
+These candidates have had no full failure in the last few minutes, but `FAILR_NEAR` in the score can still be non-zero: a node that has just recovered still carries the remaining weight, and the score keeps pricing it down.
+The `τ` of `FAILR_LONG` can only balance two ends — fading an outage that has ended reasonably fast, without being thrown by a single sporadic failure. 45 minutes is the choice: a node that failed for 54 minutes and then recovered should not still be paying for it an hour later.
+`W` starts at 10, the weight of "ten clean checks": a cold start is "never seen failing", not "seen failing". Starting from zero, one failure would put `F(τ_L)` at `1.0` — right after startup, before the network is ready, every node's first check fails, and every node would carry a near-perfect estimate for an hour. The prior decays with time as well, so with enough history it can be ignored. With the cache file on, the restored history takes its place.
+It discriminates far less than delay does, and mostly breaks ties when delays are close, separating "fast but drops" from "slightly slower but steady"; it does not overturn "the fast one is still fastest".
 
 ## Tolerance Band
 
-A score close enough to the best counts as equally good, so the group does not switch back and forth over measurement noise. "Close enough" has two parts:
+A score close enough to the best counts as equally good, so the group does not switch back and forth over a bit of measurement noise. "Close enough" has two parts:
 
-- `tolerance`: the difference the user is willing to switch for. Both objectives default to `50ms`, because both score in milliseconds — 50ms is 50ms for `quick`, and 50ms for `idle` is 5% on the 1000ms scale.
-- Measurement noise: the score comes from a finite number of checks and moves when the batch is redone. It is not a fixed bias that can be subtracted from the score; it can only be put into the band.
+1. `tolerance`: the difference the user is willing to switch for.
+2. The measurement error of the score: the score comes from a finite number of checks, and a different batch of checks would move it. This is the estimation error of the score, not the jitter of a single check.
 
-So the band is "intent + noise":
+The only way to measure the noise of a single check is to redo that same check many times in parallel universes.
+A measurement is the true delay plus one random noise, so after enough repeats the scale of the noise, `σ`, can be estimated from the population variance.
 
-```
-band = tolerance + 2√2 × noise_best / √n
-cut  = score_best + band
-```
-
-`n` is the number of successful checks; `noise_best` is the typical single-check variation of the best node:
-
-```
-noise_best = JIT_best                                # quick
-noise_best = 1000 × 1.2533 × JIT_best / FLOOR_best   # idle
+```sh
+X         = μ + ε                        # the delay of one check
+μ         = the true delay at this moment
+ε         = the random noise of this one check
+Xᵢ        = the value in universe i, random across universes
+σ²        = Var(X) = Var(ε)              # the imagined population variance of one check
 ```
 
-The band estimates `σ` from `JIT_best`, not `sd(x)`: `JIT` is the median deviation, which one slow probe cannot inflate, so the band is not widened by a spike. `idle` uses only the `PRES` term — `BAD` enters the score but not the band; the band asks "could this node be as fast as the best", while `BAD` asks "will it break".
+Parallel universes are not available, so one check cannot be redone many times. All that can be done is many checks within the same time window,
+estimating `σ` from their spread `sd(x)²` — and that holds only if the scale of the fluctuation stays the same inside the window, so that the checks are samples of one `σ`.
+
+```sh
+xⱼ        = the observed value of check j in the real window
+mean      = (1/n) · Σxⱼ                     # sample mean
+sd(x)²    = (1/(n−1)) · Σ(xⱼ − mean)² ≈ σ²  # σ² estimated from the sample variance
+```
+
+To derive the error of the mean, imagine redoing all `n` checks of the window together in parallel universes, `i` being the universe number.
+`Xᵢⱼ` is the delay of check `j` in universe `i`; summing over `j` gives `sumᵢ` of universe `i`.
+Every universe has a different `sumᵢ`, and the differences between universes are the combined effect of these `n` noises.
+For three checks, universe A might get 500 + 520 + 510 = 1530 and universe B 480 + 540 + 500 = 1520;
+`Var(sumᵢ)` measures exactly this spread across universes.
+The checks are independent, so the variances simply add, which gives `nσ²`.
+The `x₁ + … + xₙ` actually measured in our world is the value of one universe, a fixed number with no variance.
+
+The capital `X` is "a value that could be measured", the small `x` is "a value that has been measured": `Xⱼ` is the random delay of check `j`,
+`Xᵢⱼ` is its value in universe `i`, and `xⱼ` is the number it actually landed on in this round (our universe).
+`Var(sumᵢ)` and `Var(meanᵢ)` take the fluctuation across universes, so they use the random-variable form;
+`xⱼ` in `sd(x)²` is a number already measured, and the spread it computes is that of the observations in hand.
+`mean = (1/n) · Σxⱼ` is the sample mean already computed; as seen as a random quantity that each universe computes for itself, it is what `Var(meanᵢ)` talks about.
+
+```sh
+sumᵢ       = Xᵢ₁ + … + Xᵢₙ                 # the sum in universe i
+Var(Xⱼ)    = σ²                            # every check comes from the same distribution
+Var(sumᵢ)  = Var(X₁ + … + Xₙ)
+           = Σ Var(Xⱼ) + 2·Σ Cov(Xⱼ, Xₖ)   # j < k
+           = nσ² + 0                       # independent ⇒ every pairwise covariance is 0
+           = nσ²
+meanᵢ      = sumᵢ / n
+Var(meanᵢ) = Var(sumᵢ / n)
+           = (1/n²) · Var(sumᵢ)            # Var(aX) = a²·Var(X)
+           = (1/n²) · nσ²
+           = σ²/n
+SE(mean)   = √Var(meanᵢ) = √(σ²/n) = σ/√n
+```
+
+A median looks only at ranks, not at values, so it is a little "dumber" than the mean. Intuitively: when a batch is redrawn, where the median lands
+depends on how many samples fall below the true median `m` — that count follows `Binomial(n, 1/2)`, with a spread of about `√n/2` samples;
+the spacing of neighbouring samples around the median is about `1/(n·f(m))`, where `f(m)` is the probability density at `m`.
+Multiplying the two gives the fluctuation of the median:
+
+```sh
+# the number of samples below m ~ Binomial(n, 1/2), standard deviation √n/2
+# the spacing of neighbouring samples around the median ≈ 1/(n·f(m))
+SE(MED)  ≈ (√n/2) × 1/(n·f(m)) = 1/(2·f(m)·√n)
+Var(MED) ≈ 1/(4n·f(m)²)
+
+# under normality f(m) = 1/(σ√(2π))
+SE(MED)  ≈ σ√(2π)/(2√n) = √(π/2)·σ/√n = 1.2533·σ/√n
+Var(MED) ≈ (π/2)·σ²/n
+```
+
+`π/2` is exactly that loss of efficiency: the variance of a median is `π/2 ≈ 1.57` times that of the mean, the same precision needs `π/2` times the samples, and the `SE` is `1.2533` times as large.
+
+The band uses only the delay part of the score: `MED` for `quick`, `PRES = MED/FLOOR` for `idle`.
+Swapping `σ` for its sample estimate `sd(x)` gives the strict form:
+
+```sh
+quick: 1.2533 × sd(x)/√n
+idle:  1000 × 1.2533 × sd(x)/(FLOOR × √n)
+```
+
+The last step is the simplification in the band: `sd(x)` becomes `JIT`, and `quick` drops `1.2533` as well: what the band needs is a narrow scale that tells nodes apart, not an exact standard error.
+
+```sh
+quick: SCORE_NOISE ≈ JIT/√n
+idle:  SCORE_NOISE ≈ 1000 × 1.2533 × JIT/(FLOOR × √n)
+```
 
 The more samples, the smaller `1/√n`, and the closer `band` is to `tolerance`, but never below it; with fewer than two successes no noise term is added. Every node scoring at or below `cut` stays a candidate.
 
+----
+
+`BAD` enters the score, but not the band. Two layers of reason:
+
+The first layer is what a band is for. It asks "could this node be as good as the best one", and its purpose is not to lose a good node over measurement noise. The deviation of `PRES` is sampling noise, symmetric, and one slow check does not make the node slow — being lenient with it is right. `BAD` does not ask about speed, it asks **whether the node breaks**, and the two mistakes cost differently: letting through a node that fails costs real bad requests; wrongly dropping a good node costs one candidate, and there are thirty of them.
+
+The second layer is how it behaves on small samples. `BAD` is a share, and its binomial standard error `√(BAD(1−BAD)/ALL)` equals zero exactly when `BAD` is zero (the failure part, being age-weighted, does the same). Put it in the band and the width would depend on whether the best node happened to hit one bad check this round, rather than on how well it was measured — which is plainly wrong.
+
+The error of `BAD` is not lost; it is used in hysteresis: there the subject is a known node, the goal is not to be interrupted by one fluctuation, and the question is "how much worse could it be" — the opposite. The two places estimate separately and share nothing.
+
+The band compares two scores, the candidate and the best, so the error must be computed from two estimates too. Each side has its own `SCORE_NOISE`, they are independent, and the difference is `√2 × SCORE_NOISE` uncertain; allowing two standard errors makes the margin `2√2 × SCORE_NOISE`. There is one simplification here: the band does not know which node will actually be compared, so it can only assume the candidate is measured as well as the best one — the two terms are then equal, a special case of the two-node difference formula.
+
 ## Keeping Existing Connections: Hysteresis
 
-When load balancing is allowed to interrupt existing connections, a node that is replaced can keep its open connections for a while. Load balancing allows connections over different lines at the same time, so there is no need to cut one until it is bad enough; otherwise a node entering and leaving the selection would repeatedly break connections. `urltest` allows only one node at a time and has no such logic.
+When load balancing is allowed to interrupt existing connections, a node that is replaced is not cut off as long as the excess is still within the noise margin. Load balancing allows connections over different lines at the same time, so there is no need to cut one until it is bad enough; otherwise a node entering and leaving the selection would repeatedly break connections. `urltest` allows only one node at a time and has no such logic.
 
-A node that just left the selection is not cut off while the part beyond the band is still within the noise:
+The band section used only the reading noise `SCORE_NOISE` of the delay term, and assumed both sides of the comparison are equally accurate. Hysteresis faces a known node, so it needs the complete version of the same thing: the other terms of the score brought in, and each side counted on its own. That is written `SCORE_SE`.
+What follows adds only these two new derivations; `√n`, `1.2533`, and the trade of `sd(x)` against `JIT` were covered in the band section.
+Below, `n` is the number of successful checks and `ALL` the number of attempts; `SCORE_SE` is the standard error of the score, that is, how much the score would move if the checks were redone.
+
+The score of `quick` is `MED + JIT`. The error of `MED` is already there; what is new is `JIT`. `JIT` is itself a median, so its error follows the same chain as `MED`, only the subject changes to the deviations `d`:
+
+```sh
+dᵢ             = |xᵢ − MED|                    # the deviation of each check from MED
+sd(d)          = √( Σ(dᵢ − mean(d))² / (n−1) ) # sample standard deviation of the deviations
+JIT            = 1.4826 × median(dᵢ)
+SE(median(dᵢ)) = 1.2533 × sd(d)/√n             # the chain of MED, with d as the subject
+SE(JIT)        = 1.4826 × SE(median(dᵢ))
+               = 1.4826 × 1.2533 × sd(d)/√n
+               = 1.858 × sd(d)/√n
+```
+
+Intuitively, the tighter `d` is, the steadier `JIT`. Strictly, `d` is computed around the estimated `MED`, so the centre carries an error as well;
+treating the centre as known, as here, is an approximation.
+`1.858` is an estimate too, not an exact probability guarantee: even if `x` is normal, the absolute deviation `d` is half-normal,
+so this coefficient is not a standard-error coefficient derived exactly.
+
+The score of `idle` is `1000 × (PRES + 0.5 × BAD)`. The error of `PRES` needs no new derivation; `BAD` is estimated as a proportion:
 
 ```
-noise     = 2 × √(SE_node² + SE_best²)
-allowance = band + min(band, noise)
+PRES     = MED / FLOOR                     # FLOOR is a constant within a round
+SE(PRES) = SE(MED) / FLOOR
+SE(BAD)  = √( BAD × (1 − BAD) / ALL )      # binomial standard error of a proportion
 ```
 
-`SE` is the standard error of a node's score. `2` is the two-standard-error scale: a difference beyond two `SD`s counts as really worse. Only nodes of the same status are compared by score; one that has fallen to a worse class is not kept. `min(band, noise)` caps the extra at one `band`, so a node is kept at most **two bands** away from the best. Hysteresis is there to ride out measurement noise, not to keep a clearly worse node around.
+`SE(BAD)` does not depend on `σ`, only on `BAD` and the number of attempts; it is zero when `BAD` is zero. Its denominator is all attempts rather than successes: failures are already in the numerator, and shrinking the denominator would narrow the error. The failure part is age-weighted, so its effective sample is `(Σw)² / Σw²`, smaller than `ALL`; using `ALL` here is an approximation.
+
+The bias of `FLOOR` is systematic (a minimum reads low, in the same direction for every node), so it stays out of the standard error. The error of `PRES` is absolute: a node constantly queueing 10% and a node that hardly queues share the same error scale, which depends only on `σ`, `FLOOR` and `n`. A round that breaks a record can move `FLOOR` down, and `PRES` then carries a little of the new minimum's noise; that only happens when a record is broken, in one direction, so the error model stays centred on `MED`.
+
+The score error adds the variances of the terms:
+
+```sh
+SCORE_SE_quick = √( SE(MED)² + SE(JIT)² )                  # covariance taken as 0
+SCORE_SE_idle  = 1000 × √( SE(PRES)² + 0.5² × SE(BAD)² )   # 0.5 squared, 1000 pulled out of the root
+```
+
+The two terms of `quick` come from the same batch of samples, and those of `idle` from the same window, so strictly the covariance could be non-zero; it is taken as 0 here.
+
+Hysteresis compares two nodes, and the difference is `D = S_node − S_best`. Both `S` here are random quantities, "what a re-measurement could give", not the two fixed values in hand. The band section assumed both sides equally accurate and so collapsed into `√2 × SCORE_NOISE`; here each side uses its own `SCORE_SE`. Sharing a probe target or a stretch of line can make the covariance non-zero, and it is taken as 0 here as well:
+
+```sh
+SD(D)      = √(SCORE_SE_node² + SCORE_SE_best²)
+NOISE_DIFF = 2 × SD(D)     # 2 is the two standard errors of the band section
+```
+
+So `NOISE_DIFF` is the error **margin** of the difference, not a standard error of it: that one is `SD(D)`, and `NOISE_DIFF` is twice it.
+
+So the range in which a node is kept is:
+
+```sh
+ALLOWANCE = BAND + min(BAND, NOISE_DIFF)
+```
+
+The extra `NOISE_DIFF` is capped at one more `BAND`: the `SCORE_SE` of `idle` is often larger than the noise term of the band, and without the cap the kept range would be very wide;
+with it, a node is kept at most **two bands** away from the best. Hysteresis is there to ride out measurement noise, not to keep a clearly worse node around for long.
+
+Only nodes of the same status are compared by score; one that has fallen to a worse class is not kept.
+A node with fewer than two successes has no estimable error, so the code takes its `SCORE_SE` as the whole score, and `NOISE_DIFF` then usually hits the `BAND` cap.
 
 ## Design Choices
 
@@ -103,7 +307,7 @@ The standard deviation is not banished: `quick` still uses it to estimate score 
 
 ### Why Trends Are Not Part of the Score
 
-The samples in a window have an order, yet none of `MED`, `PRES`, `JIT` or `DEV` looks at it: shuffle them however you like and they come out the same. So a node that has been getting worse for ten minutes reads exactly like a node that has always been that way, as long as the distribution matches. The slow-check part of `BAD` does not look at order either, but its failure part is age-weighted, so `BAD` distinguishes "failed just now" from "failed long ago" — that is exactly why `FAILW` exists.
+The samples in a window have an order, yet none of `MED`, `PRES`, `JIT` or `DEV` looks at it: shuffle them however you like and they come out the same. So a node that has been getting worse for ten minutes reads exactly like a node that has always been that way, as long as the distribution matches. The slow-check part of `BAD` does not look at order either, but its failure part is age-weighted, so `BAD` distinguishes "failed just now" from "failed long ago" — that is exactly why the recent failure rate exists.
 
 `PRES` and `BAD` cover part of it, but differently: they do not compare earlier with later inside the window, they compare **now with the historical best**. A node going from 200ms to 600ms has `MED` at 600 at once and `FLOOR` still at 200, so `PRES` jumps to 2.0 without waiting for a trend to build; a node going back from 600ms to 200ms has `FLOOR` drop to 200 with it and `PRES` returns near zero at once, with no grudge from the past. **So direction needs no separate machinery: `FLOOR` only moves down, an improvement is recognised immediately and a deterioration is paid immediately.**
 
@@ -131,32 +335,19 @@ The slots follow the wall clock rather than uptime, so slot 40 is always 20:00 t
 
 The number of slots sets the time resolution, and how many probes each slot holds: fewer slots mean longer stretches whose every fluctuation collapses into one minimum; more slots mean fewer probes each, and a record that may be decided by one or two. 48 divides the day evenly and leaves room for several rounds of checks per slot, which is why it was chosen. It belongs with `sampling` and `interval`: changing it means reconsidering the probe rate, so it is not something to hand to a user on its own.
 
-**The cost.** The floor is a minimum of per-slot minima — still a minimum, so it leans towards the most optimistic reading. That matches its purpose (an idle level is exactly what is wanted), but it means that once in a while a lucky probe lowers the floor slightly and every node's `PRES` reads a little higher, see [Derivations](#derivations). The bias is **the same for everyone** and does not change the ranking; it only moves how strict `tolerance` is.
+**The cost.** The floor is a minimum of per-slot minima — still a minimum, so it leans towards the most optimistic reading. That matches its purpose (an idle level is exactly what is wanted), but it means that once in a while a lucky probe lowers the floor slightly and every node's `PRES` reads a little higher. The bias is **the same for everyone** and does not change the ranking; it only moves how strict `tolerance` is.
 
-#### Updating, Expiring, Starting Up
-
-**Updating.** Each round writes the slots first and computes scores after, so the round takes effect immediately:
-
-```
-slot[k]     = min(slot[k], MIN)            # a new slot starts from MIN, then keeps its minimum
-FLOOR       = min(the slots of the last 24 hours)
-FAILW       = Σ exp(−(t − tᵢ) / τ_F)       # failed checks in the window, age-weighted
-FAILW_TOTAL = Σ exp(−(t − tᵢ) / τ_F)       # all checks in the window, age-weighted
-PRES        = max(0, MED − FLOOR) / FLOOR
-BAD         = min(1, #{xᵢ > 2 × FLOOR} / ALL + max(FAILW / FAILW_TOTAL, FAILR))
-```
-
-Writing first does not zero the score: a slot holds a minimum, so after the write `FLOOR ≤ MIN ≤ MED`, `PRES` is still a non-negative ratio and `BAD` still a share. Computing first and writing after would only delay a node that got faster by one round, for nothing.
+**Updating.** Each round writes the slots first and computes scores after, so the round takes effect immediately; computing first and writing after would only delay a node that got faster by one round, for nothing.
 
 **Expiring.** There is no separate expiry step: after 24 hours the same slot is overwritten by the next round and the old record is gone with it. So the baseline always comes from times **actually measured**, and never treats present congestion as a fastest level the way "reset to the current value on expiry" would. A slot that stays congested rises slowly while the others stay as they were; only congestion that lasts everywhere raises the baseline as a whole, which amounts to admitting "this node is simply this slow".
 
 **Sudden changes.** While a node is steady or changes slowly, the baseline moves by one slot's worth per round, because only one slot of 30 minutes is replaced. For a node that gets 144ms slower each day: expiring everything at once is a 144ms jump, while with slots the change spreads over 48 updates in a day, about 11ms each. **A sudden change — a new line, a new machine — still jumps**: when the last old reading is overwritten, the minimum has to fall to the next one, and the jump is the size of the change itself. That is the price of forgetting old data, not noise that smoothing could remove.
 
-**Starting up.** The first round writes its fastest check, so `FLOOR` is `MIN` from the start and needs no fallback. The floor then fills one slot at a time and takes 24 hours to cover a day. With the cache file on, a restart carries on with the whole day of slots and the long-run failure rate; without it (not enabled, the target or path changed, the record expired) a restart starts from zero as it always did. While it fills, each slot covers fewer times of day and the floor tends to read high — the cost of forgetting old data; the ranking still works, see [Why Both Parts Are Ratios](#why-both-parts-are-ratios).
+**Starting up.** The first round writes its fastest check, so `FLOOR` is `MIN` from the start and needs no fallback. The floor then fills one slot at a time and takes 24 hours to cover a day. With the cache file on, a restart carries on with the whole day of slots and the long-run failure rate; without it (not enabled, the target or path changed, the record expired) a restart starts from zero as it always did. While it fills, each slot covers fewer times of day and the floor tends to read high — the cost of forgetting old data; the ranking still works.
 
 ### Why Only the Floor and the Failure Rate Are Cached
 
-Only two pieces of state live outside the window: the baseline and the long-run failure rate. `FAILW` and `FAILW_TOTAL` are computed from the timestamps of every check in the window and need no extra storage; so the cache still holds only `FAILR` as failure state, while `FAILW`, `FAILW_TOTAL`, `MED` and `JIT` are window statistics that can be rebuilt. After a restart the window is empty and `FAILW` starts at zero; `FAILR` is restored from the cache, so the score still holds down a node that just failed. Making the gate exact across restarts would require storing `FAILW` together with a timestamp — two numbers, not a merge of the two horizons. The window holds only `sampling` checks (`sampling × interval`), while one piece looks back 24 hours and the other `τ = 45` minutes. A restart is therefore very lopsided: the window rebuilds in minutes, `FLOOR` waits for the next daily trough, and `FAILR` has no evidence until the node **fails again**.
+Only two pieces of state live outside the window: the baseline and the long-run failure rate. `FAILR_NEAR` is computed from the timestamps of every check in the window and needs no extra storage; so the cache still holds only `FAILR_LONG` as failure state, while `FAILR_NEAR`, `MED` and `JIT` are window statistics that can be rebuilt. After a restart the window is empty and `FAILR_NEAR` starts at zero; `FAILR_LONG` is restored from the cache, so the score still holds down a node that just failed. Making the gate exact across restarts would require storing `FAIL_NEAR` together with a timestamp — two numbers, not a merge of the two horizons. The window holds only `sampling` checks (`sampling × interval`), while one piece looks back 24 hours and the other `τ = 45` minutes. A restart is therefore very lopsided: the window rebuilds in minutes, `FLOOR` waits for the next daily trough, and `FAILR_LONG` has no evidence until the node **fails again**.
 
 The samples of the window are not kept — twenty minutes rebuilds them, while holding on to those hundreds of checks would take two orders of magnitude more space.
 
@@ -183,321 +374,6 @@ The two parts **have to stay separate**, because they catch different faults:
 | slow and drops | very high | very high | last | last |
 
 Keep only one of them and the other kind of fault slips through.
-
-### Why Both Parts Are Ratios
-
-`idle` answers "how far is this node from its own best", and "how far" can be written two ways: as a difference (`MED − FLOOR`) or as a ratio (`(MED − FLOOR) / FLOOR`). The ratio is not a preference; it is the only form that removes distance.
-
-**A difference brings distance back.** A 400ms node with a 380ms floor waits 20ms more; a 900ms node with an 860ms floor waits 40ms more. By the difference the second is worse, but part of those 40ms is simply being further away: at the same amount of queueing, a longer line adds more milliseconds. A difference cannot separate "I am queueing" from "I am simply far", because it carries the units of the floor. The ratio cancels the floor: `PRES` is "the extra wait as a share of its own floor", the same number for a near and a far node at the same queueing, and `BAD` only compares against its own floor, so distance drops out too. Both are dimensionless, which is what "independent of distance" means.
-
-**The cost is real, but it does not scramble the ranking.** A ratio amplifies the noise of a low floor: a small denominator turns the same absolute error into a larger ratio. So the floor must not be wildly wrong per node — which is what the ring of slots is there to ensure. When the floor is wrong **the same way for everyone**, the ranking still holds: a floor off by some factor scales `PRES` by the same factor and recomputes `BAD` against the same floor. That is the essential difference from the difference form, where a floor 10ms off is a 10ms shift and moves a node up or down.
-
-The ranking only moves when the floors of **different nodes** are off by disproportionate amounts, and neither source of error is choosy: one is the systematic optimism of taking a minimum, which pushes every node the same way; the other is which sampled value each node's floor lands on, which depends on that node's own spread, and a narrow spread converges quickly to its true lower end. So while the floor is still filling, the scores read a little optimistic and `tolerance` reads a little stricter; the ranking is unchanged.
-
-**Where the limit is.** The more the floor errs, the worse the ratio form fares: once the denominator is inflated by noise enough, it is no better than the difference. A new machine or a new line invalidates an old floor outright, and that is exactly what the 24 hour ring handles. One coupling is worth noting: a node that varies more has its floor pushed lower and its `PRES` lifted — variation is itself a fault, so the direction agrees with the intent, but it means `PRES` carries some variation information and overlaps with `BAD`. The overlap points the same way, so a quiet node never gains by looking variable.
-
-## Derivations
-
-This chapter follows the order of the formulas above: first the statistics and failure terms of the scoring formulas, then the noise of the tolerance band and hysteresis, and finally the limits of these approximations.
-
-The notation:
-
-- `n` is the number of successful checks; `xᵢ` is the delay of the `i`th successful check; `MED` is their sample median.
-- `sd(…)` is the sample standard deviation, used to estimate how far a set of values usually sits from its centre.
-- `Var(…)` is the variance, the square of the size of the fluctuations; `SE` (standard error) is how much an estimate usually moves under repeated sampling, the square root of the variance.
-- `SE` here is an approximation, not an exact standard error or confidence interval.
-
-The derivations assume the checks are independent and come from a stable distribution within a sampling window; the analysis of `JIT` also assumes symmetry. Real networks do not always oblige.
-
-### Scoring Formulas: Constants and Failure Terms
-
-The statistics of the scoring formulas are defined above; here are the non-obvious choices among them: the `JIT` constant, the `FLOOR` minimum, the `FAILW` gate, and the `FAILR` decay.
-
-#### `quick`: Why `JIT` Is Multiplied by `1.4826`
-
-`JIT` uses the median of the absolute deviations for "typical variation", then multiplies by `1.4826` to put it on the same scale as a standard deviation. The constant comes from the normal distribution:
-
-```
-q = median(|X − m|)
-P(|X − m| ≤ q) = 1/2
-```
-
-In a symmetric normal distribution, "within `q` of `m`" covers half the probability, so from the mean to `m+q` is a quarter, that is `Φ(q/σ)=0.75`. Hence:
-
-```
-q = Φ⁻¹(0.75)·σ ≈ 0.6745·σ
-σ ≈ q / 0.6745 ≈ 1.4826·q
-1.4826 = 1 / Φ⁻¹(0.75)
-```
-
-So for normal data the median deviation is about `0.6745σ`, and multiplying by `1.4826` brings it back to the scale of a standard deviation. It is a conversion constant under normality; it does not mean real delays are normal.
-
-#### Why `FLOOR` Takes the Minimum
-
-`FLOOR` takes the minimum, so it is optimistic.
-
-There are many probes in a day, one of them is bound to be lucky, and the minimum therefore reads systematically low (the more chances, the lower it goes, which is the nature of an extremum). The cost is that every node's `PRES` is a few percent higher; what it buys is a quantity that **does not lag**.
-
-Recording per-window medians instead would be much quieter, but it answers a different question: "how fast is this node **usually**". In steady periods every node's median equals itself, so every `PRES` is zero and `idle` has nothing to rank. Worse is a real kind of node whose delay rotates between two pools: with two low and two high the median lands exactly between the peaks — a value it has never reached — and that midpoint is stable round after round, so the node is read as the steadiest one there is. A minimum is not fooled by that structure.
-
-The bias is **shared**, so it does not change the ranking: both nodes read optimistic by the same factor, and their difference in `PRES` is still the difference in reality. It only shifts the zero point, that is, how strict `tolerance` is.
-
-#### Recent Failures: `FAILW` and Eligibility
-
-Eligibility needs no configuration; the gate is fixed:
-
-```
-qualified  ⟺  FAILW < 1
-```
-
-A failure weighs 1, so the rule means "the most recent failure has not yet decayed below one full failure". A fresh failure weighs 1 and the node is immediately disqualified; on the next successful check its weight has fallen to `exp(−interval / 5min)`, below 1, and the node returns to the candidates.
-
-It is not simply "the last check": only a single failure comes back on the next round, while consecutive failures add up. At a 2 minute interval, two failures in a row still weigh `0.670 + 0.449 = 1.119` on the next success and need one more round; three in a row take about 4 minutes after the last failure, and nine take about 6 minutes, to fall back below the gate (`FAILW` converges to `1 / (1 − exp(−Δt/τ_F))`, about 3.0). So a long outage does not drag the node for all `sampling` intervals after it recovers. The weight is not computed for the gate alone: `BAD` and `p` in the score also contain `FAILW / FAILW_TOTAL`; the gate reuses it.
-
-**`τ_F` is 5 minutes.** It answers "is it still failing now", an order of magnitude shorter than `FAILR`. The first failure still demotes the node immediately, so the peak-time reaction is unchanged; a sporadic failure in a quiet period decays on its own if it does not recur. There is no need to recognise peak hours: whether the failure continues is the best signal.
-
-The failure term in the score uses the same `FAILW / FAILW_TOTAL`, so the gate and the score read the same evidence: when the gate lets a node through, the score has already been reduced by the same weight, and there are no two failure standards.
-
-`urltest` uses the same gate: a node that just failed does not enter the candidates, and returns after the next successful check. Its score is also priced with `FAILW / FAILW_TOTAL`, so after the gate lets it through, the remaining weight still affects how it compares with the best node.
-
-The old `fail / total` was an **equal-weight average**: every check in the window weighed the same, and leaving the window dropped its weight from `1/n` straight to `0`. So it jumped at the window boundary, and the same count meant a different span at different intervals. `FAILW / FAILW_TOTAL` lets each failure decay with age, so the boundary jump largely disappears; but it still remembers only failures inside the window, and failures outside the window are left to `FAILR`.
-
-#### Why Not One Number: Two Time Constants
-
-A ratio and an absolute value do not conflict: under the same `τ`, the accumulated weighted failures `S` and weighted checks `W` give both the absolute `S` and the ratio `S / W`. What separates them is the time constant: the gate needs the short 5 minute memory, while the long-run failure rate needs the 45 minute memory. One `τ` cannot do both — 45 minutes would hold a three-failure burst for half an hour, while 5 minutes would wash out a flickering node too quickly. The implementation therefore shares the same exponential weighting and recursion but keeps two horizons; they are called `FAILW` (short, absolute) and `FAILR` (long, ratio). `FAILR` cannot be derived from `FAILW`, nor the other way around: their `τ` differs; only within the same horizon can the absolute and the ratio be converted into each other.
-
-#### Long-Run Failure Rate: `FAILR`
-
-The long-run failure rate answers a different question: among the qualified candidates, which one is more likely to fail? The gate is fixed at `FAILW < 1`, so these candidates have had no full failure in the last few minutes; `FAILW / FAILW_TOTAL` can still be non-zero for a node that has just recovered, and the score keeps pricing it down.
-
-Nodes fail in very different ways: one kind **flickers**, with failures scattered across its history and more always possible; another has **long outages**, one continuous drop followed by a long clean stretch. Their historical failure rates can look alike, yet once `FAILW` falls below the gate the flickering node fails again much sooner. The near-term weight, with only a few minutes of memory, cannot tell them apart.
-
-So `FAILR` is kept across rounds, and the larger of it and the recent share enters the score, see `p` and `BAD` above.
-
-`FAILR` averages differently: **the nearer a check, the more it weighs, and the weight depends only on elapsed time**. With check `i` at `tᵢ` and the present at `t`:
-
-```
-wᵢ = exp(−(t − tᵢ) / τ)
-R  = Σ wᵢ·xᵢ / Σ wᵢ              # xᵢ = 1 means this check failed
-FAILR = R
-```
-
-**Why it has to be exponential.** The weight depends only on elapsed time, and two spans can be joined: `w(a + b) = w(a) · w(b)` — `a` minutes followed by `b` minutes must equal `a+b` minutes at once. Among continuous functions that are not identically zero, only the exponential satisfies this, so `w(t) = exp(−t/τ)`. Switch to linear decay, step decay, or a sliding window of fixed count, and the same `τ` no longer means the same span at `1m` and at `5m`.
-
-**Recursion.** With `c = exp(−Δt/τ)`, every new check multiplies all old weights by `c`, so two running sums are all that is needed:
-
-```
-S ← c·S + x          # weighted failures
-W ← c·W + 1          # weighted checks
-R  = S / W
-```
-
-Keeping `R` alone would also work at a fixed interval; keeping them apart is what lets a cold start carry a prior. The denser the checks, the larger the steady state of `W`, which is `τ/Δt`, and the less each one matters — exactly "this check stands for a short stretch of time".
-
-**The prior at a cold start.** `W` starts at 10, the weight of ten clean checks: a cold start is "never seen failing", not "seen failing". Starting from zero would make the first check all the evidence, and one failure would put `R` at `1.0` — right after startup, before the network is ready, every node's first check fails, and every node would carry a near-perfect failure rate for an hour. The prior decays by the same `c`, so with enough history it can be ignored. With the cache file on, the restored history takes its place.
-
-**Why decay by elapsed time instead of by count.** A count-based rate forces `sampling` and `extra` to specify how many checks to keep, and at an interval of `1m` versus `5m` the same count covers five times the span — a difference that then leaks into the score. With time there is no such problem: two 1 minute intervals and one 2 minute interval decay the same over the same span, and changing `interval` does not change what the estimate means. It is also unaffected by changing the sampling at runtime, since resampling the window does not reset it.
-
-**Why not a whole day.** A daily failure rate mixes the evening peak with the quiet hours, while queueing and dropping vary by time of day. A `τ` decay follows the recent past: the evening peak shows up as the evening peak, undiluted by a day's average.
-
-**How long `τ` should be.** Data gives no clear answer: widening the range many times over barely helps in predicting whether the node will fail next. So it is a balance between two ends — fading an outage that has ended reasonably fast, without being thrown by a single sporadic failure. 45 minutes is the choice: a node that failed for 54 minutes and then recovered should not still be paying for it an hour later.
-
-**How many checks it is worth.** The weights sum to `1/(1 − c) ≈ τ/Δt`, so it is roughly worth the last `τ/Δt` checks: about 45 at a `1m` interval, 22 at `2m`, 9 at `5m`. The longer the interval, the fewer checks the same `τ` covers and the coarser the estimate, so `τ` cannot be too short.
-
-**How it differs from the recent share.** While the failure rate is constant, `R` ends up close to it and agrees with the recent share; they part company only when the rate changes — the recent share follows `τ_F = 5 minutes` down quickly, while `R` decays as `exp(−t/45)`. With `τ = 45 minutes` and a check every minute, a node that had been clean (`R ≈ 0`) that then fails 10 times in a row, and succeeds from then on:
-
-| Minutes of success after | Recent share `FAILW / FAILW_TOTAL` (10 samples) | `R` |
-| --- | --- | --- |
-| 0 | `1.000` | `0.199` |
-| 5 | `0.269` | `0.178` |
-| 10 | `0.000` | `0.160` |
-| 45 | `0.000` | `0.073` |
-| 90 | `0.000` | `0.027` |
-
-The table assumes enough history before it, so the prior has long faded: the first row is `1 − exp(−10/45)`, and each row after multiplies by `exp(−Δt/45)`. The first row is a full window of 10 failures, `FAILW / FAILW_TOTAL = 1`; the denominator is the sum of weights when every check in the window failed. At minute 5 the earliest 5 failures have left the window; the remaining 5 weigh about 1.28, the window's total weight is about 4.77, and the share is about 0.27. At minute 10 the successful checks have pushed them all out and the recent share is zero. `R` needs over an hour to settle back — which is why `FAILR` is used instead of the recent share alone.
-
-**How much it matters.** It discriminates far less than delay does, and mostly breaks ties when delays are close, separating "fast but drops" from "slightly slow but steady". It does not overturn "the fast one is still fastest".
-
-### Tolerance Band: Noise Margin
-
-The band is user intent plus measurement noise. The intent is `tolerance`; the noise term takes only the best node's typical variation `JIT_best`. Why that choice, and why `idle` does not put the error of `BAD` into the band, is below.
-
-#### Why the Margin Uses `JIT_best`
-
-At comparison time the candidate is unknown, and so is how well it has been measured, so assume it is measured as well as the best one. For `quick`, each node brings a reading error of `JIT_best/√n`; the difference is `√2` times as uncertain, and two standard errors are allowed:
-
-```
-margin_quick = 2 × √( (JIT_best/√n)² + (JIT_best/√n)² )
-             = 2√2 × JIT_best/√n
-```
-
-For `idle`, substituting the error of `PRES` gives the term used in `band` above:
-
-```
-margin_idle = 2√2 × 1000 × 1.2533 × JIT_best / (FLOOR · √n)
-```
-
-`quick` takes `JIT` directly as `noise_best`, so the first expression has no `1.2533`; the `PRES` error of `idle` carries `1.2533/FLOOR`.
-
-Why `JIT_best`:
-
-- **Not `DEV_best`.** `DEV` is the average deviation, in which one spike only takes its own share; estimating the margin from it would make a node that "stalls once in a while" look steadier than it is. `JIT` is the median deviation, which a few outliers cannot move.
-- **Not the full score noise.** It contains squared deviations, so one slow probe inflates it; widen the band and clearly worse nodes come in too. This is a safe trade, not a mathematical lower bound.
-
-The margin is **absolute**: it does not scale with the score, so a node constantly queueing 10% and a node that never queues get the same width. That is also what makes the shared `50ms` meaningful — both scores live in the tens to hundreds of milliseconds, so the configured value and the actual band are on the same ruler. More samples narrow the margin, as with `quick`. `FLOOR` is itself less uncertain than `MED`, because it is gathered over several windows.
-
-#### Why the `idle` Band Does Not Use `BAD`
-
-`BAD` enters the score but not the band. Two reasons:
-
-The first is what a band is for. It asks "could this node be as good as the best one", and its purpose is not to lose a good node over measurement noise. The deviation of `PRES` is sampling noise, symmetric, and one slow check does not make the node slow — being lenient with it is right. `BAD` does not ask about speed, it asks **whether the node breaks**, and the two mistakes cost differently: letting through a node that stalls costs real bad requests; wrongly dropping a good node costs one candidate, and there are thirty. So for an uncertain frequency, ask for evidence rather than relax the bar. **Uncertainty must not make a node more likely to be chosen.**
-
-The second is how it behaves on small samples. `BAD` is a share, and its binomial standard error `√(BAD(1−BAD)/ALL)` equals zero exactly when `BAD` is zero (the failure part, being age-weighted, does the same). Put it in the band and the width depends on whether the best node happened to hit one bad check this round, rather than on how well it was measured — which is plainly wrong.
-
-The error of `BAD` is not lost; it is used in hysteresis, where the subject is a known node, the goal is not to be interrupted by one fluctuation, and the question is "how much worse could it be" — the opposite. The two places estimate separately and share nothing.
-
-### Hysteresis: Noise Estimates
-
-The previous section said that the error of `BAD` does not enter the band; hysteresis has to decide whether to keep a known node, so it needs the full score error. First estimate the noise of one node, then the difference of two.
-
-#### Noise of One Node
-
-A standard error says how much an estimate usually moves when you measure again. For a mean, the sample standard deviation over `√n` estimates it; for a median, and for anything measured from an estimated centre, the distribution matters too. These are the approximations used here:
-
-```
-SE(score) ≈ √( (1.2533·sd(x)/√n)² + (1.858·sd(d)/√n)² )                     # quick
-SE(score) ≈ 1000 · √( (1.2533·sd(x)/(FLOOR·√n))² + 0.5²·BAD(1−BAD)/ALL )   # idle
-```
-
-`d` is each delay's deviation from `MED`. The two terms of `quick` are the errors of `MED` and of `JIT`; `idle`'s two terms are the errors of `PRES` and of `BAD`. `FLOOR` is constant within a round and its bias is systematic, so it stays out of the standard error. The band above uses `JIT_best`, while hysteresis uses `sd(x)`; the two scales differ and should not be mixed. These are approximations, not exact standard errors; the sections below explain where they come from. The single-node `SE` is only the input: the real decision compares two nodes, see the two-node comparison later.
-
-#### `quick`: The Error in `MED`
-
-`quick` scores `MED + JIT`. Start with `MED`: another batch of checks moves the median too. How far depends on how crowded it is around the median — with the samples bunched there, the median does not move easily; with them sparse, a few samples changing can move it far.
-
-Let `f(m)` be the probability density around the population median `m`, which can be read as "how densely delays land near the median". With enough samples the variance of the median is approximately:
-
-```
-Var(MED) ≈ 1 / (4n·f(m)²)
-```
-
-For a normal distribution `f(m) = 1/(σ√(2π))`, which gives:
-
-```
-Var(MED) ≈ (π/2)·σ²/n
-SE(MED)  ≈ √(π/2)·σ/√n
-          ≈ 1.2533·sd(x)/√n
-```
-
-The sample `sd(x)` estimates the population standard deviation `σ`. So `1.2533 = √(π/2)` is the factor under a **normal approximation**; another distribution needs its own derivation.
-
-#### `quick`: Estimating the Error in `JIT`
-
-Even knowing the true centre `m`, `JIT` moves with whichever samples were drawn. Let `q` be the population median of `|X−m|` and `g(q)` the density of the absolute deviation around `q`. With the centre known, the distribution symmetric and enough samples:
-
-```
-SE(median(|X − m|)) ≈ 1 / (2g(q)√n)
-SE(JIT) ≈ 1.4826 / (2g(q)√n)
-```
-
-Intuitively, the denser the absolute deviations around `q`, the less the median moves and the smaller the error. If the centre also has to be estimated from the same samples, or the distribution is skewed, those effects have to be accounted for as well.
-
-Here `1.858·sd(d)/√n` is used for this term, where `1.858 = 1.4826 × 1.2533`. That amounts to applying the normal-median factor to `d`; but even when `x` is normal, the absolute deviation `d` is half-normal, so `1.858` is not a derived standard-error coefficient. It is an estimate, not a guarantee.
-
-#### `quick`: Combining the Errors in `MED` and `JIT`
-
-When the errors of two quantities are independent, the variance of their sum is the sum of their variances; in general a covariance term is added:
-
-```
-Var(MED + JIT) =
-    Var(MED) + Var(JIT) + 2·Cov(MED, JIT)
-```
-
-`MED` and `JIT` are computed from the same samples and can in principle be correlated. Under a symmetric IID distribution they are asymptotically independent, so the covariance is approximately ignored here; with finite samples or another distribution that need not hold. The combined noise estimate is:
-
-```
-SE(score) ≈ √( SE(MED)² + SE(JIT)² )
-```
-
-So the coefficients and the variance combination in `quick` depend on the distribution and sample assumptions above; this `SE` is an estimate, not a 95% interval.
-
-#### `idle`: The Errors in `PRES` and `BAD`
-
-`idle` ranks by `score = 1000 × (PRES + 0.5 × BAD)`, and what has to be estimated is how much that sum usually moves when the batch of checks is redone.
-
-**`FLOOR` is a constant within one round.** It is gathered from the per-slot minima and is a fixed value once the round is written; subtracting it subtracts a constant, dividing by it divides by a constant. So each ratio only varies with what is inside the window:
-
-```
-Var(PRES) = Var(MED / FLOOR) = Var(MED) / FLOOR²
-```
-
-A round can move `FLOOR` **down** (when a faster check shows up), and then `PRES` is measured against `MIN` and carries a little of `MIN`'s noise as well. But that only happens when a record is broken, in one direction, and is not the per-round jitter, so the noise model stays centred on `MED`.
-
-The error of `FLOOR` itself is another matter, and it is **systematic**: a minimum reads low, so every node's `PRES` reads high in the same direction, and no amount of sampling averages it away — it cannot enter a standard error, only be understood and allowed for, see the earlier `FLOOR` section.
-
-**The variance of `MED`.** As with `quick`, `SE(MED) ≈ 1.2533·σ/√n`, where `σ` is the variation of a single check. It has two estimators: `sd(x)` is the sample standard deviation, which is what the definition of a standard error uses, and `JIT` is the median deviation times `1.4826`, the robust estimator on the same scale that a spike cannot move. Hysteresis uses the first, the margin uses the second, see the tolerance band section.
-
-**Together, that is the error of `PRES`** (the margin then swaps `sd(x)` for `JIT`, the shape unchanged):
-
-```
-SE(PRES) ≈ SE(MED) / FLOOR ≈ 1.2533 · sd(x) / (FLOOR · √n)
-```
-
-This is an **absolute** error and does not scale with the score: a node constantly queueing 10% and a node that never queues share the same error scale — they differ only in `MED`, and the error depends only on `σ`, `FLOOR` and `n`.
-
-**The error of `BAD`.** Its slow-check part is a share of `ALL` attempts, and its failure part is `FAILW / FAILW_TOTAL`, where each check carries an age weight no greater than 1. Together it is still estimated as a binomial proportion:
-
-```
-SE(BAD) ≈ √( BAD(1 − BAD) / ALL )
-```
-
-The failure part's denominator is the sum of weights of all checks in the same window; age weighting makes the effective sample `(Σw)² / Σw²` smaller than `ALL`, so using `ALL` understates the error. The band is dominated by the jitter term, so this simplification stays. The error does not depend on `σ`, only on `BAD` and the number of attempts; when `BAD` is zero it is zero too, which is exactly why it can go into hysteresis but not into the band. The denominator is all attempts rather than successes: failures are already in the numerator, and a smaller denominator would narrow the error, while a node with many failures is the one whose error should be large.
-
-Both terms come from the same window and are strictly correlated; here the variances are added and the correlation is taken as zero:
-
-```
-SE(score) ≈ 1000 · √( SE(PRES)² + 0.5² · SE(BAD)² )
-```
-
-That is the noise estimate used by **hysteresis**. The band uses only the `PRES` term; its margin is in the tolerance band section.
-
-#### How `SD` and `SE` Relate
-
-`SE` and `SD` are easy to confuse, so distinguish them first. `SD` (standard deviation) describes how a random quantity itself fluctuates; `SE` (standard error) describes how an estimate fluctuates under repeated sampling. A score is an estimate computed from samples, so its standard deviation is its standard error. `SE` is used here for the approximation to that error.
-
-The node's score and the best node's score are already fixed values in the current window; calling them random quantities is asking "if this were measured again, how far apart could they be".
-
-#### Comparing Two Nodes: How Uncertain Is the Difference?
-
-The band margin has already used the difference of two nodes; hysteresis faces a known node, so its `SE` is the full score error, not just `PRES`. The question is how much the difference between a node's score and the best score moves when everything is measured again. Treat the two scores as random quantities:
-
-```
-S_node   = the node's score as a random quantity
-S_best   = the best node's score as a random quantity
-D        = S_node − S_best
-Var(D)   = Var(S_node) + Var(S_best)
-           − 2·Cov(S_node, S_best)
-```
-
-When the errors of the two nodes are independent the covariance is zero. If they share a probe target or a stretch of line it may not be, and it is ignored here. Under independence, substituting the estimates above and taking the square root:
-
-```
-Var(D) ≈ SE_node² + SE_best²
-SD(D)  ≈ √(SE_node² + SE_best²)
-```
-
-`SD(D)` is how much the difference moves when measured again; the `SE`s in it are estimates, not exact values.
-
-Hysteresis uses this `SD(D)`:
-
-```
-noise     = 2 × SD(D)
-allowance = band + min(band, noise)
-```
-
-`2` is `hysteresisSigma` in the code: two standard errors, the empirical scale for "this difference is still unclear"; it is not a strict 95% guarantee. `min(band, noise)` caps the extra at one `band`: the `SE` of `idle` is often larger than the band's noise term, and without the cap the allowance would be very wide; with it, a node is kept at most two bands away from the best.
-
-Only nodes of the same status are compared by score; a node that has fallen to a worse class (say, from qualified to alive) is not kept. A node with fewer than two successes has no estimable error, so the code takes its `SE` as the whole score, and `noise` then usually hits the `band` cap.
 
 ### Distribution Assumptions and Resampling
 

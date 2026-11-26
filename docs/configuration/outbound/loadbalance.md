@@ -117,7 +117,7 @@ Note: `consistenthash` requires a relatively stable quantity of nodes, it's avai
 
 The maximum round-trip time of health check that is acceptable for qulified nodes. The median RTT of the successful checks is compared, so a single spike doesn't disqualify an otherwise good node. Default is `0`, which accepts any round-trip time.
 
-> **Failure eligibility**: a qualified node also requires the near-term failure weight `FAILW` to be below `1`. A fresh failure weighs `1`, so the most recent failure makes the node temporarily unqualified; on the next successful check the failure has decayed to `exp(−interval / 5min)` and the node returns to the candidates. The gate is fixed and needs no configuration. At a 2 minute interval a single failure costs one round; consecutive failures add up — three in a row take about 4 minutes after the last failure, nine about 6 minutes, to fall back below the gate.
+> **Failure eligibility**: a qualified node also requires the near-term failure weight to be below `1`. A fresh failure weighs `1`, so the most recent failure makes the node temporarily unqualified; the node returns to the candidates as the failure decays.
 
 #### tolerance
 

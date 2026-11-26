@@ -18,22 +18,23 @@ var (
 )
 
 const (
-	// resolutionSigma is how many standard errors of the best score it takes to tell two
-	// nodes apart: the difference of two estimates carries the error of both, √2 each,
-	// and the comparison is taken at two standard errors.
+	// resolutionSigma is 2√2 of the docs in BAND: how many standard errors of the best
+	// score it takes to tell two nodes apart. The difference of two estimates carries the
+	// error of both, √2 each, and the comparison is taken at two standard errors.
 	resolutionSigma = 2 * math.Sqrt2
-	// medianToError is the standard error of a median in units of σ/√n. The asymptotic
-	// variance of a median is 1/(4n·f(m)²), which is (1.2533σ)²/n for a normal sample: a
-	// median uses only the rank of the samples, so it is a quarter less accurate than the
-	// mean of the same samples.
+	// medianToError is 1.2533 of the docs: the standard error of a median in units of σ/√n.
+	// The asymptotic variance of a median is 1/(4n·f(m)²), which is (1.2533σ)²/n for a
+	// normal sample: a median uses only the rank of the samples, so it is a quarter less
+	// accurate than the mean of the same samples.
 	medianToError = 1.2533
-	// jitterToError is the same for the jitter. It is a median of the deviations, scaled by
-	// 1.4826 to a σ estimate, so its standard error is 1.4826 × 1.2533 times the standard
-	// error of one deviation.
+	// jitterToError is 1.858 of the docs, the same for the jitter. It is a median of the
+	// deviations, scaled by 1.4826 to a σ estimate, so its standard error is
+	// 1.4826 × 1.2533 times the standard error of one deviation.
 	jitterToError = 1.4826 * medianToError
-	// hysteresisSigma is how many standard errors a node may exceed the selection
-	// band by and still keep its existing connections. Two standard errors is the
-	// usual 95% confidence, the excess is then not distinguishable from noise.
+	// hysteresisSigma is 2 of the docs in NOISE_DIFF: how many standard errors a node may
+	// exceed the selection band by and still keep its existing connections. Two standard
+	// errors is the usual 95% confidence, the excess is then not distinguishable from
+	// noise.
 	hysteresisSigma = 2
 )
 
@@ -55,8 +56,9 @@ type ScoreObjective struct {
 	// The band is sized by it, so it is a typical deviation rather than the deviation
 	// summed over the window, see band.
 	noiseFunc func(node *Node) healthcheck.RTT
-	// errorFunc is the standard error of scoreFunc, i.e. how wrong the score of a known
-	// node may be, see scoreStandardError and Keep.
+	// errorFunc is SCORE_SE of the docs, the full score noise: the standard error of
+	// scoreFunc, i.e. how wrong the score of a known node may be, see scoreStandardError
+	// and Keep.
 	errorFunc func(node *Node) float64
 	// statsFunc is what the objective reads beyond the statistics every objective shares,
 	// see Printer.
@@ -142,9 +144,12 @@ func (o *ScoreObjective) scoreOf(node *Node) float64 {
 	return float64(o.Score(node))
 }
 
-// scoreStandardError returns the standard error of the score of the node, i.e. how much
-// the score would move if the health checks were run again. It only depends on the number
-// of samples and how far apart they are.
+// scoreStandardError returns SCORE_SE of the docs, the full score noise: the standard
+// error of the score of the node, i.e. how much the score would move if the health checks
+// were run again. It only depends on the number of samples and how far apart they are.
+//
+// It is the complete version of the SCORE_NOISE the band is sized by: the band reads only
+// the noise of the delay term, this counts every term the score is made of, see errorFunc.
 //
 // It is computed from the spreads of the samples, not from the robust statistics the score
 // is made of. A standard error is a spread over √n, and the spread it needs is the one a
@@ -169,6 +174,11 @@ func (o *ScoreObjective) scoreStandardError(node *Node) float64 {
 // excess over the selection band is within the noise of the two estimates, so the
 // existing connections are not closed by a measurement that could go either way.
 //
+// It computes NOISE_DIFF and ALLOWANCE of the docs:
+//
+//	NOISE_DIFF = hysteresisSigma × √(SCORE_SE_node² + SCORE_SE_best²)
+//	ALLOWANCE  = BAND + min(BAND, NOISE_DIFF)
+//
 // The allowance is capped at the band itself: hysteresis is there to ride out noise,
 // not to keep a node that is clearly worse, so a node never survives more than twice
 // the tolerance.
@@ -178,13 +188,14 @@ func (o *ScoreObjective) Keep(node *Node, best *Node) bool {
 	}
 	bestScore := o.scoreOf(best)
 	band := o.band(best)
-	nodeError := o.scoreStandardError(node)
-	bestError := o.scoreStandardError(best)
-	noise := hysteresisSigma * math.Sqrt(nodeError*nodeError+bestError*bestError)
-	if noise > band {
-		noise = band
+	nodeSE := o.scoreStandardError(node)
+	bestSE := o.scoreStandardError(best)
+	noiseDiff := hysteresisSigma * math.Sqrt(nodeSE*nodeSE+bestSE*bestSE)
+	if noiseDiff > band {
+		noiseDiff = band
 	}
-	return o.scoreOf(node) <= bestScore+band+noise
+	allowance := band + noiseDiff
+	return o.scoreOf(node) <= bestScore+allowance
 }
 
 func rttFromFloat(value float64) healthcheck.RTT {
@@ -288,7 +299,7 @@ func SortByLeast(nodes []*Node, rttFunc func(*Node) healthcheck.RTT) {
 		// outlives the window. It is what a node is known by when nothing is measured: with
 		// no window at all every statistic above is absent, and only the record is left to
 		// tell the nodes apart.
-		if leftShare, rightShare := left.FailureShare(), right.FailureShare(); leftShare != rightShare {
+		if leftShare, rightShare := left.FailureRate(), right.FailureRate(); leftShare != rightShare {
 			return leftShare < rightShare
 		}
 		if left.Fail != right.Fail {
@@ -340,8 +351,9 @@ func lessRTT(left, right healthcheck.RTT) (less bool, decided bool) {
 	return left < right, true
 }
 
-// band returns the width of the tolerance around the best node, the range in which another
-// node counts as equally good: the tolerance of the objective plus a resolution margin.
+// band returns BAND of the docs, the width of the tolerance around the best node, the range
+// in which another node counts as equally good: the tolerance of the objective plus a
+// resolution margin.
 //
 // The margin is always added, because the tolerance describes the true difference while the
 // comparison only sees observed values. Its scale is a typical deviation of the best node,
@@ -360,9 +372,10 @@ func (o *ScoreObjective) band(best *Node) float64 {
 	band := float64(o.tolerance)
 	samples := float64(best.Stats.Succeeded())
 	if samples >= 2 {
-		// the scale the reading of the score can be off by, see noiseFunc
-		noise := float64(o.noiseFunc(best))
-		band += resolutionSigma * noise / math.Sqrt(samples)
+		// scoreNoise is SCORE_NOISE of the docs, the scale the reading of the score can
+		// be off by, see noiseFunc
+		scoreNoise := float64(o.noiseFunc(best))
+		band += resolutionSigma * scoreNoise / math.Sqrt(samples)
 	}
 	return band
 }

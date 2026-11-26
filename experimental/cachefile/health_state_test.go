@@ -41,11 +41,11 @@ func TestHealthStateRoundTrips(t *testing.T) {
 	failureAt := readAt.Add(37 * time.Minute)
 	states := map[string]adapter.HealthState{
 		"Provider/Node A": {
-			Floors:        slotsOf(map[int]uint16{17: 143, 18: 151}),
-			FloorsAt:      readAt,
-			FailureSum:    1.25,
-			FailureWeight: 9.5,
-			FailureAt:     failureAt,
+			Floors:            slotsOf(map[int]uint16{17: 143, 18: 151}),
+			FloorsAt:          readAt,
+			FailureLongSum:    1.25,
+			FailureLongWeight: 9.5,
+			FailureLongAt:     failureAt,
 		},
 		"Provider/Node B": {
 			Floors:   slotsOf(map[int]uint16{0: 900}),
@@ -67,11 +67,11 @@ func TestHealthStateRoundTrips(t *testing.T) {
 		if !got.FloorsAt.Equal(want.FloorsAt) {
 			t.Fatalf("%q: want the day read at %v, got %v", tag, want.FloorsAt, got.FloorsAt)
 		}
-		if got.FailureSum != want.FailureSum || got.FailureWeight != want.FailureWeight {
-			t.Fatalf("%q: want %v/%v, got %v/%v", tag, want.FailureSum, want.FailureWeight, got.FailureSum, got.FailureWeight)
+		if got.FailureLongSum != want.FailureLongSum || got.FailureLongWeight != want.FailureLongWeight {
+			t.Fatalf("%q: want %v/%v, got %v/%v", tag, want.FailureLongSum, want.FailureLongWeight, got.FailureLongSum, got.FailureLongWeight)
 		}
-		if !got.FailureAt.Equal(want.FailureAt) {
-			t.Fatalf("%q: want the estimate at %v, got %v", tag, want.FailureAt, got.FailureAt)
+		if !got.FailureLongAt.Equal(want.FailureLongAt) {
+			t.Fatalf("%q: want the estimate at %v, got %v", tag, want.FailureLongAt, got.FailureLongAt)
 		}
 	}
 }
@@ -125,8 +125,8 @@ func TestHealthStateZeroTimeIsNotTheEpoch(t *testing.T) {
 	if !ok {
 		t.Fatal("want the record back")
 	}
-	if !got.FailureAt.IsZero() {
-		t.Fatalf("want no failure time, got %v", got.FailureAt)
+	if !got.FailureLongAt.IsZero() {
+		t.Fatalf("want no failure time, got %v", got.FailureLongAt)
 	}
 }
 
@@ -139,7 +139,7 @@ func TestHealthStatesSurviveAReopen(t *testing.T) {
 	fingerprint := []byte{9, 8, 7, 6, 5, 4, 3, 2}
 	readAt := time.Unix(1700000000, 0)
 	states := map[string]adapter.HealthState{
-		"Provider/Node": {Floors: slotsOf(map[int]uint16{42: 321}), FloorsAt: readAt, FailureSum: 0.5, FailureWeight: 4, FailureAt: readAt},
+		"Provider/Node": {Floors: slotsOf(map[int]uint16{42: 321}), FloorsAt: readAt, FailureLongSum: 0.5, FailureLongWeight: 4, FailureLongAt: readAt},
 	}
 
 	first := newTestCacheFile(t, path)

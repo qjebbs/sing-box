@@ -140,13 +140,3 @@ Both cover the same span, and the measured agreement of the pick between them is
 about 1.4 times wider, and it sees any change up to two minutes later: the interval is the reaction
 granularity. Beyond 10 minutes of span, the node a window picks stops matching how it behaves
 afterwards.
-
-Failure eligibility needs no configuration: a qualified node requires the near-term failure
-weight `FAILW` to be below `1` (a fresh failure weighs 1 and decays with a 5 minute time
-constant), so the most recent failure makes the node temporarily unqualified; on the next
-successful check the failure has decayed to `exp(−interval / 5min)` and the node returns to the
-candidates. The first failure still demotes the node immediately, so the peak-time reaction is
-unchanged; a sporadic failure in a quiet period costs one round (about 2 minutes at a 2 minute
-interval). Consecutive failures add up: at a 2 minute interval, three in a row take about 4
-minutes after the last failure, and nine about 6 minutes, to fall back below the gate, so a long
-outage no longer drags the node through the whole window. Leave `tolerance` at its default.

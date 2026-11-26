@@ -21,12 +21,12 @@ type HealthState struct {
 	// measure.
 	FloorsAt time.Time `json:"floors_at,omitzero"`
 
-	// FailureSum is the weighted number of failed checks, FailureWeight the weighted number
-	// of all of them, and FailureAt when the estimate was last brought forward. Their ratio
-	// is the long-run failure rate, see healthcheck.failureRate.
-	FailureSum    float64   `json:"failure_sum,omitzero"`
-	FailureWeight float64   `json:"failure_weight,omitzero"`
-	FailureAt     time.Time `json:"failure_at,omitzero"`
+	// FailureLongSum is S(τ_L), FailureLongWeight W(τ_L), and FailureLongAt when the
+	// estimate was last brought forward: the state of FAILR_LONG, see
+	// healthcheck.longRunFailure.
+	FailureLongSum    float64   `json:"failure_long_sum,omitzero"`
+	FailureLongWeight float64   `json:"failure_long_weight,omitzero"`
+	FailureLongAt     time.Time `json:"failure_long_at,omitzero"`
 }
 
 // HealthStateStore is implemented by a cache file that keeps HealthState across restarts.

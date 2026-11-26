@@ -48,7 +48,7 @@ func TestReplayFailureRateStartsFromAPrior(t *testing.T) {
 	// A cold start is a node nobody has seen fail: one failing check must not outweigh the
 	// ten that were never seen, or a network blip at start-up would be reported as a node
 	// that fails every time for an hour.
-	if rate := healthcheck.ReplayFailureRate(historyOf(now, time.Minute, true)); rate > 0.1 {
+	if rate := healthcheck.ReplayFailureRateLong(historyOf(now, time.Minute, true)); rate > 0.1 {
 		t.Fatalf("want the first failing check to stay under a tenth, got %v", rate)
 	}
 	// The prior is evidence like any other and fades with it: a node that has really been
@@ -57,13 +57,13 @@ func TestReplayFailureRateStartsFromAPrior(t *testing.T) {
 	for i := range always {
 		always[i] = true
 	}
-	if rate := healthcheck.ReplayFailureRate(historyOf(now, time.Minute, always...)); rate < 0.95 {
+	if rate := healthcheck.ReplayFailureRateLong(historyOf(now, time.Minute, always...)); rate < 0.95 {
 		t.Fatalf("want a node that never passed to read as failing, got %v", rate)
 	}
-	if rate := healthcheck.ReplayFailureRate(historyOf(now, time.Minute, false)); rate != 0 {
+	if rate := healthcheck.ReplayFailureRateLong(historyOf(now, time.Minute, false)); rate != 0 {
 		t.Fatalf("want zero for a check that passed, got %v", rate)
 	}
-	if rate := healthcheck.ReplayFailureRate(nil); rate != 0 {
+	if rate := healthcheck.ReplayFailureRateLong(nil); rate != 0 {
 		t.Fatalf("want no estimate without checks, got %v", rate)
 	}
 }
@@ -83,7 +83,7 @@ func TestReplayFailureRateLooksBackInTime(t *testing.T) {
 		{30 * time.Second, 20},
 		{15 * time.Second, 40},
 	} {
-		rate := healthcheck.ReplayFailureRate(settledOf(now, each.gap, outcomesOf(each.fails, each.fails)...))
+		rate := healthcheck.ReplayFailureRateLong(settledOf(now, each.gap, outcomesOf(each.fails, each.fails)...))
 		if math.Abs(rate-want) > 3e-2 {
 			t.Fatalf("want about %v for ten minutes of failures in %d checks, got %v", want, each.fails, rate)
 		}
@@ -98,7 +98,7 @@ func TestReplayFailureRateLooksBackInTime(t *testing.T) {
 	}
 	// Failing for one time constant out of a settled history is sixty-three percent of it,
 	// which is the whole point of an exponential memory: there is no fixed window to fill.
-	if rate := healthcheck.ReplayFailureRate(settledOf(now, time.Minute, outcomesOf(45, 45)...)); math.Abs(rate-(1-math.Exp(-1))) > 1e-2 {
+	if rate := healthcheck.ReplayFailureRateLong(settledOf(now, time.Minute, outcomesOf(45, 45)...)); math.Abs(rate-(1-math.Exp(-1))) > 1e-2 {
 		t.Fatalf("want %v for one time constant of failures, got %v", 1-math.Exp(-1), rate)
 	}
 }
@@ -110,7 +110,7 @@ func TestReplayFailureRateForgetsAnOutage(t *testing.T) {
 	// and it keeps going down without anything having to be timed or swept.
 	outage := append(outcomesOf(200, 0), outcomesOf(10, 10)...)
 	outage = append(outage, outcomesOf(45, 0)...)
-	rate := healthcheck.ReplayFailureRate(historyOf(now, time.Minute, outage...))
+	rate := healthcheck.ReplayFailureRateLong(historyOf(now, time.Minute, outage...))
 	if want := (1 - math.Exp(-10.0/45.0)) * math.Exp(-45.0/45.0); math.Abs(rate-want) > 1e-2 {
 		t.Fatalf("want about %v after the outage, got %v", want, rate)
 	}
@@ -118,12 +118,12 @@ func TestReplayFailureRateForgetsAnOutage(t *testing.T) {
 	// nothing at all by now.
 	outage = append(outcomesOf(200, 0), outcomesOf(10, 10)...)
 	outage = append(outage, outcomesOf(48*60, 0)...)
-	if rate := healthcheck.ReplayFailureRate(historyOf(now, time.Minute, outage...)); rate > 1e-9 {
+	if rate := healthcheck.ReplayFailureRateLong(historyOf(now, time.Minute, outage...)); rate > 1e-9 {
 		t.Fatalf("want nothing left a day later, got %v", rate)
 	}
 }
 
-func TestFailureShareLetsTheWindowWin(t *testing.T) {
+func TestFailureRateLetsTheWindowWin(t *testing.T) {
 	t.Parallel()
 	// The window describes what the node is doing now, the estimate what it does when the
 	// window happens to be clean: the larger of the two is the cautious reading.
@@ -132,18 +132,18 @@ func TestFailureShareLetsTheWindowWin(t *testing.T) {
 		stats healthcheck.Stats
 		want  float64
 	}{
-		{"window has failures", healthcheck.Stats{All: 10, Fail: 3, FailureWeight: 3, FailureWeightTotal: 4, FailureRate: 0.05}, 0.75},
-		{"window is clean", healthcheck.Stats{All: 10, Fail: 0, FailureWeight: 0, FailureWeightTotal: 4, FailureRate: 0.2}, 0.2},
-		{"the estimate wins", healthcheck.Stats{All: 10, Fail: 2, FailureWeight: 2, FailureWeightTotal: 4, FailureRate: 0.8}, 0.8},
-		{"no window", healthcheck.Stats{FailureRate: 0.4}, 0.4},
+		{"window has failures", healthcheck.Stats{All: 10, Fail: 3, FailureNear: 3, FailureNearTotal: 4, FailureRateLong: 0.05}, 0.75},
+		{"window is clean", healthcheck.Stats{All: 10, Fail: 0, FailureNear: 0, FailureNearTotal: 4, FailureRateLong: 0.2}, 0.2},
+		{"the estimate wins", healthcheck.Stats{All: 10, Fail: 2, FailureNear: 2, FailureNearTotal: 4, FailureRateLong: 0.8}, 0.8},
+		{"no window", healthcheck.Stats{FailureRateLong: 0.4}, 0.4},
 		{"nothing known", healthcheck.Stats{}, 0},
-		{"capped at one", healthcheck.Stats{All: 10, Fail: 10, FailureWeight: 10, FailureWeightTotal: 2, FailureRate: 0.9}, 1},
+		{"capped at one", healthcheck.Stats{All: 10, Fail: 10, FailureNear: 10, FailureNearTotal: 2, FailureRateLong: 0.9}, 1},
 	}
 	for _, testCase := range cases {
 		testCase := testCase
 		t.Run(testCase.name, func(t *testing.T) {
 			t.Parallel()
-			if got := testCase.stats.FailureShare(); math.Abs(got-testCase.want) > 1e-6 {
+			if got := testCase.stats.FailureRate(); math.Abs(got-testCase.want) > 1e-6 {
 				t.Fatalf("want %v, got %v", testCase.want, got)
 			}
 		})
@@ -159,11 +159,11 @@ func TestStorageCountsTheChecksTheConnectionsAsked(t *testing.T) {
 	for i := 0; i < 10; i++ {
 		storage.Put(100)
 	}
-	if rate := storage.Stats().FailureRate; rate != 0 {
+	if rate := storage.Stats().FailureRateLong; rate != 0 {
 		t.Fatalf("want a clean estimate from clean checks, got %v", rate)
 	}
 	storage.Update(healthcheck.Failed)
-	if rate := storage.Stats().FailureRate; rate == 0 {
+	if rate := storage.Stats().FailureRateLong; rate == 0 {
 		t.Fatal("want the failed out of band check to be remembered")
 	}
 }

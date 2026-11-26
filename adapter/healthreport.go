@@ -118,16 +118,20 @@ type HealthNode struct {
 	// reported so that a score can be read back into what it was made of.
 	Pressure *float32 `json:"pressure,omitempty"`
 	BadShare *float32 `json:"bad_share,omitempty"`
-	// FailureRate is how often the node has failed over the last few hours, which outlives
-	// the window: it is the prior a clean window is read with, see healthcheck.Stats.
+	// FailureRateLong is FAILR_LONG of the docs: how often the node has failed over the last
+	// few hours, which outlives the window: it is the prior a clean window is read with,
+	// see healthcheck.Stats.
+	FailureRateLong *float32 `json:"failure_rate_long,omitempty"`
+	// FailureNear is FAIL_NEAR of the docs: the weighted failures of the window, a failure
+	// that just happened being 1 and decaying with age, see healthcheck.Stats. It is what
+	// the failure gate is compared with.
+	FailureNear *float32 `json:"failure_near,omitempty"`
+	// FailureNearTotal is W(τ_N): the weight FailureNear would have if every check in the
+	// window had failed, so FailureNear / FailureNearTotal is FailureRateNear.
+	FailureNearTotal *float32 `json:"failure_near_total,omitempty"`
+	// FailureRate is FAILR of the docs: the larger of the window's own rate, FailureRateNear,
+	// and FailureRateLong, the share of attempts the score priced as failed.
 	FailureRate *float32 `json:"failure_rate,omitempty"`
-	// FailureWeight is the recent failure weight of the window: a failure that just
-	// happened is 1, and it decays with age, see healthcheck.Stats. It is what the failure
-	// gate is compared with; the score reads it as FailureWeight / FailureWeightTotal.
-	FailureWeight *float32 `json:"failure_weight,omitempty"`
-	// FailureShare is the share of attempts the score priced as failed: the window's own
-	// share or FailureRate, whichever is larger.
-	FailureShare *float32 `json:"failure_share,omitempty"`
 	// Spread and DeviationSpread are the sample spreads of the checks and of their
 	// distances to the median, which the standard error of a score is computed from.
 	Spread          *uint16 `json:"spread,omitempty"`

@@ -375,7 +375,7 @@ func TestNodeBuilderFollowsTheFailureGate(t *testing.T) {
 	}
 	stats := healthcheck.Stats{All: 10, Fail: 2, Median: 100, Floor: 100}
 	node := func(weight float64) selection.Status {
-		stats.FailureWeight = weight
+		stats.FailureNear = weight
 		return builder.NewNode(tagOutbound("node"), 0, stats).Status
 	}
 	if status := node(0.99); status != selection.StatusQualified {

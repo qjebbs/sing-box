@@ -245,9 +245,9 @@ func TestStatsCost(t *testing.T) {
 		t.Run(testCase.name, func(t *testing.T) {
 			t.Parallel()
 			stats := healthcheck.Stats{
-				All:           testCase.all,
-				Fail:          testCase.fail,
-				FailureWeight: float64(testCase.fail),
+				All:         testCase.all,
+				Fail:        testCase.fail,
+				FailureNear: float64(testCase.fail),
 			}
 			got := stats.Cost(testCase.base, testCase.spread)
 			if got != testCase.want {
@@ -277,7 +277,7 @@ func TestStatsCostScalesWithTheNode(t *testing.T) {
 		testCase := testCase
 		t.Run(testCase.name, func(t *testing.T) {
 			t.Parallel()
-			stats := healthcheck.Stats{All: 10, Fail: 1, FailureWeight: 1}
+			stats := healthcheck.Stats{All: 10, Fail: 1, FailureNear: 1}
 			got := stats.Cost(testCase.base, 0)
 			if got != testCase.want {
 				t.Fatalf("want %v, got %v", testCase.want, got)
@@ -302,9 +302,9 @@ func assertStats(t *testing.T, name string, want, got healthcheck.Stats) {
 	// histories are written in a tight loop: they are measurements of the clock rather than
 	// of the checks, so they have tests of their own, see TestFailureRateFollowsTheClock
 	// and TestStatsWeighsFailuresByAge.
-	want.FailureRate = got.FailureRate
-	want.FailureWeight = got.FailureWeight
-	want.FailureWeightTotal = got.FailureWeightTotal
+	want.FailureRateLong = got.FailureRateLong
+	want.FailureNear = got.FailureNear
+	want.FailureNearTotal = got.FailureNearTotal
 	if !reflect.DeepEqual(want, got) {
 		t.Fatalf("[%s] want: %v, got: %v", name, want, got)
 	}
@@ -323,8 +323,8 @@ func TestStatsWeighsFailuresByAge(t *testing.T) {
 	}
 	stats := healthcheck.StatsOf(checks, 0, time.Time{}, 0)
 	want := math.Exp(-1.0/5.0) + math.Exp(-6.0/5.0)
-	if math.Abs(stats.FailureWeight-want) > 1e-9 {
-		t.Fatalf("want the weighted failures %v, got %v", want, stats.FailureWeight)
+	if math.Abs(stats.FailureNear-want) > 1e-9 {
+		t.Fatalf("want the weighted failures %v, got %v", want, stats.FailureNear)
 	}
 	// A fresh failure is still worth exactly one, but the share is over the weight of the
 	// whole window rather than its count: the success behind it weighs exp(-1/5) too.
@@ -333,11 +333,11 @@ func TestStatsWeighsFailuresByAge(t *testing.T) {
 		{Time: now.Add(-time.Minute), Delay: 100},
 	}
 	freshStats := healthcheck.StatsOf(fresh, 0, time.Time{}, 0)
-	if freshStats.FailureWeight != 1 {
-		t.Fatalf("want a fresh failure to weigh one, got %v", freshStats.FailureWeight)
+	if freshStats.FailureNear != 1 {
+		t.Fatalf("want a fresh failure to weigh one, got %v", freshStats.FailureNear)
 	}
 	freshShare := 1 / (1 + math.Exp(-1.0/5.0))
-	if share := freshStats.FailureShare(); math.Abs(share-freshShare) > 1e-9 {
+	if share := freshStats.FailureRate(); math.Abs(share-freshShare) > 1e-9 {
 		t.Fatalf("want the fresh failure to be %v of the window, got %v", freshShare, share)
 	}
 	// A window whose checks all failed is the whole of its own weight: the penalty must
@@ -347,7 +347,7 @@ func TestStatsWeighsFailuresByAge(t *testing.T) {
 		{Time: now.Add(-time.Minute), Delay: healthcheck.Failed},
 	}
 	fullStats := healthcheck.StatsOf(full, 0, time.Time{}, 0)
-	if share := fullStats.FailureShare(); share != 1 {
+	if share := fullStats.FailureRate(); share != 1 {
 		t.Fatalf("want a fully failed window to read one, got %v", share)
 	}
 }
@@ -380,13 +380,13 @@ func TestStatsOfMatchesStorage(t *testing.T) {
 
 	checks := s.All()
 	floor := stats.Floor
-	got := healthcheck.StatsOf(checks, floor, stats.Expires, healthcheck.ReplayFailureRate(checks))
+	got := healthcheck.StatsOf(checks, floor, stats.Expires, healthcheck.ReplayFailureRateLong(checks))
 	assertStats(t, "StatsOf() - whole history", stats, got)
 
 	// A window of the most recent checks, measured against the same baseline: every
 	// statistic has to come from that window and nothing else.
 	window := checks[:4]
-	got = healthcheck.StatsOf(window, floor, stats.Expires, healthcheck.ReplayFailureRate(checks))
+	got = healthcheck.StatsOf(window, floor, stats.Expires, healthcheck.ReplayFailureRateLong(checks))
 	if got.All != 4 {
 		t.Fatalf("want 4 checks in the window, got %d", got.All)
 	}
@@ -400,7 +400,7 @@ func TestStatsOfMatchesStorage(t *testing.T) {
 
 	// Without a baseline the frequency term has nothing to measure against, so it stays
 	// zero rather than counting every check as bad.
-	got = healthcheck.StatsOf(checks, 0, stats.Expires, healthcheck.ReplayFailureRate(checks))
+	got = healthcheck.StatsOf(checks, 0, stats.Expires, healthcheck.ReplayFailureRateLong(checks))
 	if got.Bad != 0 || got.Floor != 0 {
 		t.Fatalf("want no baseline and no bad checks, got floor %v and %d bad", got.Floor, got.Bad)
 	}

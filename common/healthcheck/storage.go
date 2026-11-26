@@ -15,8 +15,8 @@ type Storage struct {
 	baseline baseline
 	// failures is how often the node has failed over the last few hours, in wall-clock
 	// time. It outlives the window too: a window can be clean while the node is not
-	// reliable, see failureRate.
-	failures failureRate
+	// reliable, see longRunFailure.
+	failures longRunFailure
 	stats    Stats
 	// suspended is set by an out of band check that failed, see Update, and cleared by
 	// the first check that passes. It is not part of the window: the window is what the
@@ -34,7 +34,7 @@ type History struct {
 // is read as it stands, without being brought forward, so one that has been decaying
 // unwatched for longer than this no longer describes the node: the window is the better
 // evidence by then.
-const failureStateTimeout = 3 * failureTimeConstant
+const failureStateTimeout = 3 * longFailureTimeConstant
 
 // State returns what the storage keeps outside the window, and whether there is anything to
 // keep. A floor older than a day, or a failure estimate that has gone stale, is left out:
@@ -50,11 +50,11 @@ func (s *Storage) State(now time.Time) (adapter.HealthState, bool) {
 		state.FloorsAt = window
 	}
 	if sum, weight, at := s.failures.estimate(); !at.IsZero() && now.Sub(at) < failureStateTimeout {
-		state.FailureSum = sum
-		state.FailureWeight = weight
-		state.FailureAt = at
+		state.FailureLongSum = sum
+		state.FailureLongWeight = weight
+		state.FailureLongAt = at
 	}
-	return state, filled || !state.FailureAt.IsZero()
+	return state, filled || !state.FailureLongAt.IsZero()
 }
 
 // restoreState puts a stored state back. The slots go back into the windows they came from,
@@ -66,8 +66,8 @@ func (s *Storage) State(now time.Time) (adapter.HealthState, bool) {
 // or one older than what the checks have already measured, is nothing.
 func (s *Storage) restoreState(state adapter.HealthState, now time.Time) bool {
 	restored := s.baseline.restore(state.Floors, state.FloorsAt)
-	if !state.FailureAt.IsZero() && now.Sub(state.FailureAt) < failureStateTimeout {
-		if s.failures.restore(state.FailureSum, state.FailureWeight, state.FailureAt) {
+	if !state.FailureLongAt.IsZero() && now.Sub(state.FailureLongAt) < failureStateTimeout {
+		if s.failures.restore(state.FailureLongSum, state.FailureLongWeight, state.FailureLongAt) {
 			restored = true
 		}
 	}

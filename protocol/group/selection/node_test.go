@@ -27,41 +27,41 @@ func TestNodeStatus(t *testing.T) {
 		},
 		{
 			"clean", StatusQualified, healthcheck.Stats{
-				All: 10, Fail: 0, FailureWeight: 0, Latest: healthcheck.Second, Average: healthcheck.Second, Median: healthcheck.Second,
+				All: 10, Fail: 0, FailureNear: 0, Latest: healthcheck.Second, Average: healthcheck.Second, Median: healthcheck.Second,
 			},
 		},
 		{
 			"below one failure", StatusQualified, healthcheck.Stats{
-				All: 10, Fail: 1, FailureWeight: 0.99, Latest: healthcheck.Second, Average: healthcheck.Second, Median: healthcheck.Second,
+				All: 10, Fail: 1, FailureNear: 0.99, Latest: healthcheck.Second, Average: healthcheck.Second, Median: healthcheck.Second,
 			},
 		},
 		{
 			// a fresh failure weighs one, and the gate is below one
 			"one failure", StatusAlive, healthcheck.Stats{
-				All: 10, Fail: 1, FailureWeight: 1, Latest: healthcheck.Second, Average: healthcheck.Second, Median: healthcheck.Second,
+				All: 10, Fail: 1, FailureNear: 1, Latest: healthcheck.Second, Average: healthcheck.Second, Median: healthcheck.Second,
 			},
 		},
 		{
 			// a failure on the latest check is a failure like any other: the delay
 			// describes the checks that worked, it does not excuse the one that did not
 			"latest_fail", StatusAlive, healthcheck.Stats{
-				All: 10, Fail: 1, FailureWeight: 1, Latest: healthcheck.Failed, Average: healthcheck.Second, Median: healthcheck.Second,
+				All: 10, Fail: 1, FailureNear: 1, Latest: healthcheck.Failed, Average: healthcheck.Second, Median: healthcheck.Second,
 			},
 		},
 		{
 			"a burst", StatusAlive, healthcheck.Stats{
-				All: 10, Fail: 2, FailureWeight: 2, Latest: healthcheck.Second, Average: healthcheck.Second, Median: healthcheck.Second,
+				All: 10, Fail: 2, FailureNear: 2, Latest: healthcheck.Second, Average: healthcheck.Second, Median: healthcheck.Second,
 			},
 		},
 		{
 			// nothing ever worked: there is no delay to rank and nothing to fall back on
 			"never succeeded", StatusDead, healthcheck.Stats{
-				All: 10, Fail: 10, FailureWeight: 10, Latest: healthcheck.Failed,
+				All: 10, Fail: 10, FailureNear: 10, Latest: healthcheck.Failed,
 			},
 		},
 		{
 			"over max_rtt", StatusAlive, healthcheck.Stats{
-				All: 10, Fail: 0, FailureWeight: 0, Latest: healthcheck.Second, Average: 2 * healthcheck.Second, Median: 2 * healthcheck.Second,
+				All: 10, Fail: 0, FailureNear: 0, Latest: healthcheck.Second, Average: 2 * healthcheck.Second, Median: 2 * healthcheck.Second,
 			},
 		},
 	}

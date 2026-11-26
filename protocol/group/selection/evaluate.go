@@ -313,14 +313,14 @@ func (s WindowSeries) statsOf(checks []*healthcheck.History, longRun float64) he
 }
 
 // longRunAt returns the failure estimate the storage held when the check at offset was the
-// newest one: everything from there back, replayed, see healthcheck.ReplayFailureRate. A
+// newest one: everything from there back, replayed, see healthcheck.ReplayFailureRateLong. A
 // history that does not reach behind the window has nothing to replay and reports no
 // estimate, which is what a group that keeps only its sampling would have had.
 func (s WindowSeries) longRunAt(offset int) float64 {
 	if offset >= len(s.Checks) {
 		return 0
 	}
-	return healthcheck.ReplayFailureRate(s.Checks[offset:])
+	return healthcheck.ReplayFailureRateLong(s.Checks[offset:])
 }
 
 // poolMembers returns the nodes the selection made of the window would consider, and those
@@ -360,7 +360,7 @@ func (o *ScoreObjective) poolOf(
 	members := make(map[int]struct{}, len(measured))
 	for _, each := range measured {
 		candidate, score := view(each)
-		if candidate.Stats.FailureWeight < failureWeightLimit && score <= limit {
+		if candidate.Stats.FailureNear < failureNearLimit && score <= limit {
 			members[each.index] = struct{}{}
 		}
 	}

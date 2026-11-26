@@ -195,10 +195,10 @@ func TestStateRoundTripsThroughTheStorages(t *testing.T) {
 	if got := floorOf(state); got != 100 {
 		t.Fatalf("want the floor of 100, got %d", got)
 	}
-	if state.FailureWeight == 0 || state.FailureSum == 0 {
-		t.Fatalf("want the failure estimate kept, got %v / %v", state.FailureSum, state.FailureWeight)
+	if state.FailureLongWeight == 0 || state.FailureLongSum == 0 {
+		t.Fatalf("want the failure estimate kept, got %v / %v", state.FailureLongSum, state.FailureLongWeight)
 	}
-	wantRate := float64(state.FailureSum) / state.FailureWeight
+	wantRate := float64(state.FailureLongSum) / state.FailureLongWeight
 
 	restarted := newStoredCheck(&fakeStateStore{})
 	restoreStates(restarted, states)
@@ -210,8 +210,8 @@ func TestStateRoundTripsThroughTheStorages(t *testing.T) {
 	if stats.Floor != 100 {
 		t.Fatalf("want the restored floor of 100, got %d", stats.Floor)
 	}
-	if diff := stats.FailureRate - float32(wantRate); diff > 0.05 || diff < -0.05 {
-		t.Fatalf("want the failure rate near %v, got %v", wantRate, stats.FailureRate)
+	if diff := stats.FailureRateLong - wantRate; diff > 0.05 || diff < -0.05 {
+		t.Fatalf("want the failure rate near %v, got %v", wantRate, stats.FailureRateLong)
 	}
 }
 
@@ -278,7 +278,7 @@ func TestExpiredStatesAreNotWritten(t *testing.T) {
 	expired := now.Add(-baselineSlot*baselineSlots - time.Minute)
 	check := newStoredCheck(&fakeStateStore{})
 	restoreStates(check, map[string]adapter.HealthState{
-		"gone":  {FailureSum: 1, FailureWeight: 5, FailureAt: stale},
+		"gone":  {FailureLongSum: 1, FailureLongWeight: 5, FailureLongAt: stale},
 		"floor": {Floors: floorValues(expired, 150), FloorsAt: expired},
 	})
 	written := check.Storage.States(now)

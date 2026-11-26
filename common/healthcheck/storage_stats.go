@@ -20,6 +20,14 @@ func Timeout() RTT {
 }
 
 // Stats is the statistics of RTTs
+//
+// The fields carry the names of docs/configuration/shared/node-rating.md: All = ALL,
+// Median = MED, Jitter = JIT, MeanDeviation = DEV, Floor = FLOOR, Spread = sd(x),
+// DeviationSpread = sd(d), and Bad counts the checks above badCheckMultiple × FLOOR that
+// BAD reads as a share. The failure fields are FailureNear = FAIL_NEAR and
+// FailureNearTotal = W(τ_N) over the window, FailureRateNear is FAILR_NEAR = F(τ_N),
+// FailureRateLong is FAILR_LONG = F(τ_L), and FailureRate is
+// FAILR = max(FAILR_NEAR, FAILR_LONG).
 type Stats struct {
 	All  int // total number of health checks
 	Fail int // number of failed health checks
@@ -43,27 +51,27 @@ type Stats struct {
 	// badCheckMultiple times the floor, the ones that are not merely noisy but queueing.
 	// Their share is the frequency the idle objective counts, next to the depth.
 	Bad int
-	// FailureWeight is the recent failure weight of the window: the sum of
-	// exp(-(t - tᵢ)/τ_F) over the failed checks, τ_F = 5 minutes. A failure that just
-	// happened is 1, it decays with age, and a burst adds up. It is the numerator of the
-	// window's share of attempts, see FailureShare, and what the failure gate is compared
-	// with. Unlike FailureRate it does not outlive the window: it is rebuilt from the checks.
-	FailureWeight float64
-	// FailureWeightTotal is the sum of the same age weights over every check in the
-	// window, success or failure: the weight FailureWeight would have if they had all
-	// failed. It is the denominator of the window's failure share, so a window whose checks
-	// all failed reads one, see FailureShare.
-	FailureWeightTotal float64
-	// FailureRate is how often the node has failed over the last few hours, estimated in
-	// wall-clock time and outliving the window, see failureRate. Fail over All describes
-	// the checks the sampling read; this describes the node. It is read through
-	// FailureShare, which lets the window win while it has something to say.
-	FailureRate float32
-	Average     RTT // average RTT of all health checks
-	Median      RTT // median RTT of all health checks
-	Max         RTT // maximum RTT of all health checks
-	Min         RTT // minimum RTT of all health checks
-	Latest      RTT // latest RTT of all health checks
+	// FailureNear is FAIL_NEAR of the docs: S(τ_N), the sum of exp(-(t - tᵢ)/τ_N) over the
+	// failed checks of the window, τ_N = 5 minutes. A failure that just happened is 1, it
+	// decays with age, and a burst adds up. It is the numerator of FailureRateNear and what
+	// the failure gate is compared with. Unlike FailureRateLong it does not outlive the
+	// window: it is rebuilt from the checks.
+	FailureNear float64
+	// FailureNearTotal is W(τ_N), the sum of the same age weights over every check in the
+	// window, success or failure: the weight FailureNear would have if they had all failed.
+	// It is the denominator of FailureRateNear, so a window whose checks all failed reads
+	// one.
+	FailureNearTotal float64
+	// FailureRateLong is FAILR_LONG of the docs: F(τ_L), how often the node has failed over
+	// the last few hours, estimated in wall-clock time and outliving the window, see
+	// longRunFailure. Fail over All describes the checks the sampling read; this describes
+	// the node. FailureRate reads it together with the window and takes the larger.
+	FailureRateLong float64
+	Average         RTT // average RTT of all health checks
+	Median          RTT // median RTT of all health checks
+	Max             RTT // maximum RTT of all health checks
+	Min             RTT // minimum RTT of all health checks
+	Latest          RTT // latest RTT of all health checks
 
 	// Suspended reports that the node was checked because its connections were failing, and
 	// that check failed too, see Storage.Update. It is the one thing here that is not a
@@ -131,16 +139,16 @@ func (s *Storage) refreshStats(now time.Time) {
 	if !loaded || now.Sub(latest.Time) > s.options.Validity {
 		floor, _ := s.baseline.RTT(now)
 		s.stats = Stats{
-			Floor:       floor,
-			Suspended:   s.suspended,
-			FailureRate: float32(s.failures.rate()),
+			Floor:           floor,
+			Suspended:       s.suspended,
+			FailureRateLong: s.failures.rate(),
 		}
 		return
 	}
 	delays := make([]RTT, 0, s.history.Length())
 	var expiresAt time.Time
 	fail := 0
-	var failureWeight, failureWeightTotal float64
+	var failureNear, failureNearTotal float64
 	for i := 0; i < s.history.Length() && uint(i) < s.options.Sampling; i++ {
 		// from latest to oldest, up to the sampling the statistics read
 		history, _ := s.history.At(i)
@@ -151,11 +159,11 @@ func (s *Storage) refreshStats(now time.Time) {
 		}
 		// the time when the oldest item expires
 		expiresAt = itemExpiresAt
-		weight := recentFailureWeightAt(history.Time, now)
-		failureWeightTotal += weight
+		weight := nearFailureWeightAt(history.Time, now)
+		failureNearTotal += weight
 		if history.Delay == Failed {
 			fail++
-			failureWeight += weight
+			failureNear += weight
 		} else {
 			delays = append(delays, history.Delay)
 		}
@@ -164,7 +172,7 @@ func (s *Storage) refreshStats(now time.Time) {
 	// is the statistics, and the floor outlives it. It is read even when the window is too
 	// short to describe the node, because a restored floor is what a restart must not wait for.
 	floor, _ := s.baseline.RTT(now)
-	s.stats = statsOf(len(delays)+fail, fail, latest.Delay, expiresAt, delays, floor, s.failures.rate(), failureWeight, failureWeightTotal)
+	s.stats = statsOf(len(delays)+fail, fail, latest.Delay, expiresAt, delays, floor, s.failures.rate(), failureNear, failureNearTotal)
 	s.stats.Suspended = s.suspended
 }
 
@@ -175,34 +183,34 @@ func (s *Storage) refreshStats(now time.Time) {
 // The baseline is the one input of the statistics the storage keeps outside the window, so
 // it is passed in. A floor of zero means the node has none yet, and Bad stays zero.
 //
-// longRun is the failure estimate of the checks older than this window, see
-// ReplayFailureRate: it is the one statistic a window does not carry, and passing it in
+// failureRateLong is the failure estimate of the checks older than this window, see
+// ReplayFailureRateLong: it is the one statistic a window does not carry, and passing it in
 // keeps a window measured here priced the way the group priced it.
-func StatsOf(checks []*History, floor RTT, expires time.Time, longRun float64) Stats {
+func StatsOf(checks []*History, floor RTT, expires time.Time, failureRateLong float64) Stats {
 	if len(checks) == 0 {
 		return Stats{}
 	}
 	delays := make([]RTT, 0, len(checks))
 	fail := 0
-	var failureWeight, failureWeightTotal float64
+	var failureNear, failureNearTotal float64
 	// The window is read as of its newest check: the age of every failure is measured from
 	// there, which is what the group did when the check was current.
 	at := checks[0].Time
 	for _, check := range checks {
-		weight := recentFailureWeightAt(check.Time, at)
-		failureWeightTotal += weight
+		weight := nearFailureWeightAt(check.Time, at)
+		failureNearTotal += weight
 		if check.Delay == Failed {
 			fail++
-			failureWeight += weight
+			failureNear += weight
 		} else {
 			delays = append(delays, check.Delay)
 		}
 	}
-	return statsOf(len(checks), fail, checks[0].Delay, expires, delays, floor, longRun, failureWeight, failureWeightTotal)
+	return statsOf(len(checks), fail, checks[0].Delay, expires, delays, floor, failureRateLong, failureNear, failureNearTotal)
 }
 
 // statsOf builds the statistics of a window of checks from the delays that succeeded.
-func statsOf(all int, fail int, latest RTT, expires time.Time, delays []RTT, floor RTT, longRun float64, failureWeight float64, failureWeightTotal float64) Stats {
+func statsOf(all int, fail int, latest RTT, expires time.Time, delays []RTT, floor RTT, failureRateLong float64, failureNear float64, failureNearTotal float64) Stats {
 	var bad int
 	if floor > 0 {
 		// Counted before newStats, which replaces the delays with their distances to the
@@ -211,15 +219,15 @@ func statsOf(all int, fail int, latest RTT, expires time.Time, delays []RTT, flo
 	}
 	stats := newStats(all, fail, latest, expires, delays)
 	stats.Floor, stats.Bad = floor, bad
-	stats.FailureWeight = failureWeight
-	stats.FailureWeightTotal = failureWeightTotal
-	stats.FailureRate = float32(longRun)
+	stats.FailureNear = failureNear
+	stats.FailureNearTotal = failureNearTotal
+	stats.FailureRateLong = failureRateLong
 	return stats
 }
 
-// badCheckMultiple is how much slower than the floor a check has to be to count as bad: at
-// twice the fastest the node has been, the wait has not grown by a jitter, it has been
-// doubled.
+// badCheckMultiple is 2 of the docs in BAD, how much slower than the floor a check has to
+// be to count as bad: at twice the fastest the node has been, the wait has not grown by a
+// jitter, it has been doubled.
 const badCheckMultiple = 2
 
 // countAbove returns how many of the values are greater than limit.
@@ -299,8 +307,8 @@ func standardDeviationOf(values []RTT) RTT {
 	return RTT(math.Round(math.Sqrt(squares / float64(len(values)-1))))
 }
 
-// madToSigma turns a median absolute deviation into an estimate of the standard
-// deviation of the same samples.
+// madToSigma is 1.4826 of the docs: it turns a median absolute deviation into an estimate
+// of the standard deviation of the same samples.
 //
 // For a sample of a normal distribution with standard deviation σ, the absolute
 // deviation from the median follows a half-normal distribution, so its median is the
@@ -364,36 +372,39 @@ func (s Stats) Succeeded() int {
 	return s.All - s.Fail
 }
 
-// FailureShare returns the share of the attempts that failed: the window's own share, or
-// the long-run estimate, whichever is larger.
+// FailureRateNear returns FAILR_NEAR of the docs: F(τ_N), the window's own failure rate,
+// FailureNear over FailureNearTotal.
 //
-// The window's share is FailureWeight over FailureWeightTotal, the weight the same checks
-// would have if they had all failed, not over All: the failures are weighted by their age,
-// so the share decays as they get older instead of staying at full weight until the window
-// drops them, and a window whose checks all failed reads one. A failure that just happened
-// is worth its own weight over the window's total, not 1/All.
+// It is not over All: the failures are weighted by their age, so the rate decays as they
+// get older instead of staying at full weight until the window drops them, and a window
+// whose checks all failed reads one. A failure that just happened is worth its own weight
+// over the window's total, not 1/All.
+func (s Stats) FailureRateNear() float64 {
+	total := s.FailureNearTotal
+	if total <= 0 {
+		// Statistics built by hand carry no total; the count is the only window they have.
+		total = float64(s.All)
+	}
+	if total <= 0 {
+		return 0
+	}
+	return math.Min(1, s.FailureNear/total)
+}
+
+// FailureRate returns FAILR of the docs: the larger of the window's own rate and the
+// long-run estimate, max(FailureRateNear, FailureRateLong).
 //
 // The window is what the node is doing now and the estimate is what it does when the window
 // happens to be clean, so the larger of the two is the cautious reading of the same
 // question. With no window at all there is nothing to weigh the estimate against, and the
 // estimate stands alone.
-func (s Stats) FailureShare() float64 {
-	share := float64(s.FailureRate)
-	total := s.FailureWeightTotal
-	if total <= 0 {
-		// Statistics built by hand carry no total; the count is the only window they have.
-		total = float64(s.All)
-	}
-	if total > 0 {
-		if window := s.FailureWeight / total; window > share {
-			share = window
-		}
-	}
-	return math.Min(1, share)
+func (s Stats) FailureRate() float64 {
+	return math.Min(1, math.Max(s.FailureRateLong, s.FailureRateNear()))
 }
 
-// Cost returns what an attempt costs on average, which is what a group that ranks a time
-// ranks its nodes by: base plus the spread added to it, mixed with the failures.
+// Cost returns COST of the docs, what an attempt costs on average, which is what a group
+// that ranks a time ranks its nodes by: base plus the spread added to it, mixed with the
+// failures.
 //
 // It is for a base that is a time the node costs. A score that is a share of the node's own
 // floor cannot be mixed this way: it is dimensionless, so a failure worth a timeout and a
@@ -408,7 +419,7 @@ func (s Stats) Cost(base RTT, spread RTT) RTT {
 
 // mixed returns the expected value of cost per attempt: an attempt either succeeds
 // with cost, or fails, and the two are mixed by the share of the attempts that failed, see
-// FailureShare. The result never exceeds the timeout.
+// FailureRate. The result never exceeds the timeout.
 func (s Stats) mixed(cost uint64) RTT {
 	timeout := uint64(failureDelay)
 	if cost > timeout {
@@ -417,7 +428,7 @@ func (s Stats) mixed(cost uint64) RTT {
 	}
 	// every check is one attempt; the window's failures are counted by their share, and
 	// the node's own record stands in when the window holds none
-	share := s.FailureShare()
+	share := s.FailureRate()
 	result := RTT((1-share)*float64(cost) + share*float64(s.failureCost(cost)))
 	if result == Failed && share < 1 {
 		// A cost of zero is a cost like any other, but RTT reserves zero for a missing
@@ -428,14 +439,14 @@ func (s Stats) mixed(cost uint64) RTT {
 	return result
 }
 
-// failureRatio is how many attempts a failed one is worth. It costs more than one that
-// worked, since the attempt had to be tried again, but far less than the timeout the
-// check waited for: that is an absolute value, which buries a node that failed once
-// behind every node that never failed, whatever its delay.
+// failureRatio is 3 of the docs in FAIL_COST, how many attempts a failed one is worth. It
+// costs more than one that worked, since the attempt had to be tried again, but far less
+// than the timeout the check waited for: that is an absolute value, which buries a node
+// that failed once behind every node that never failed, whatever its delay.
 const failureRatio = 3
 
-// failureCost returns what a failed attempt costs, in the scale of the node, the same
-// way the tolerance is relative to the score of the best one.
+// failureCost returns FAIL_COST of the docs, what a failed attempt costs, in the scale of
+// the node, the same way the tolerance is relative to the score of the best one.
 func (s Stats) failureCost(cost uint64) uint64 {
 	if s.Succeeded() == 0 {
 		// nothing worked, the timeout is all that is known about the node

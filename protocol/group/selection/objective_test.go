@@ -108,7 +108,7 @@ func TestNodeLinesShowsTheFrequencyIdleCounts(t *testing.T) {
 			// nothing worked: the whole window fell short
 			name:   "never answered",
 			status: selection.StatusDead,
-			stats:  healthcheck.Stats{All: 9, Fail: 9, FailureWeight: 9, Floor: 184},
+			stats:  healthcheck.Stats{All: 9, Fail: 9, FailureNear: 9, Floor: 184},
 			want:   "[probe] LAST=None MED=None FLOOR=184ms JIT=None BAD=100% SCORE=15.00s FAIL=9/9 SELECTED",
 		},
 		{
@@ -116,7 +116,7 @@ func TestNodeLinesShowsTheFrequencyIdleCounts(t *testing.T) {
 			// of the share, so it is not lost between two rounds
 			name:   "clean window, unreliable node",
 			status: selection.StatusQualified,
-			stats:  healthcheck.Stats{All: 9, Latest: 332, Median: 336, Floor: 184, Jitter: 6, FailureRate: 0.25},
+			stats:  healthcheck.Stats{All: 9, Latest: 332, Median: 336, Floor: 184, Jitter: 6, FailureRateLong: 0.25},
 			want:   "LAST=332ms MED=336ms FLOOR=184ms JIT=6ms BAD=25% SCORE=",
 		},
 	}

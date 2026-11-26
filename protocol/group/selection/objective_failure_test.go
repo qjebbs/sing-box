@@ -30,7 +30,7 @@ func TestLongRunFailureRateRanksACleanUnreliableNodeLower(t *testing.T) {
 	// is broken towards the node the group can keep using.
 	steady := cleanWindow()
 	bursty := cleanWindow()
-	bursty.FailureRate = 0.25
+	bursty.FailureRateLong = 0.25
 	for _, objective := range []selection.Objective{
 		selection.NewQuickObjective(option.LoadBalancePickOptions{}),
 		selection.NewIdleObjective(option.LoadBalancePickOptions{}),
@@ -50,7 +50,7 @@ func TestLongRunFailureRateDoesNotOverturnAClearDifference(t *testing.T) {
 	// faster still wins, so the group does not start serving the slow one to be safe.
 	fastBursty := cleanWindow()
 	fastBursty.Median, fastBursty.Floor = 100, 95
-	fastBursty.FailureRate = 0.1
+	fastBursty.FailureRateLong = 0.1
 	slowSteady := cleanWindow()
 	slowSteady.Median, slowSteady.Floor = 400, 390
 	objective := selection.NewQuickObjective(option.LoadBalancePickOptions{})
@@ -66,13 +66,13 @@ func TestLongRunFailureRateYieldsToTheWindow(t *testing.T) {
 	// priced by its record: the larger share is the cautious reading of the two.
 	recovering := cleanWindow()
 	recovering.Fail = 2
-	recovering.FailureWeight = 2
-	recovering.FailureWeightTotal = 10
-	if share := recovering.FailureShare(); share != 0.2 {
+	recovering.FailureNear = 2
+	recovering.FailureNearTotal = 10
+	if share := recovering.FailureRate(); share != 0.2 {
 		t.Fatalf("want the window share, got %v", share)
 	}
-	recovering.FailureRate = 0.5
-	if share := recovering.FailureShare(); share != 0.5 {
+	recovering.FailureRateLong = 0.5
+	if share := recovering.FailureRate(); share != 0.5 {
 		t.Fatalf("want the larger of the two, got %v", share)
 	}
 }

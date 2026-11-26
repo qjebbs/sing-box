@@ -208,7 +208,7 @@ func TestLeastPingScore(t *testing.T) {
 		{name: "jitter", stats: healthcheck.Stats{Median: 160, Jitter: 600, All: 10}, want: 760},
 		// (8*170 + 2*510) / 10: a failed attempt is worth three that worked, the value
 		// itself describes the checks that succeeded
-		{name: "failures", stats: healthcheck.Stats{Median: 160, Jitter: 10, All: 10, Fail: 2, FailureWeight: 2, FailureWeightTotal: 10}, want: 238},
+		{name: "failures", stats: healthcheck.Stats{Median: 160, Jitter: 10, All: 10, Fail: 2, FailureNear: 2, FailureNearTotal: 10}, want: 238},
 		// no attempt ever succeeded, the timeout is all the node costs
 		{name: "never succeeded", stats: healthcheck.Stats{All: 10, Fail: 10}, want: 15000},
 		{name: "never checked", stats: healthcheck.Stats{}, want: 0},
@@ -246,10 +246,10 @@ func TestLeastLoadScore(t *testing.T) {
 		{name: "bad checks", stats: healthcheck.Stats{Floor: 100, Median: 160, Bad: 4, All: 10}, want: 800},
 		// two failures of ten attempts: each counts as one bad check, so the frequency term
 		// gains 0.5 × 2/10 = 0.1 of the scale, and the depth is untouched
-		{name: "failures", stats: healthcheck.Stats{Floor: 100, Median: 160, All: 10, Fail: 2, FailureWeight: 2, FailureWeightTotal: 10}, want: 700},
+		{name: "failures", stats: healthcheck.Stats{Floor: 100, Median: 160, All: 10, Fail: 2, FailureNear: 2, FailureNearTotal: 10}, want: 700},
 		// the failures cannot enter the depth: a node that answers slowly but always is
 		// scored by its median, however many attempts failed
-		{name: "failures do not deepen", stats: healthcheck.Stats{Floor: 100, Median: 160, All: 10, Fail: 5, FailureWeight: 5, FailureWeightTotal: 10}, want: 850},
+		{name: "failures do not deepen", stats: healthcheck.Stats{Floor: 100, Median: 160, All: 10, Fail: 5, FailureNear: 5, FailureNearTotal: 10}, want: 850},
 		{name: "at its floor", stats: healthcheck.Stats{Floor: 160, Median: 160, All: 10}, want: healthcheck.Millisecond},
 		{name: "never succeeded", stats: healthcheck.Stats{All: 10, Fail: 10}, want: 15000},
 		{name: "never checked", stats: healthcheck.Stats{}, want: 0},

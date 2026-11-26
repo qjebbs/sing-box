@@ -201,14 +201,14 @@ func (n *Node) ScaleRTT(rtt healthcheck.RTT) healthcheck.RTT {
 	return applyFactorToRTT(rtt, n.RTTSacale)
 }
 
-// failureWeightLimit is the recent failure weight a node may carry and stay qualified: one
-// full failure. A failed check weighs one, so a node leaves on the check that fails and is
-// back on the next one that succeeds, unless it fails again and the weights add up.
-const failureWeightLimit = 1.0
+// failureNearLimit is FAIL_NEAR a node may carry and stay qualified: one full failure. A
+// failed check weighs one, so a node leaves on the check that fails and is back on the next
+// one that succeeds, unless it fails again and the weights add up.
+const failureNearLimit = 1.0
 
 // calcStatus tells if a node is alive or qualified according to the healthcheck statistics.
 // A recent failure keeps the node alive until its weight decays below one full failure, see
-// failureWeightLimit.
+// failureNearLimit.
 func calcStatus(s *healthcheck.Stats, maxRTT healthcheck.RTT) Status {
 	if s.All == 0 {
 		// untetsted
@@ -225,7 +225,7 @@ func calcStatus(s *healthcheck.Stats, maxRTT healthcheck.RTT) Status {
 		// the checks that are in it say nothing about the node now.
 		return StatusAlive
 	}
-	if s.FailureWeight >= failureWeightLimit {
+	if s.FailureNear >= failureNearLimit {
 		return StatusAlive
 	}
 	// don't apply RTT scale to maxRTT, because it's a threshold, not a score
