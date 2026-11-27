@@ -304,12 +304,13 @@ func (s WindowSeries) checksStrided(offset int, size WindowSize) []*healthcheck.
 }
 
 // statsOf prices a window of the history the way a round is priced: against the baseline
-// the node has now and the failure estimate of the checks older than the window, which are
-// the two inputs the storage keeps outside its window.
+// the node has now, with what is known about when it was measured, and the failure estimate
+// of the checks older than the window, which are the two inputs the storage keeps outside
+// its window.
 func (s WindowSeries) statsOf(checks []*healthcheck.History, longRun float64) healthcheck.Stats {
 	// the expiry of the window is left to zero: it is what makes the storage recompute its
 	// statistics, and the score reads none of it
-	return healthcheck.StatsOf(checks, s.Node.Stats.Floor, time.Time{}, longRun)
+	return healthcheck.StatsOf(checks, s.Node.Stats.Floor, s.Node.Stats.FloorBefore, time.Time{}, longRun)
 }
 
 // longRunAt returns the failure estimate the storage held when the check at offset was the

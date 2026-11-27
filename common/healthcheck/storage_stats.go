@@ -47,6 +47,15 @@ type Stats struct {
 	// is the reference the idle objective measures against: what a node waits over its
 	// own best, rather than over other nodes.
 	Floor RTT
+	// FloorBefore is whether a floor was already measured when the latest successful check
+	// arrived: by an earlier round of this run, or by the state cache restored at start. It
+	// is what makes one successful check enough for the idle objective: the check is read as
+	// a share over a floor that was already there, which is the comparison the score is
+	// made of.
+	// Without one, a window of a single check has nothing to compare — the floor is that
+	// check itself — and no delay statistics to fall back on either. It is only set when
+	// there is a floor.
+	FloorBefore bool
 	// Bad is how many of the successful checks came out slower than
 	// badCheckMultiple times the floor, the ones that are not merely noisy but queueing.
 	// Their share is the frequency the idle objective counts, next to the depth.
@@ -172,7 +181,7 @@ func (s *Storage) refreshStats(now time.Time) {
 	// is the statistics, and the floor outlives it. It is read even when the window is too
 	// short to describe the node, because a restored floor is what a restart must not wait for.
 	floor, _ := s.baseline.RTT(now)
-	s.stats = statsOf(len(delays)+fail, fail, latest.Delay, expiresAt, delays, floor, s.failures.rate(), failureNear, failureNearTotal)
+	s.stats = statsOf(len(delays)+fail, fail, latest.Delay, expiresAt, delays, floor, s.floorBefore, s.failures.rate(), failureNear, failureNearTotal)
 	s.stats.Suspended = s.suspended
 }
 
@@ -181,12 +190,15 @@ func (s *Storage) refreshStats(now time.Time) {
 // priced exactly the way the group priced it.
 //
 // The baseline is the one input of the statistics the storage keeps outside the window, so
-// it is passed in. A floor of zero means the node has none yet, and Bad stays zero.
+// it is passed in, together with floorBefore: whether a floor was already measured when the
+// latest successful check of this window arrived, see Stats.FloorBefore. A window replayed
+// off a stored floor is read the same way — the floor was there before those checks. A floor
+// of zero means the node has none yet, and Bad stays zero.
 //
 // failureRateLong is the failure estimate of the checks older than this window, see
 // ReplayFailureRateLong: it is the one statistic a window does not carry, and passing it in
 // keeps a window measured here priced the way the group priced it.
-func StatsOf(checks []*History, floor RTT, expires time.Time, failureRateLong float64) Stats {
+func StatsOf(checks []*History, floor RTT, floorBefore bool, expires time.Time, failureRateLong float64) Stats {
 	if len(checks) == 0 {
 		return Stats{}
 	}
@@ -206,11 +218,11 @@ func StatsOf(checks []*History, floor RTT, expires time.Time, failureRateLong fl
 			delays = append(delays, check.Delay)
 		}
 	}
-	return statsOf(len(checks), fail, checks[0].Delay, expires, delays, floor, failureRateLong, failureNear, failureNearTotal)
+	return statsOf(len(checks), fail, checks[0].Delay, expires, delays, floor, floorBefore, failureRateLong, failureNear, failureNearTotal)
 }
 
 // statsOf builds the statistics of a window of checks from the delays that succeeded.
-func statsOf(all int, fail int, latest RTT, expires time.Time, delays []RTT, floor RTT, failureRateLong float64, failureNear float64, failureNearTotal float64) Stats {
+func statsOf(all int, fail int, latest RTT, expires time.Time, delays []RTT, floor RTT, floorBefore bool, failureRateLong float64, failureNear float64, failureNearTotal float64) Stats {
 	var bad int
 	if floor > 0 {
 		// Counted before newStats, which replaces the delays with their distances to the
@@ -219,6 +231,7 @@ func statsOf(all int, fail int, latest RTT, expires time.Time, delays []RTT, flo
 	}
 	stats := newStats(all, fail, latest, expires, delays)
 	stats.Floor, stats.Bad = floor, bad
+	stats.FloorBefore = floor > 0 && floorBefore
 	stats.FailureNear = failureNear
 	stats.FailureNearTotal = failureNearTotal
 	stats.FailureRateLong = failureRateLong

@@ -66,14 +66,19 @@ func idleBadShare(node *Node) float64 {
 // on one scale, see idleScale and idleBadWeight. Why the two shares are the whole question,
 // and why the failures are counted rather than priced, is in NewIdleObjective.
 //
-// A round with a single check has no shares to add: it is read by its own delay instead.
+// A round with a single check has no shares to add when there was no floor before it: the
+// floor is then that check itself, and the sum is zero by construction rather than by
+// measurement. A floor that was already there, from an earlier round or restored from the
+// state cache, is a share the check did measure, so one check is enough, see
+// Stats.FloorBefore.
 func idleScore(node *Node) healthcheck.RTT {
-	if node.Stats.Succeeded() < 2 {
-		// One check cannot tell queueing from distance: the floor is that check itself, so
-		// both shares are zero and every node ties at the smallest score there is, leaving
-		// the group to pick among them at random. Rank by the delay instead, on half of it,
-		// which is the order quick reads the same window in: a node whose one check came out
-		// low must not look like the steadiest node there is.
+	if node.Stats.Succeeded() < 2 && !node.Stats.FloorBefore {
+		// One check cannot tell queueing from distance when it is the only thing the node
+		// was ever measured at: the floor is that check itself, so both shares are zero and
+		// every node ties at the smallest score there is, leaving the group to pick among
+		// them at random. Rank by the delay instead, on half of it, which is the order quick
+		// reads the same window in: a node whose one check came out low must not look like
+		// the steadiest node there is.
 		score := float64(node.Median) / 2
 		if score < 1 {
 			score = 1
@@ -167,6 +172,11 @@ func idleError(node *Node) float64 {
 // Both terms are shares, so the distance of the node is not part of the question: a node of
 // 150ms that doubles every third check ranks behind a node of 900ms that stays near its
 // own floor. Bounding the distance is what max_rtt is for.
+//
+// One successful check is enough when a floor was already there before it, see
+// healthcheck.Stats.FloorBefore: the check is then a share over the node's own best, and a
+// restart with a cached floor ranks from its first round. Without one the floor is that
+// check itself, so it is read by its delay instead, see idleScore.
 //
 // The failures are not priced in, because the score is not a time the node costs: it is a
 // share, and can be close to zero. They are counted as bad checks instead, see Stats.Bad.

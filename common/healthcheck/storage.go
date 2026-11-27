@@ -22,6 +22,10 @@ type Storage struct {
 	// the first check that passes. It is not part of the window: the window is what the
 	// interval measured, this is what the connections the node carried have shown.
 	suspended bool
+	// floorBefore is whether a floor was already there when the latest successful check
+	// arrived. It is the one thing about the floor a window of a single check cannot tell:
+	// whether it was measured before that check or by it, see Stats.FloorBefore.
+	floorBefore bool
 }
 
 // History is the rtt history
@@ -66,6 +70,12 @@ func (s *Storage) State(now time.Time) (adapter.HealthState, bool) {
 // or one older than what the checks have already measured, is nothing.
 func (s *Storage) restoreState(state adapter.HealthState, now time.Time) bool {
 	restored := s.baseline.restore(state.Floors, state.FloorsAt)
+	if restored {
+		// A floor that came back was measured before any check of this run, so the checks
+		// that follow are read against it rather than against themselves, see
+		// Stats.FloorBefore.
+		s.floorBefore = true
+	}
 	if !state.FailureLongAt.IsZero() && now.Sub(state.FailureLongAt) < failureStateTimeout {
 		if s.failures.restore(state.FailureLongSum, state.FailureLongWeight, state.FailureLongAt) {
 			restored = true
@@ -133,10 +143,18 @@ func (s *Storage) Put(d RTT) {
 		//
 		// Writing it before the statistics are read keeps the floor at or below the fastest
 		// check of the window: a minimum over real delays cannot make a score of zero.
-		s.baseline.Put(at, d)
+		s.putBaseline(at, d)
 	}
 	// statistics is not valid any more
 	s.stats = Stats{}
+}
+
+// putBaseline writes a successful check into the baseline. Whether a floor was already
+// there is read first: it tells a check that is compared with an earlier best from one that
+// is its own reference, see Stats.FloorBefore.
+func (s *Storage) putBaseline(at time.Time, d RTT) {
+	_, s.floorBefore = s.baseline.RTT(at)
+	s.baseline.Put(at, d)
 }
 
 // Update updates the last history, which is what a check the connections asked for does:
@@ -153,7 +171,7 @@ func (s *Storage) Update(d RTT) {
 	// the second half of what a failed connection already said
 	s.failures.observe(at, d == Failed)
 	if d != Failed {
-		s.baseline.Put(at, d)
+		s.putBaseline(at, d)
 	}
 	s.suspended = d == Failed
 	// statistics is not valid any more

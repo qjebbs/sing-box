@@ -31,6 +31,7 @@ func TestStorageStats(t *testing.T) {
 		Spread:          46,
 		DeviationSpread: 0,
 		Floor:           60,
+		FloorBefore:     true,
 		Bad:             2,
 		Average:         100,
 		Median:          100,
@@ -55,6 +56,7 @@ func TestStorageStats(t *testing.T) {
 		Spread:          57,
 		DeviationSpread: 0,
 		Floor:           60,
+		FloorBefore:     true,
 		Bad:             1,
 		Average:         100,
 		Median:          100,
@@ -68,10 +70,11 @@ func TestStorageStats(t *testing.T) {
 	s.Put(healthcheck.Failed)
 	// the floor outlives the window: it is what the node can do, not what it is doing
 	want = healthcheck.Stats{
-		All:    4,
-		Fail:   4,
-		Floor:  60,
-		Latest: healthcheck.Failed,
+		All:         4,
+		Fail:        4,
+		Floor:       60,
+		FloorBefore: true,
+		Latest:      healthcheck.Failed,
 	}
 	assertStats(t, "Stats() - All Fail", want, s.Stats())
 }
@@ -85,6 +88,30 @@ func TestASingleCheckSetsTheFloor(t *testing.T) {
 	s.Put(150)
 	if got := s.Stats().Floor; got != 150 {
 		t.Fatalf("want the floor of the single check, 150, got %d", got)
+	}
+}
+
+func TestFloorBeforeTheCheck(t *testing.T) {
+	t.Parallel()
+	// A window of one check cannot say whether the floor was measured before it or by it, and
+	// that is the only thing the idle objective needs from the floor there: a floor that was
+	// already there is a comparison, a floor the check set is the check read against itself.
+	cold := healthcheck.NewStorage(healthcheck.StorageOptions{Sampling: 10, Validity: 22 * time.Minute})
+	cold.Put(150)
+	if stats := cold.Stats(); stats.Floor != 150 || stats.FloorBefore {
+		t.Fatalf("want the first check to be its own floor, got floor %v, before %v", stats.Floor, stats.FloorBefore)
+	}
+
+	// Every check after it is read against a floor that was already there, whichever of the
+	// two is faster. A check that lowers the floor is the node at its best right now, and its
+	// share over the floor is zero, which is the smallest score there is rather than a
+	// measurement of its own delay, see idleScore.
+	after := healthcheck.NewStorage(healthcheck.StorageOptions{Sampling: 1, Validity: time.Minute})
+	after.Put(300)
+	after.Put(200)
+	if stats := after.Stats(); stats.All != 1 || stats.Floor != 200 || !stats.FloorBefore {
+		t.Fatalf("want the check that lowered the floor read against the one before it, got %d check(s), floor %v, before %v",
+			stats.All, stats.Floor, stats.FloorBefore)
 	}
 }
 
@@ -127,15 +154,16 @@ func TestStorageStatsMostlyFail(t *testing.T) {
 	// The floor is the fastest of the two that worked, 100ms, and neither of them is above
 	// twice that.
 	want := healthcheck.Stats{
-		All:     10,
-		Fail:    8,
-		Jitter:  0,
-		Floor:   100,
-		Average: 100,
-		Median:  100,
-		Max:     100,
-		Min:     100,
-		Latest:  100,
+		All:         10,
+		Fail:        8,
+		Jitter:      0,
+		Floor:       100,
+		FloorBefore: true,
+		Average:     100,
+		Median:      100,
+		Max:         100,
+		Min:         100,
+		Latest:      100,
 	}
 	assertStats(t, "Stats() - Mostly Fail", want, s.Stats())
 	if got := s.Stats().Succeeded(); got != 2 {
@@ -162,6 +190,7 @@ func TestStorageStatsIgnoreOutdated(t *testing.T) {
 		Spread:          57,
 		DeviationSpread: 0,
 		Floor:           60,
+		FloorBefore:     true,
 		Bad:             1,
 		Average:         100,
 		Median:          100,
@@ -191,6 +220,7 @@ func TestStorageStatsIgnoreOutdated(t *testing.T) {
 		Jitter:        30,
 		MeanDeviation: 30,
 		Floor:         60,
+		FloorBefore:   true,
 		Average:       60,
 		Median:        60,
 		Max:           60,
@@ -321,7 +351,7 @@ func TestStatsWeighsFailuresByAge(t *testing.T) {
 		{Time: now.Add(-time.Minute), Delay: healthcheck.Failed},
 		{Time: now.Add(-6 * time.Minute), Delay: healthcheck.Failed},
 	}
-	stats := healthcheck.StatsOf(checks, 0, time.Time{}, 0)
+	stats := healthcheck.StatsOf(checks, 0, false, time.Time{}, 0)
 	want := math.Exp(-1.0/5.0) + math.Exp(-6.0/5.0)
 	if math.Abs(stats.FailureNear-want) > 1e-9 {
 		t.Fatalf("want the weighted failures %v, got %v", want, stats.FailureNear)
@@ -332,7 +362,7 @@ func TestStatsWeighsFailuresByAge(t *testing.T) {
 		{Time: now, Delay: healthcheck.Failed},
 		{Time: now.Add(-time.Minute), Delay: 100},
 	}
-	freshStats := healthcheck.StatsOf(fresh, 0, time.Time{}, 0)
+	freshStats := healthcheck.StatsOf(fresh, 0, false, time.Time{}, 0)
 	if freshStats.FailureNear != 1 {
 		t.Fatalf("want a fresh failure to weigh one, got %v", freshStats.FailureNear)
 	}
@@ -346,7 +376,7 @@ func TestStatsWeighsFailuresByAge(t *testing.T) {
 		{Time: now, Delay: healthcheck.Failed},
 		{Time: now.Add(-time.Minute), Delay: healthcheck.Failed},
 	}
-	fullStats := healthcheck.StatsOf(full, 0, time.Time{}, 0)
+	fullStats := healthcheck.StatsOf(full, 0, false, time.Time{}, 0)
 	if share := fullStats.FailureRate(); share != 1 {
 		t.Fatalf("want a fully failed window to read one, got %v", share)
 	}
@@ -380,13 +410,13 @@ func TestStatsOfMatchesStorage(t *testing.T) {
 
 	checks := s.All()
 	floor := stats.Floor
-	got := healthcheck.StatsOf(checks, floor, stats.Expires, healthcheck.ReplayFailureRateLong(checks))
+	got := healthcheck.StatsOf(checks, floor, stats.FloorBefore, stats.Expires, healthcheck.ReplayFailureRateLong(checks))
 	assertStats(t, "StatsOf() - whole history", stats, got)
 
 	// A window of the most recent checks, measured against the same baseline: every
 	// statistic has to come from that window and nothing else.
 	window := checks[:4]
-	got = healthcheck.StatsOf(window, floor, stats.Expires, healthcheck.ReplayFailureRateLong(checks))
+	got = healthcheck.StatsOf(window, floor, stats.FloorBefore, stats.Expires, healthcheck.ReplayFailureRateLong(checks))
 	if got.All != 4 {
 		t.Fatalf("want 4 checks in the window, got %d", got.All)
 	}
@@ -400,14 +430,14 @@ func TestStatsOfMatchesStorage(t *testing.T) {
 
 	// Without a baseline the frequency term has nothing to measure against, so it stays
 	// zero rather than counting every check as bad.
-	got = healthcheck.StatsOf(checks, 0, stats.Expires, healthcheck.ReplayFailureRateLong(checks))
+	got = healthcheck.StatsOf(checks, 0, false, stats.Expires, healthcheck.ReplayFailureRateLong(checks))
 	if got.Bad != 0 || got.Floor != 0 {
 		t.Fatalf("want no baseline and no bad checks, got floor %v and %d bad", got.Floor, got.Bad)
 	}
 
 	// An empty window has nothing to say, not a zero measurement.
-	if !reflect.DeepEqual(healthcheck.StatsOf(nil, floor, stats.Expires, 0), healthcheck.Stats{}) {
-		t.Fatalf("want empty statistics, got %v", healthcheck.StatsOf(nil, floor, stats.Expires, 0))
+	if !reflect.DeepEqual(healthcheck.StatsOf(nil, floor, true, stats.Expires, 0), healthcheck.Stats{}) {
+		t.Fatalf("want empty statistics, got %v", healthcheck.StatsOf(nil, floor, true, stats.Expires, 0))
 	}
 }
 

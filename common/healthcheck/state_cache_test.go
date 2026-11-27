@@ -152,6 +152,28 @@ func TestRestoredFloorWinsOverTheFirstCheck(t *testing.T) {
 	}
 }
 
+func TestRestoredFloorMakesOneCheckEnough(t *testing.T) {
+	t.Parallel()
+	// A restored floor was measured before this run, so the first check of the run is compared
+	// with something rather than with itself, and the idle objective can rank on that one check
+	// instead of falling back to the delay, see Stats.FloorBefore. It holds even when the check
+	// lands exactly on the floor, which is what a steady node does.
+	now := time.Now()
+	store := &fakeStateStore{}
+	check := newStoredCheck(store)
+	restoreStates(check, map[string]adapter.HealthState{
+		"node": {Floors: floorValues(now.Add(-time.Hour), 150), FloorsAt: now.Add(-time.Hour)},
+	})
+	check.Storage.Put("node", 150)
+	stats := check.Storage.Stats("node")
+	if stats.All != 1 || stats.Floor != 150 {
+		t.Fatalf("want one check against the restored floor of 150, got %d check(s) and floor %v", stats.All, stats.Floor)
+	}
+	if !stats.FloorBefore {
+		t.Fatal("want the restored floor read as measured before the check")
+	}
+}
+
 func TestRestoredFloorExpiresLikeTheSlotItCameFrom(t *testing.T) {
 	t.Parallel()
 	// Restoring a floor into the slot it came from is what keeps its life: it has to expire at

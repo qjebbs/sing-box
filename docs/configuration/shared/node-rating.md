@@ -59,8 +59,6 @@ There are two objectives a group can score a node by:
 - `quick` compares actual delay: a 570ms node is simply slower than a 400ms node.
 - `idle` compares degradation: a node that is usually 200ms and 400ms at the evening peak — 400ms may still be lower than a distant node — is already running at twice its own time. So an `idle` score is a ratio in essence, with nothing to do with distance.
 
-Scoring assumes at least two successful checks. With only one, there is nothing to say about variation or pressure, so the objective falls back to delay.
-
 `SLOT` follows the wall clock: `k` is which 30 minutes of the day it is. A check fills the slot it was measured in, and only the smallest one in the slot is kept. After 24 hours the same slot is overwritten by the next record, and the old value is gone on its own.
 
 **`MED`** is the delay level. A median rather than an average, so one very slow check cannot pull it.

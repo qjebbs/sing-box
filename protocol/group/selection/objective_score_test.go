@@ -283,16 +283,16 @@ func TestLeastPingScoreDoesNotUseMeanDeviation(t *testing.T) {
 
 func TestLeastLoadScoreOneSample(t *testing.T) {
 	t.Parallel()
-	// A window with one successful check has no floor of its own and no variation to
-	// measure, so both shares of idle are zero and every node would tie at the smallest
-	// score there is. It ranks by the delay until a second check arrives: a node whose one
-	// check came out low must not look like the steadiest node there is.
+	// A window with one successful check that set the floor itself has nothing to compare
+	// and no variation to measure, so both shares of idle are zero and every node would tie
+	// at the smallest score there is. It ranks by the delay until a second check arrives: a
+	// node whose one check came out low must not look like the steadiest node there is.
 	objective := selection.NewIdleObjective(option.LoadBalancePickOptions{})
 	fast := &selection.Node{Status: selection.StatusQualified, Stats: healthcheck.Stats{
-		All: 1, Median: 100,
+		All: 1, Floor: 100, Median: 100,
 	}}
 	slow := &selection.Node{Status: selection.StatusQualified, Stats: healthcheck.Stats{
-		All: 1, Median: 900,
+		All: 1, Floor: 900, Median: 900,
 	}}
 	if objective.Score(fast) >= objective.Score(slow) {
 		t.Fatalf("one sample did not rank by the delay: %v for 100ms, %v for 900ms",
@@ -311,6 +311,29 @@ func TestLeastLoadScoreOneSample(t *testing.T) {
 	}}
 	if got := objective.Score(atFloor); got != healthcheck.Millisecond {
 		t.Fatalf("two samples still read the distance: got %v for a node at its floor", got)
+	}
+}
+
+func TestLeastLoadScoreOneSampleWithFloor(t *testing.T) {
+	t.Parallel()
+	// One check is enough once the floor was measured before it, which is what a restored
+	// floor is: the delay is then a distance from the node's own best rather than from
+	// itself, so a steady node is not pushed behind a queueing one for being far away. That
+	// is the same answer two checks give, and the reason a restart ranks from its first
+	// round, see healthcheck.Stats.FloorBefore.
+	objective := selection.NewIdleObjective(option.LoadBalancePickOptions{})
+	steady := &selection.Node{Status: selection.StatusQualified, Stats: healthcheck.Stats{
+		All: 1, Floor: 900, Median: 900, FloorBefore: true,
+	}}
+	queueing := &selection.Node{Status: selection.StatusQualified, Stats: healthcheck.Stats{
+		All: 1, Floor: 100, Median: 200, FloorBefore: true,
+	}}
+	if got := objective.Score(steady); got != healthcheck.Millisecond {
+		t.Fatalf("want the node at its floor to score the smallest there is, got %v", got)
+	}
+	if objective.Score(steady) >= objective.Score(queueing) {
+		t.Fatalf("one check did not read the floor before it: %v for a node at its floor, %v for one at twice it",
+			objective.Score(steady), objective.Score(queueing))
 	}
 }
 
