@@ -112,10 +112,10 @@ func (c *STDClientConfig) SetECHConfigList(EncryptedClientHelloConfigList []byte
 }
 
 func NewSTDClient(ctx context.Context, logger logger.ContextLogger, serverAddress string, options option.OutboundTLSOptions) (Config, error) {
-	return newSTDClient(ctx, logger, serverAddress, options, false)
+	return newSTDClient(ctx, logger, serverAddress, options, false, nil, false)
 }
 
-func newSTDClient(ctx context.Context, logger logger.ContextLogger, serverAddress string, options option.OutboundTLSOptions, allowEmptyServerName bool) (Config, error) {
+func newSTDClient(ctx context.Context, logger logger.ContextLogger, serverAddress string, options option.OutboundTLSOptions, allowEmptyServerName bool, domainResolver *option.DomainResolveOptions, directResolver bool) (Config, error) {
 	var serverName string
 	if options.ServerName != "" {
 		serverName = options.ServerName
@@ -247,7 +247,7 @@ func newSTDClient(ctx context.Context, logger logger.ContextLogger, serverAddres
 	config.SetServerName(serverName)
 	if options.ECH != nil && options.ECH.Enabled {
 		var err error
-		config, err = parseECHClientConfig(ctx, config.(ECHCapableConfig), options)
+		config, err = parseECHClientConfig(ctx, config.(ECHCapableConfig), options, domainResolver, directResolver)
 		if err != nil {
 			return nil, err
 		}
@@ -276,6 +276,9 @@ func verifyConnection(rootCAs *x509.CertPool, timeFunc func() time.Time, serverN
 }
 
 func VerifyPublicKeySHA256(knownHashValues [][]byte, rawCerts [][]byte) error {
+	if len(rawCerts) == 0 {
+		return E.New("missing remote certificate")
+	}
 	leafCertificate, err := x509.ParseCertificate(rawCerts[0])
 	if err != nil {
 		return E.Cause(err, "failed to parse leaf certificate")

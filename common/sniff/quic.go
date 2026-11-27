@@ -9,6 +9,7 @@ import (
 	"encoding/binary"
 	"io"
 	"os"
+	"slices"
 
 	"github.com/sagernet/sing-box/adapter"
 	"github.com/sagernet/sing-box/common/ja3"
@@ -16,6 +17,7 @@ import (
 	C "github.com/sagernet/sing-box/constant"
 	"github.com/sagernet/sing/common/buf"
 	E "github.com/sagernet/sing/common/exceptions"
+	M "github.com/sagernet/sing/common/metadata"
 
 	"golang.org/x/crypto/hkdf"
 )
@@ -309,7 +311,9 @@ find:
 		metadata.SniffContext = fragments
 		return E.Cause1(ErrNeedMoreData, err)
 	}
-	metadata.Domain = fingerprint.ServerName
+	if domain := M.ParseSocksaddrHostPort(fingerprint.ServerName, 0).Fqdn; domain != "" && (domain != metadata.ECHPublicName || !slices.Contains(fingerprint.Extensions, extensionEncryptedClientHello)) {
+		metadata.Domain = domain
+	}
 	for metadata.Client == "" {
 		if len(frameTypeList) == 1 {
 			metadata.Client = C.ClientFirefox

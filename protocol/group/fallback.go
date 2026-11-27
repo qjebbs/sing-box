@@ -92,15 +92,15 @@ func (f *Fallback) Close() error {
 func (f *Fallback) healthChecksUpdated() {}
 
 // References implements adapter.Referrer
-func (f *Fallback) References() []string {
-	outbounds := f.Outbounds()
-	if len(outbounds) == 0 {
-		return f.Dependencies()
+func (f *Fallback) References() (outbounds []string, dnsServers []string) {
+	nodes := f.Outbounds()
+	if len(nodes) == 0 {
+		return f.Dependencies(), nil
 	}
 	// Any node may serve the next connection, so all of them are kept ready.
-	return common.Map(outbounds, func(it adapter.Outbound) string {
+	return common.Map(nodes, func(it adapter.Outbound) string {
 		return it.Tag()
-	})
+	}), nil
 }
 
 // DialContext implements adapter.Outbound

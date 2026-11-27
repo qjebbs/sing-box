@@ -6,6 +6,7 @@ import (
 	"context"
 	"crypto/tls"
 	"crypto/x509"
+	"errors"
 	"math/rand"
 	"net"
 	"strings"
@@ -147,6 +148,15 @@ func (c *utlsConnWrapper) ConnectionState() tls.ConnectionState {
 	}
 }
 
+func (c *utlsConnWrapper) HandshakeContext(ctx context.Context) error {
+	err := c.UConn.HandshakeContext(ctx)
+	var echErr *utls.ECHRejectionError
+	if errors.As(err, &echErr) {
+		return &tls.ECHRejectionError{RetryConfigList: echErr.RetryConfigList}
+	}
+	return err
+}
+
 func (c *utlsConnWrapper) Upstream() any {
 	return c.UConn
 }
@@ -181,14 +191,14 @@ func (c *utlsALPNWrapper) HandshakeContext(ctx context.Context) error {
 			}
 		}
 	}
-	return c.UConn.HandshakeContext(ctx)
+	return c.utlsConnWrapper.HandshakeContext(ctx)
 }
 
 func NewUTLSClient(ctx context.Context, logger logger.ContextLogger, serverAddress string, options option.OutboundTLSOptions) (Config, error) {
-	return newUTLSClient(ctx, logger, serverAddress, options, false)
+	return newUTLSClient(ctx, logger, serverAddress, options, false, nil, false)
 }
 
-func newUTLSClient(ctx context.Context, logger logger.ContextLogger, serverAddress string, options option.OutboundTLSOptions, allowEmptyServerName bool) (Config, error) {
+func newUTLSClient(ctx context.Context, logger logger.ContextLogger, serverAddress string, options option.OutboundTLSOptions, allowEmptyServerName bool, domainResolver *option.DomainResolveOptions, directResolver bool) (Config, error) {
 	var serverName string
 	if options.ServerName != "" {
 		serverName = options.ServerName
@@ -326,7 +336,7 @@ func newUTLSClient(ctx context.Context, logger logger.ContextLogger, serverAddre
 		if options.Reality != nil && options.Reality.Enabled {
 			return nil, E.New("Reality is conflict with ECH")
 		}
-		config, err = parseECHClientConfig(ctx, config.(ECHCapableConfig), options)
+		config, err = parseECHClientConfig(ctx, config.(ECHCapableConfig), options, domainResolver, directResolver)
 		if err != nil {
 			return nil, err
 		}
@@ -354,15 +364,15 @@ func init() {
 	modernFingerprints := []utls.ClientHelloID{
 		utls.HelloChrome_Auto,
 		utls.HelloFirefox_Auto,
-		utls.HelloEdge_Auto,
 		utls.HelloSafari_Auto,
-		utls.HelloIOS_Auto,
 	}
 	randomFingerprint = modernFingerprints[rand.Intn(len(modernFingerprints))]
 
 	weights := utls.DefaultWeights
 	weights.TLSVersMax_Set_VersionTLS13 = 1
 	weights.FirstKeyShare_Set_CurveP256 = 0
+	weights.CurveIDs_Append_X25519 = 1
+	weights.KeyShare_Append_RandomGroups = 1
 	randomizedFingerprint = utls.HelloRandomized
 	randomizedFingerprint.Seed, _ = utls.NewPRNGSeed()
 	randomizedFingerprint.Weights = &weights

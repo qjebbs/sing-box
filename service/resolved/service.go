@@ -7,7 +7,6 @@ import (
 	"net"
 	"strings"
 	"sync"
-	"time"
 
 	"github.com/sagernet/sing-box/adapter"
 	boxService "github.com/sagernet/sing-box/adapter/service"
@@ -88,7 +87,7 @@ func (i *Service) Start(stage adapter.StartStage, scope *adapter.Scope) error {
 				return E.New("multiple resolved service are not supported")
 			}
 		}
-		systemBus, err := dbus.SystemBus()
+		systemBus, err := dbus.ConnectSystemBus()
 		if err != nil {
 			return err
 		}
@@ -102,10 +101,6 @@ func (i *Service) Start(stage adapter.StartStage, scope *adapter.Scope) error {
 		if err != nil {
 			return err
 		}
-		scope.Add(func() error {
-			_, releaseErr := systemBus.ReleaseName("org.freedesktop.resolve1")
-			return releaseErr
-		})
 		switch reply {
 		case dbus.RequestNameReplyPrimaryOwner:
 		case dbus.RequestNameReplyExists:
@@ -132,15 +127,7 @@ func (i *Service) Start(stage adapter.StartStage, scope *adapter.Scope) error {
 func (i *Service) NewConnection(ctx context.Context, conn net.Conn, metadata adapter.InboundContext, onClose N.CloseHandlerFunc) {
 	metadata.Inbound = i.Tag()
 	metadata.InboundType = i.Type()
-	metadata.Destination = M.Socksaddr{}
-	for {
-		conn.SetReadDeadline(time.Now().Add(C.DNSTimeout))
-		err := dnsOutbound.HandleStreamDNSRequest(ctx, i.dnsRouter, conn, metadata)
-		if err != nil {
-			N.CloseOnHandshakeFailure(conn, onClose, err)
-			return
-		}
-	}
+	N.CloseOnHandshakeFailure(conn, onClose, dnsOutbound.NewDNSConnection(ctx, i.dnsRouter, conn, metadata))
 }
 
 func (i *Service) NewPacket(buffer *buf.Buffer, oob []byte, source M.Socksaddr) {

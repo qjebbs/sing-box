@@ -62,7 +62,14 @@ func NewHTTPS(ctx context.Context, logger log.ContextLogger, tag string, options
 	}
 	tlsOptions := common.PtrValueOrDefault(options.TLS)
 	tlsOptions.Enabled = true
-	tlsConfig, err := tls.NewClient(ctx, logger, options.Server, tlsOptions)
+	tlsConfig, err := tls.NewClientWithOptions(tls.ClientOptions{
+		Context:        ctx,
+		Logger:         logger,
+		ServerAddress:  options.Server,
+		Options:        tlsOptions,
+		DomainResolver: options.DomainResolver,
+		DirectResolver: true,
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -210,7 +217,7 @@ func (t *HTTPSTransport) ExchangeAsync(ctx context.Context, message *mDNS.Msg, c
 }
 
 func (t *HTTPSTransport) exchange(ctx context.Context, message *mDNS.Msg) (*mDNS.Msg, error) {
-	exMessage := *message
+	exMessage := message.Copy()
 	exMessage.Id = 0
 	exMessage.Compress = true
 	requestBuffer := buf.NewSize(1 + message.Len())

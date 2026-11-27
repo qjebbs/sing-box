@@ -174,14 +174,6 @@ See [Dial Fields](/configuration/shared/dial/#network_strategy) for details.
 Only take effect if outbound is direct without `outbound.bind_interface`,
 `outbound.inet4_bind_address` and `outbound.inet6_bind_address` set.
 
-#### network_type
-
-See [Dial Fields](/configuration/shared/dial/#network_type) for details.
-
-#### fallback_network_type
-
-See [Dial Fields](/configuration/shared/dial/#fallback_network_type) for details.
-
 #### fallback_delay
 
 See [Dial Fields](/configuration/shared/dial/#fallback_delay) for details.
@@ -285,8 +277,6 @@ of accepted values and platform notes.
 ```
 
 `sniff` performs protocol sniffing on connections.
-
-For deprecated `inbound.sniff` options, it is considered to `sniff()` performed before routing.
 
 #### sniffer
 

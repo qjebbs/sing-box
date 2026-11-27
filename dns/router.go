@@ -5,6 +5,7 @@ import (
 	"errors"
 	"maps"
 	"net/netip"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -28,6 +29,7 @@ import (
 	"github.com/sagernet/sing/service"
 
 	mDNS "github.com/miekg/dns"
+	"golang.org/x/crypto/cryptobyte"
 )
 
 var (
@@ -46,6 +48,7 @@ type Router struct {
 	rules                 []adapter.DNSRule
 	defaultDomainStrategy C.DomainStrategy
 	dnsReverseMapping     *freelru.Cache[netip.Addr, string]
+	dnsECHPublicNames     *freelru.Cache[string, string]
 	platformInterface     adapter.PlatformInterface
 	legacyDNSMode         bool
 	rulesAccess           sync.RWMutex
@@ -115,6 +118,11 @@ func NewRouter(ctx context.Context, logFactory log.Factory, options option.DNSOp
 	})
 	if options.ReverseMapping {
 		router.dnsReverseMapping = common.Must1(freelru.New[netip.Addr, string](1024, maphash.NewHasher[netip.Addr]().Hash32, true))
+	}
+	if options.ReverseMapping || slices.ContainsFunc(options.Servers, func(it option.DNSServerOptions) bool {
+		return it.Type == C.DNSTypeFakeIP
+	}) {
+		router.dnsECHPublicNames = common.Must1(freelru.New[string, string](1024, maphash.NewHasher[string]().Hash32, true))
 	}
 	return router, nil
 }
@@ -194,7 +202,7 @@ func (r *Router) buildRules(startRules bool) ([]adapter.DNSRule, bool, dnsRuleMo
 			r.logger.Warn(warning)
 		}
 	}
-	err = validateEvaluateFakeIPRules(r.rawRules, r.transport)
+	err = validateRuleActionServers(r.rawRules, r.transport)
 	if err != nil {
 		return nil, false, dnsRuleModeFlags{}, err
 	}
@@ -1119,18 +1127,89 @@ func (r *Router) prepareExchange(ctx context.Context, message *mDNS.Msg) (*dnsEx
 }
 
 func (r *Router) recordReverseMapping(message *mDNS.Msg, response *mDNS.Msg, transport adapter.DNSTransport) {
-	if r.dnsReverseMapping != nil && len(message.Question) > 0 && response != nil && len(response.Answer) > 0 {
-		if transport == nil || transport.Type() != C.DNSTypeFakeIP {
-			for _, answer := range response.Answer {
-				switch record := answer.(type) {
-				case *mDNS.A:
-					r.dnsReverseMapping.AddWithLifetime(M.AddrFromIP(record.A), FqdnToDomain(record.Hdr.Name), time.Duration(record.Hdr.Ttl)*time.Second)
-				case *mDNS.AAAA:
-					r.dnsReverseMapping.AddWithLifetime(M.AddrFromIP(record.AAAA), FqdnToDomain(record.Hdr.Name), time.Duration(record.Hdr.Ttl)*time.Second)
+	if r.dnsECHPublicNames == nil || len(message.Question) == 0 || response == nil || response.Rcode != mDNS.RcodeSuccess {
+		return
+	}
+	if transport != nil && transport.Type() == C.DNSTypeFakeIP {
+		return
+	}
+	question := message.Question[0]
+	domain := FqdnToDomain(question.Name)
+	if port, origin, found := strings.Cut(domain, "._https."); found && question.Qtype == mDNS.TypeHTTPS && strings.HasPrefix(port, "_") {
+		domain = origin
+	}
+	var (
+		addresses       []netip.Addr
+		foundPublicName bool
+	)
+	for _, answer := range response.Answer {
+		lifetime := time.Duration(max(answer.Header().Ttl, 1)) * time.Second
+		if record, isHTTPS := answer.(*mDNS.HTTPS); isHTTPS {
+			publicName := echPublicName(record)
+			if publicName != "" {
+				foundPublicName = true
+				publicNameLifetime := max(lifetime, C.DefaultDNSTTL*time.Second)
+				mappedName, expireAt, loaded := r.dnsECHPublicNames.GetWithLifetime(domain)
+				if !loaded || mappedName != publicName || time.Until(expireAt) < publicNameLifetime {
+					r.dnsECHPublicNames.AddWithLifetime(domain, publicName, publicNameLifetime)
 				}
 			}
 		}
+		if r.dnsReverseMapping == nil {
+			continue
+		}
+		addresses = adapter.AppendDNSRecordAddresses(addresses[:0], answer)
+		for _, address := range addresses {
+			mappedDomain, expireAt, loaded := r.dnsReverseMapping.GetWithLifetime(address)
+			if loaded && mappedDomain == domain && time.Until(expireAt) >= lifetime {
+				continue
+			}
+			r.dnsReverseMapping.AddWithLifetime(address, domain, lifetime)
+		}
 	}
+	if question.Qtype == mDNS.TypeHTTPS && !foundPublicName {
+		r.dnsECHPublicNames.Remove(domain)
+	}
+}
+
+func echPublicName(record *mDNS.HTTPS) string {
+	const extensionEncryptedClientHello = 0xfe0d
+	for _, value := range record.Value {
+		echConfig, isECHConfig := value.(*mDNS.SVCBECHConfig)
+		if !isECHConfig {
+			continue
+		}
+		configList := cryptobyte.String(echConfig.ECH)
+		var configs cryptobyte.String
+		if !configList.ReadUint16LengthPrefixed(&configs) {
+			return ""
+		}
+		for !configs.Empty() {
+			var (
+				version           uint16
+				contents          cryptobyte.String
+				configID          uint8
+				kemID             uint16
+				publicKey         cryptobyte.String
+				cipherSuites      cryptobyte.String
+				maximumNameLength uint8
+				publicName        cryptobyte.String
+			)
+			if !configs.ReadUint16(&version) || !configs.ReadUint16LengthPrefixed(&contents) {
+				return ""
+			}
+			if version == extensionEncryptedClientHello &&
+				contents.ReadUint8(&configID) &&
+				contents.ReadUint16(&kemID) &&
+				contents.ReadUint16LengthPrefixed(&publicKey) &&
+				contents.ReadUint16LengthPrefixed(&cipherSuites) &&
+				contents.ReadUint8(&maximumNameLength) &&
+				contents.ReadUint8LengthPrefixed(&publicName) {
+				return string(publicName)
+			}
+		}
+	}
+	return ""
 }
 
 func (r *Router) exchangeLegacy(ctx context.Context, exchangeCtx *dnsExchangeContext, message *mDNS.Msg, options adapter.DNSQueryOptions) (*mDNS.Msg, adapter.DNSTransport, error) {
@@ -1209,7 +1288,9 @@ func (r *Router) Exchange(ctx context.Context, message *mDNS.Msg, options adapte
 	if err != nil {
 		return nil, err
 	}
-	r.recordReverseMapping(message, response, transport)
+	if !options.DisableReverseMapping {
+		r.recordReverseMapping(message, response, transport)
+	}
 	return response, nil
 }
 
@@ -1223,26 +1304,28 @@ func (r *Router) ExchangeAsync(ctx context.Context, message *mDNS.Msg, options a
 	if options.Transport != nil {
 		transport := options.Transport
 		r.client.ExchangeAsync(ctx, transport, message, r.finalizeExchangeOptions(options), nil, func(response *mDNS.Msg, exchangeErr error) {
-			r.finishExchangeAsync(message, transport, response, exchangeErr, callback)
+			r.finishExchangeAsync(message, options, transport, response, exchangeErr, callback)
 		})
 	} else if !exchangeCtx.legacyDNSMode {
 		r.exchangeWithRulesAsync(ctx, exchangeCtx.rules, message, options, true, func(result exchangeWithRulesResult) {
-			r.finishExchangeAsync(message, result.transport, result.response, result.err, callback)
+			r.finishExchangeAsync(message, options, result.transport, result.response, result.err, callback)
 		})
 	} else {
 		go func() {
 			response, transport, exchangeErr := r.exchangeLegacy(ctx, exchangeCtx, message, options)
-			r.finishExchangeAsync(message, transport, response, exchangeErr, callback)
+			r.finishExchangeAsync(message, options, transport, response, exchangeErr, callback)
 		}()
 	}
 }
 
-func (r *Router) finishExchangeAsync(message *mDNS.Msg, transport adapter.DNSTransport, response *mDNS.Msg, err error, callback func(response *mDNS.Msg, err error)) {
+func (r *Router) finishExchangeAsync(message *mDNS.Msg, options adapter.DNSQueryOptions, transport adapter.DNSTransport, response *mDNS.Msg, err error, callback func(response *mDNS.Msg, err error)) {
 	if err != nil {
 		callback(nil, err)
 		return
 	}
-	r.recordReverseMapping(message, response, transport)
+	if !options.DisableReverseMapping {
+		r.recordReverseMapping(message, response, transport)
+	}
 	callback(response, nil)
 }
 
@@ -1380,6 +1463,9 @@ func (r *Router) ClearCache() {
 	if r.dnsReverseMapping != nil {
 		r.dnsReverseMapping.Purge()
 	}
+	if r.dnsECHPublicNames != nil {
+		r.dnsECHPublicNames.Purge()
+	}
 }
 
 func (r *Router) LookupReverseMapping(ip netip.Addr) (string, bool) {
@@ -1388,6 +1474,14 @@ func (r *Router) LookupReverseMapping(ip netip.Addr) (string, bool) {
 	}
 	domain, loaded := r.dnsReverseMapping.Get(ip)
 	return domain, loaded
+}
+
+func (r *Router) LookupECHPublicName(domain string) string {
+	if r.dnsECHPublicNames == nil {
+		return ""
+	}
+	publicName, _ := r.dnsECHPublicNames.Get(domain)
+	return publicName
 }
 
 func (r *Router) ResetNetwork() {
@@ -1589,23 +1683,19 @@ func validateLegacyDNSModeDisabledRules(router adapter.Router, rules []option.DN
 	return warnings, nil
 }
 
-func validateEvaluateFakeIPRules(rules []option.DNSRule, transportManager adapter.DNSTransportManager) error {
-	if transportManager == nil {
-		return nil
-	}
+func validateRuleActionServers(rules []option.DNSRule, transportManager adapter.DNSTransportManager) error {
 	for i, rule := range rules {
-		if dnsRuleActionType(rule) != C.RuleActionTypeEvaluate {
-			continue
-		}
 		server := dnsRuleActionServer(rule)
 		if server == "" {
 			continue
 		}
 		transport, loaded := transportManager.Transport(server)
-		if !loaded || transport.Type() != C.DNSTypeFakeIP {
-			continue
+		if !loaded {
+			return E.New("dns rule[", i, "]: server not found: ", server)
 		}
-		return E.New("dns rule[", i, "]: evaluate action cannot use fakeip server: ", server)
+		if dnsRuleActionType(rule) == C.RuleActionTypeEvaluate && transport.Type() == C.DNSTypeFakeIP {
+			return E.New("dns rule[", i, "]: evaluate action cannot use fakeip server: ", server)
+		}
 	}
 	return nil
 }

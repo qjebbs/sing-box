@@ -109,12 +109,12 @@ func (s *SelectorProvider) Selected(network string) adapter.Outbound {
 }
 
 // References implements adapter.Referrer
-func (s *SelectorProvider) References() []string {
+func (s *SelectorProvider) References() (outbounds []string, dnsServers []string) {
 	selected := s.Selected(N.NetworkTCP)
 	if selected == nil {
-		return nil
+		return nil, nil
 	}
-	return []string{selected.Tag()}
+	return []string{selected.Tag()}, nil
 }
 
 // AttachConnection implements adapter.OutboundGroup

@@ -45,16 +45,11 @@ func applyTLSSpoof(conn net.Conn, spoof string, method tlsspoof.Method) (net.Con
 	return tlsspoof.NewConn(conn, method, spoof)
 }
 
-func NewDialerFromOptions(ctx context.Context, logger logger.ContextLogger, dialer N.Dialer, serverAddress string, options option.OutboundTLSOptions) (N.Dialer, error) {
-	if !options.Enabled {
+func NewDialerFromOptions(dialer N.Dialer, options ClientOptions) (N.Dialer, error) {
+	if !options.Options.Enabled {
 		return dialer, nil
 	}
-	config, err := NewClientWithOptions(ClientOptions{
-		Context:       ctx,
-		Logger:        logger,
-		ServerAddress: serverAddress,
-		Options:       options,
-	})
+	config, err := NewClientWithOptions(options)
 	if err != nil {
 		return nil, err
 	}
@@ -77,6 +72,8 @@ type ClientOptions struct {
 	Options              option.OutboundTLSOptions
 	AllowEmptyServerName bool
 	KTLSCompatible       bool
+	DomainResolver       *option.DomainResolveOptions
+	DirectResolver       bool
 }
 
 func NewClientWithOptions(options ClientOptions) (Config, error) {
@@ -103,9 +100,9 @@ func NewClientWithOptions(options ClientOptions) (Config, error) {
 	if options.Options.Reality != nil && options.Options.Reality.Enabled {
 		return newRealityClient(options.Context, options.Logger, options.ServerAddress, options.Options, options.AllowEmptyServerName)
 	} else if options.Options.UTLS != nil && options.Options.UTLS.Enabled {
-		return newUTLSClient(options.Context, options.Logger, options.ServerAddress, options.Options, options.AllowEmptyServerName)
+		return newUTLSClient(options.Context, options.Logger, options.ServerAddress, options.Options, options.AllowEmptyServerName, options.DomainResolver, options.DirectResolver)
 	}
-	return newSTDClient(options.Context, options.Logger, options.ServerAddress, options.Options, options.AllowEmptyServerName)
+	return newSTDClient(options.Context, options.Logger, options.ServerAddress, options.Options, options.AllowEmptyServerName, options.DomainResolver, options.DirectResolver)
 }
 
 func ClientHandshake(ctx context.Context, conn net.Conn, config Config) (Conn, error) {
@@ -148,24 +145,35 @@ func (d *defaultDialer) ListenPacket(ctx context.Context, destination M.Socksadd
 }
 
 func (d *defaultDialer) DialTLSContext(ctx context.Context, destination M.Socksaddr) (Conn, error) {
-	return d.dialContext(ctx, destination, true)
+	tlsConn, err := d.dialContext(ctx, destination, d.config)
+	if err == nil {
+		return tlsConn, nil
+	}
+	var echErr *tls.ECHRejectionError
+	if !errors.As(err, &echErr) || len(echErr.RetryConfigList) == 0 {
+		return nil, err
+	}
+	retryConfig := d.config.Clone()
+	echTarget := retryConfig
+	if kTLSConfig, isKTLS := echTarget.(*KTLSClientConfig); isKTLS {
+		echTarget = kTLSConfig.Config
+	}
+	echConfig, isECH := echTarget.(ECHCapableConfig)
+	if !isECH {
+		return nil, err
+	}
+	echConfig.SetECHConfigList(echErr.RetryConfigList)
+	return d.dialContext(ctx, destination, retryConfig)
 }
 
-func (d *defaultDialer) dialContext(ctx context.Context, destination M.Socksaddr, echRetry bool) (Conn, error) {
+func (d *defaultDialer) dialContext(ctx context.Context, destination M.Socksaddr, config Config) (Conn, error) {
 	conn, err := d.dialer.DialContext(ctx, N.NetworkTCP, destination)
 	if err != nil {
 		return nil, err
 	}
-	tlsConn, err := aTLS.ClientHandshake(ctx, conn, d.config)
+	tlsConn, err := aTLS.ClientHandshake(ctx, conn, config)
 	if err != nil {
 		conn.Close()
-		var echErr *tls.ECHRejectionError
-		if echRetry && errors.As(err, &echErr) && len(echErr.RetryConfigList) > 0 {
-			if echConfig, isECH := d.config.(ECHCapableConfig); isECH {
-				echConfig.SetECHConfigList(echErr.RetryConfigList)
-				return d.dialContext(ctx, destination, false)
-			}
-		}
 		return nil, err
 	}
 	return tlsConn, nil

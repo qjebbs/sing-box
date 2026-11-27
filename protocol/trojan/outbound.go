@@ -58,17 +58,20 @@ func NewOutbound(ctx context.Context, router adapter.Router, logger log.ContextL
 	}
 	if options.TLS != nil {
 		outbound.tlsConfig, err = tls.NewClientWithOptions(tls.ClientOptions{
-			Context:       ctx,
-			Logger:        logger,
-			ServerAddress: options.Server,
-			Options:       common.PtrValueOrDefault(options.TLS),
+			Context:        ctx,
+			Logger:         logger,
+			ServerAddress:  options.Server,
+			Options:        common.PtrValueOrDefault(options.TLS),
+			DomainResolver: options.DomainResolver,
 			KTLSCompatible: common.PtrValueOrDefault(options.Transport).Type == "" &&
 				!common.PtrValueOrDefault(options.Multiplex).Enabled,
 		})
 		if err != nil {
 			return nil, err
 		}
-		outbound.tlsDialer = tls.NewDialer(outboundDialer, outbound.tlsConfig)
+		if outbound.tlsConfig != nil {
+			outbound.tlsDialer = tls.NewDialer(outboundDialer, outbound.tlsConfig)
+		}
 	}
 	if options.Transport != nil {
 		outbound.transport, err = v2ray.NewClientTransport(ctx, outbound.dialer, outbound.serverAddr, common.PtrValueOrDefault(options.Transport), outbound.tlsConfig)

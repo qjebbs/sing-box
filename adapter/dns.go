@@ -20,6 +20,7 @@ type DNSRouter interface {
 	Lookup(ctx context.Context, domain string, options DNSQueryOptions) ([]netip.Addr, error)
 	ClearCache()
 	LookupReverseMapping(ip netip.Addr) (string, bool)
+	LookupECHPublicName(domain string) string
 	ResetNetwork()
 }
 
@@ -41,6 +42,7 @@ type DNSQueryOptions struct {
 	Timeout                time.Duration
 	ClientSubnet           netip.Prefix
 	RemoveClientSubnet     bool
+	DisableReverseMapping  bool
 }
 
 type RDRCStore interface {

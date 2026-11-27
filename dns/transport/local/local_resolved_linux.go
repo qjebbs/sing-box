@@ -92,6 +92,7 @@ type resolvedScopeSpecification struct {
 	interfaceName  string
 	dnsOverTLSMode string
 	domains        []string
+	search         []string
 	defaultRoute   bool
 	fallback       bool
 	servers        []resolvedServerSpecification
@@ -136,7 +137,7 @@ func NewResolvedResolver(ctx context.Context, logger logger.ContextLogger) (Reso
 	if interfaceMonitor == nil {
 		return nil, os.ErrInvalid
 	}
-	systemBus, err := dbus.SystemBus()
+	systemBus, err := dbus.ConnectSystemBus()
 	if err != nil {
 		return nil, err
 	}
@@ -152,30 +153,32 @@ func NewResolvedResolver(ctx context.Context, logger logger.ContextLogger) (Reso
 }
 
 func (t *DBusResolvedResolver) Start() error {
-	t.updateStatus(t.ctx)
 	t.interfaceCallback = t.interfaceMonitor.RegisterCallback(t.updateDefaultInterface)
 	if t.networkMonitor != nil {
 		t.networkCallback = t.networkMonitor.RegisterCallback(t.postUpdateStatus)
 	}
-	err := t.systemBus.BusObject().AddMatchSignal(
-		"org.freedesktop.DBus",
-		"NameOwnerChanged",
+	err := t.systemBus.AddMatchSignal(
 		dbus.WithMatchSender("org.freedesktop.DBus"),
+		dbus.WithMatchInterface("org.freedesktop.DBus"),
+		dbus.WithMatchMember("NameOwnerChanged"),
 		dbus.WithMatchArg(0, "org.freedesktop.resolve1"),
-	).Err
+	)
 	if err != nil {
 		return E.Cause(err, "configure resolved restart listener")
 	}
-	err = t.systemBus.BusObject().AddMatchSignal(
-		"org.freedesktop.DBus.Properties",
-		"PropertiesChanged",
+	err = t.systemBus.AddMatchSignal(
 		dbus.WithMatchSender("org.freedesktop.resolve1"),
+		dbus.WithMatchInterface("org.freedesktop.DBus.Properties"),
+		dbus.WithMatchMember("PropertiesChanged"),
 		dbus.WithMatchArg(0, "org.freedesktop.resolve1.Manager"),
-	).Err
+	)
 	if err != nil {
 		return E.Cause(err, "configure resolved properties listener")
 	}
-	go t.loopUpdateStatus()
+	signalChan := make(chan *dbus.Signal, 1)
+	t.systemBus.Signal(signalChan)
+	go t.loopUpdateStatus(signalChan)
+	t.updateStatus(t.ctx)
 	return nil
 }
 
@@ -361,9 +364,7 @@ func (s *resolvedScope) match(name string) int {
 	return resolvedScopeMaybe
 }
 
-func (t *DBusResolvedResolver) loopUpdateStatus() {
-	signalChan := make(chan *dbus.Signal, 1)
-	t.systemBus.Signal(signalChan)
+func (t *DBusResolvedResolver) loopUpdateStatus(signalChan <-chan *dbus.Signal) {
 	for signal := range signalChan {
 		switch signal.Name {
 		case "org.freedesktop.DBus.NameOwnerChanged":
@@ -513,13 +514,17 @@ func (t *DBusResolvedResolver) checkResolved(ctx context.Context) ([]resolvedSco
 	}
 	for _, domain := range managerDomains {
 		domainName := mDNS.Fqdn(domain.Domain)
-		if domain.InterfaceIndex == 0 {
-			globalScope.domains = append(globalScope.domains, domainName)
-			continue
+		scope := &globalScope
+		if domain.InterfaceIndex != 0 {
+			scopeIndex, loaded := linkScopeIndexes[domain.InterfaceIndex]
+			if !loaded || scopeIndex < 0 {
+				continue
+			}
+			scope = &linkScopes[scopeIndex]
 		}
-		scopeIndex, loaded := linkScopeIndexes[domain.InterfaceIndex]
-		if loaded && scopeIndex >= 0 {
-			linkScopes[scopeIndex].domains = append(linkScopes[scopeIndex].domains, domainName)
+		scope.domains = append(scope.domains, domainName)
+		if !domain.RoutingOnly && domainName != "." {
+			scope.search = append(scope.search, domainName)
 		}
 	}
 	if len(globalScope.servers) == 0 && !slices.ContainsFunc(linkScopes, func(it resolvedScopeSpecification) bool {
@@ -550,6 +555,7 @@ func (s resolvedScopeSpecification) equal(other resolvedScopeSpecification) bool
 	return s.interfaceName == other.interfaceName &&
 		s.dnsOverTLSMode == other.dnsOverTLSMode &&
 		slices.Equal(s.domains, other.domains) &&
+		slices.Equal(s.search, other.search) &&
 		s.defaultRoute == other.defaultRoute &&
 		s.fallback == other.fallback &&
 		slices.Equal(s.servers, other.servers)
@@ -560,6 +566,7 @@ func (t *DBusResolvedResolver) createResolvedServerSet(scopeSpecifications []res
 		specifications: scopeSpecifications,
 		serverScope:    adapter.NewScope(t.ctx, t.logger),
 	}
+	var search []string
 	for _, scopeSpecification := range scopeSpecifications {
 		scope, createErr := t.createResolvedScope(serverSet.serverScope, scopeSpecification)
 		if createErr != nil {
@@ -570,7 +577,9 @@ func (t *DBusResolvedResolver) createResolvedServerSet(scopeSpecifications []res
 		for _, serverSpecification := range scopeSpecification.servers {
 			serverSet.signature = append(serverSet.signature, scopeSpecification.interfaceName+"/"+M.SocksaddrFrom(serverSpecification.address, serverSpecification.port).String())
 		}
+		search = append(search, scopeSpecification.search...)
 	}
+	serverSet.signature = append(serverSet.signature, common.Uniq(search)...)
 	return serverSet, nil
 }
 
@@ -787,7 +796,7 @@ func shouldUpdateResolvedServerSet(signal *dbus.Signal) bool {
 	}
 	for propertyName := range changedProperties {
 		switch propertyName {
-		case "DNS", "DNSEx", "DNSOverTLS":
+		case "DNS", "DNSEx", "DNSOverTLS", "Domains", "FallbackDNS":
 			return true
 		}
 	}
@@ -797,7 +806,7 @@ func shouldUpdateResolvedServerSet(signal *dbus.Signal) bool {
 	}
 	for _, propertyName := range invalidatedProperties {
 		switch propertyName {
-		case "DNS", "DNSEx", "DNSOverTLS":
+		case "DNS", "DNSEx", "DNSOverTLS", "Domains", "FallbackDNS":
 			return true
 		}
 	}

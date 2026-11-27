@@ -171,14 +171,6 @@ icon: material/new-box
 仅当出站为 `direct` 且 `outbound.bind_interface`, `outbound.inet4_bind_address`
 且 `outbound.inet6_bind_address` 未设置时生效。
 
-#### network_type
-
-详情参阅 [拨号字段](/zh/configuration/shared/dial/#network_type)。
-
-#### fallback_network_type
-
-详情参阅 [拨号字段](/zh/configuration/shared/dial/#fallback_network_type)。
-
 #### fallback_delay
 
 详情参阅 [拨号字段](/zh/configuration/shared/dial/#fallback_delay)。
@@ -275,8 +267,6 @@ UDP 连接超时时间。
 ```
 
 `sniff` 对连接执行协议嗅探。
-
-对于已弃用的 `inbound.sniff` 选项，被视为在路由之前执行的 `sniff`。
 
 #### sniffer
 

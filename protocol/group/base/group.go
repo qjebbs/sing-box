@@ -174,14 +174,14 @@ func (g *Group) PickOutbound(network string, metadata *adapter.InboundContext) a
 }
 
 // References implements adapter.Referrer
-func (g *Group) References() []string {
+func (g *Group) References() (outbounds []string, dnsServers []string) {
 	if g.HealthCheck == nil {
-		return nil
+		return nil, nil
 	}
 	// Every node that isn't dead may serve the next connection, so it may keep its
 	// idle connections. The objective is deliberately not applied here: it depends
 	// on pick thresholds, which would make the references flap on jitter.
-	return g.AliveTags()
+	return g.AliveTags(), nil
 }
 
 // Network implements adapter.OutboundGroup
